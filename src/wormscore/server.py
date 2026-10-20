@@ -26,7 +26,7 @@ LOCAL_HOSTS = ("127.0.0.1", "localhost")
 ROI_FIELDS = ["code", "region", "source", "area_um2", "peak_raw", "peak_filtered", "mean_mip",
               "background_mip", "peak_minus_bg", "mean_mip_minus_bg", "best_z", "n_z",
               "best_z_at_stack_edge", "mean_best_plane", "background_best_plane", "mean_best_minus_bg",
-              "integrated_best_minus_bg", "saturated_px_mip", "ring_px", "user_bg_mip",
+              "integrated_best_minus_bg", "stack_sum_minus_bg", "saturated_px_mip", "ring_px", "user_bg_mip",
               "user_bg_best_plane", "mean_mip_minus_user_bg", "mean_best_minus_user_bg"]
 
 

@@ -76,6 +76,7 @@ one-pixel scan streak cannot become a peak. For each region:
 | background | median of a ring starting 2 um outside the region, 4 um wide, excluding other regions (projection and sharpest plane) |
 | *_minus_bg | the value minus its background |
 | integrated_best_minus_bg | sum over the region of (pixel - background) in the sharpest plane |
+| stack_sum_minus_bg | sum over every plane and every region pixel of (pixel - that plane's own ring background): a background-subtracted sum projection. Unlike the maximum projection it keeps the light from all planes. It grows with the number of planes covering the cell and with the z-step, so compare it only between stacks of the same shape; the unblinded summary warns when a settings group mixes shapes |
 | saturated_px_mip | pixels at the detector maximum (peak is then an underestimate) |
 | best_z_at_stack_edge | sharpest plane is the first or last (cell may be cut off) |
 

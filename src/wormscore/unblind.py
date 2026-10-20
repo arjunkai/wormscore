@@ -13,6 +13,14 @@ from . import config as C
 from .pipeline import append_log, read_csv, write_csv
 
 
+def stack_shapes(rows):
+    """Count of each (planes x z-step) per settings group. A sum over planes depends on both."""
+    shapes = defaultdict(Counter)
+    for r in rows:
+        shapes[r["settings_group"]][f"{r['n_z']} x {r['z_step_um']}"] += 1
+    return shapes
+
+
 def unblind(project, finished=False, anyway=False, log=print):
     project = Path(project)
     if not finished:
@@ -35,7 +43,7 @@ def unblind(project, finished=False, anyway=False, log=print):
         auto[r["code"]][r.get("candidate", "")] = r
 
     roi_cols = ("source", "area_um2", "peak_filtered", "mean_mip_minus_bg", "mean_best_minus_bg",
-                "integrated_best_minus_bg", "best_z_at_stack_edge", "saturated_px_mip")
+                "integrated_best_minus_bg", "stack_sum_minus_bg", "best_z_at_stack_edge", "saturated_px_mip")
     rows = []
     for code, k in sorted(key.items()):
         s = scores.get(code, {})
@@ -84,6 +92,10 @@ def unblind(project, finished=False, anyway=False, log=print):
             tab[(r["settings_group"], r.get("score_n1_call", ""))].append(float(v))
     for (grp, call), vals in sorted(tab.items()):
         lines.append(f"  group {grp} {call:10s} {median(vals):10.1f} [{min(vals):.1f}-{max(vals):.1f}] (n={len(vals)})")
+    for grp, shapes in sorted(stack_shapes(counted).items()):
+        if len(shapes) > 1:
+            lines.append(f"  WARNING: group {grp} mixes stack shapes {dict(shapes)} (planes x z-step um); "
+                         "stack_sum_minus_bg is comparable only between stacks of the same shape.")
 
     write_csv(out / "summary_by_genotype.csv", summary or [{"note": "no usable counted images"}])
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")

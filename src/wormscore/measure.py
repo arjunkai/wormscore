@@ -108,6 +108,11 @@ def measure_region(raw, filt, mask, exclude, px_um, sat, cfg):
     best = raw[best_z].astype(float)
     bg_mip = float(np.median(mip_raw[ring])) if ring.any() else float("nan")
     bg_best = float(np.median(best[ring])) if ring.any() else float("nan")
+    # Sum projection with each plane's own ring background subtracted: keeps the light from
+    # every plane (a max projection keeps only the brightest), and planes that miss the cell
+    # add only noise. Depends on plane count and z-step, so compare stacks of the same shape.
+    bg_z = np.median(raw[:, ring].astype(float), axis=1) if ring.any() else np.full(raw.shape[0], np.nan)
+    stack_sum = float((raw[:, mask].astype(float) - bg_z[:, None]).sum())
     mean_mip = float(mip_raw[mask].mean())
     mean_best = float(best[mask].mean())
     peak_f = float(mip_f[mask].max())
@@ -126,6 +131,7 @@ def measure_region(raw, filt, mask, exclude, px_um, sat, cfg):
         "background_best_plane": round(bg_best, 2),
         "mean_best_minus_bg": round(mean_best - bg_best, 2),
         "integrated_best_minus_bg": round(float((best[mask] - bg_best).sum()), 1),
+        "stack_sum_minus_bg": round(stack_sum, 1),
         "saturated_px_mip": int((mip_raw[mask] >= sat).sum()),
         "ring_px": int(ring.sum()),
     }

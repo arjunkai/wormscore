@@ -45,6 +45,22 @@ def test_measure_region_reports_background_and_sharpest_plane():
     assert not m["best_z_at_stack_edge"]
 
 
+def test_stack_sum_keeps_light_a_max_projection_drops():
+    """Two cells with the same brightest plane: the max projection cannot tell them apart,
+    the background-subtracted sum over planes can (and is exact on a flat background)."""
+    mask = np.zeros((64, 64), bool)
+    mask[27:37, 27:37] = True
+    m = {}
+    for name, profile in (("thin", [0, 0, 200, 0, 0]), ("thick", [0, 100, 200, 100, 0])):
+        stack = np.full((5, 64, 64), 100, np.uint16)
+        for z, v in enumerate(profile):
+            stack[z][mask] += v
+        m[name] = M.measure_region(stack, stack, mask, mask, 0.25, 65535, CFG)
+    assert m["thin"]["mean_mip_minus_bg"] == m["thick"]["mean_mip_minus_bg"] == 200
+    assert m["thin"]["stack_sum_minus_bg"] == 100 * 200
+    assert m["thick"]["stack_sum_minus_bg"] == 100 * 400
+
+
 def test_single_hot_pixel_is_not_the_peak():
     stack = np.full((5, 64, 64), 100, np.uint16)
     stack[2, 30, 30] = 60000
