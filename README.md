@@ -59,6 +59,8 @@ In the launcher window the same steps are buttons: **Demo... > 1. Scan data > 2.
    finds and measures suggested cells, and writes the sealed key. Excluded images and the reasons are
    in `outputs/excluded.csv`. To leave out images by name (for example a plate with the wrong
    reporter), add `"exclude": [{"match": "*pattern*", "reason": "why"}]` to that source.
+   Images taken after scoring started can be added with `wormscore prepare my_project --add-new-images`
+   (scan first): existing codes stay the same and new images get codes after the last one.
 5. **Score:** `wormscore app my_project`. For each image: answer any yellow questions, score each
    neuron, save, then outline each cell body (or accept a suggestion) and save regions.
 6. **Unblind after scoring:** `wormscore unblind my_project --i-have-finished-scoring`. Writes

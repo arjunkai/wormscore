@@ -173,15 +173,19 @@ class Launcher(tk.Tk):
         if not p:
             return
         from .pipeline import prepare
-        reassign = False
+        reassign = add = False
         if (p / "key" / "key.csv").exists():
             scored = (p / "scoring").exists() and any((p / "scoring").iterdir())
             if scored:
-                if not messagebox.askokcancel(
-                        "wormscore", "A blind set already exists and scoring has started.\n\n"
-                        "Rebuilding keeps the same codes and takes a while. You only need it if settings "
-                        "changed. Do not score while it runs.\n\nRebuild anyway?"):
+                answer = messagebox.askyesnocancel(
+                    "wormscore", "A blind set already exists and scoring has started.\n\n"
+                    "Yes: ADD new images (run 1. Scan data first). Existing codes and images stay the same; "
+                    "new images get codes after the last one.\n"
+                    "No: rebuild keeping the current codes (only if settings changed; takes a while).\n"
+                    "Cancel: do nothing.\n\nDo not score while it runs.")
+                if answer is None:
                     return
+                add = answer
             else:
                 answer = messagebox.askyesnocancel(
                     "wormscore", "A blind set already exists, so you can go straight to 3. Score.\n\n"
@@ -193,7 +197,7 @@ class Launcher(tk.Tk):
                 if answer is None:
                     return
                 reassign = answer
-        self._run("build blind set", lambda: prepare(p, reassign=reassign, log=self.say))
+        self._run("build blind set", lambda: prepare(p, reassign=reassign, add=add, log=self.say))
 
     def _app(self):
         p = self._need_project()

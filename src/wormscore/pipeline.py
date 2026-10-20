@@ -177,20 +177,48 @@ def same_field_groups(images, tol_um):
     return groups
 
 
-def assign_codes(project, images, reassign):
-    """Random codes. An existing key is reused so codes never change while scoring."""
+def assign_codes(project, images, reassign, add=False):
+    """Random codes. An existing key is reused so codes never change while scoring.
+    add: images not yet in the key get new codes after the highest existing one, shuffled
+    among themselves with a new seed; existing codes are kept. Returns the images to render."""
     key_dir = project / "key"
     key_dir.mkdir(exist_ok=True)
     key_path = key_dir / "key.csv"
     ident = lambda s: (s["local_path"], s["location_in_file"])
+    if add:
+        if not key_path.exists():
+            raise SystemExit("There is no existing key to add images to. Run prepare without --add-new-images.")
+        old = {(r["local_path"], r["location_in_file"]): r["code"] for r in read_csv(key_path)}
+        dropped = set(old) - {ident(s) for s in images}
+        if dropped:
+            raise SystemExit(f"{len(dropped)} image(s) in the existing key no longer pass the inclusion rules or "
+                             "are missing. Adding images never removes coded images; restore them or the rules.")
+        new = [s for s in images if ident(s) not in old]
+        if not new:
+            raise SystemExit("No new images: every included image already has a code.")
+        for s in images:
+            s["code"] = old.get(ident(s))
+        seed = secrets.randbits(32)
+        stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        (key_dir / f"seed_added_{stamp}.txt").write_text(f"{seed}\n")
+        random.Random(seed).shuffle(new)
+        codes = list(old.values())
+        prefix, width = codes[0][0], len(codes[0]) - 1
+        start = max(int(c[1:]) for c in codes) + 1
+        for n, s in enumerate(new, start=start):
+            s["code"] = f"{prefix}{n:0{width}d}"
+            s["added_on"] = stamp
+        return new
     if key_path.exists() and not reassign:
         old = {(r["local_path"], r["location_in_file"]): r["code"] for r in read_csv(key_path)}
         if set(old) != {ident(s) for s in images}:
             raise SystemExit("The included images differ from the existing key, so codes would change.\n"
-                             "If nothing has been scored yet, run prepare again with --reassign-codes.")
+                             "If nothing has been scored yet, run prepare again with --reassign-codes.\n"
+                             "If scoring has started, add the new images with --add-new-images "
+                             "(existing codes are kept).")
         for s in images:
             s["code"] = old[ident(s)]
-        return
+        return list(images)
     scoring = project / "scoring"
     if reassign and scoring.exists() and any(scoring.iterdir()):
         raise SystemExit("scoring/ already has saved scores. Refusing to reassign codes.")
@@ -207,6 +235,7 @@ def assign_codes(project, images, reassign):
     width = max(4, len(str(len(images))))
     for n, k in enumerate(order, start=1):
         images[k]["code"] = f"W{n:0{width}d}"
+    return list(images)
 
 
 INTERACTION_LOG = "Interaction test set before scoring: "
@@ -222,8 +251,12 @@ def saturation_for(img, cfg):
     return cfg["saturation_value"].get(img["system"], 2 ** img["bits"] - 1)
 
 
-def prepare(project, reassign=False, log=print):
+def prepare(project, reassign=False, add=False, log=print):
+    """Build the blind set. add=True codes and renders only images not yet in the key, keeping
+    every existing code, image, settings-group letter and display range."""
     project = Path(project)
+    if add and reassign:
+        raise SystemExit("Use either --add-new-images or --reassign-codes, not both.")
     cfg = C.load(project)
     C.check(cfg)
     images, excluded = [], []
@@ -248,19 +281,32 @@ def prepare(project, reassign=False, log=print):
             s["counted_by_default"] = s is primary
 
     combos = sorted({(s["system"], s["settings"]) for s in images})
-    letters = {c: (chr(ord("A") + i) if i < 26 else f"G{i}") for i, c in enumerate(combos)}
-    assign_codes(project, images, reassign)
+    letters = {}
+    if add and (project / "key" / "settings_groups.csv").exists():
+        letters = {(r["system"], r["settings"]): r["settings_group"]
+                   for r in read_csv(project / "key" / "settings_groups.csv")}
+    for c in combos:
+        if c not in letters:
+            i = len(letters)
+            letters[c] = chr(ord("A") + i) if i < 26 else f"G{i}"
+    todo = assign_codes(project, images, reassign, add)
     by_field = {}
     for s in images:
         by_field.setdefault(s["field_group"], []).append(s["code"])
+    if add:
+        # A new image of a field that already has a code is not counted by default.
+        old_fields = {s["field_group"] for s in images if s not in todo}
+        for s in todo:
+            if s["field_group"] in old_fields:
+                s["counted_by_default"] = False
 
     blind = project / "blind"
-    if blind.exists():
+    if blind.exists() and not add:
         shutil.rmtree(blind)
-    blind.mkdir()
+    blind.mkdir(exist_ok=True)
     mc = cfg["measurement"]
     auto_rows, key_rows, stats, pending = [], [], {}, []
-    for n, s in enumerate(sorted(images, key=lambda s: s["code"]), start=1):
+    for n, s in enumerate(sorted(todo, key=lambda s: s["code"]), start=1):
         code, d = s["code"], blind / s["code"]
         (d / "planes").mkdir(parents=True)
         sat = saturation_for(s, cfg)
@@ -327,13 +373,22 @@ def prepare(project, reassign=False, log=print):
             "settings": s["settings"], "pixel_um": px, "z_step_um": s["z_step_um"], "n_z": s["n_z"],
             "acquired": s["acquired"], "stage_x_um": "" if s["stage_x"] is None else round(s["stage_x"], 1),
             "stage_y_um": "" if s["stage_y"] is None else round(s["stage_y"], 1),
-            "same_field_group": s["field_group"], "counted_by_default": s["counted_by_default"], **extra,
+            "same_field_group": s["field_group"], "counted_by_default": s["counted_by_default"],
+            **({"added_on": s["added_on"]} if add else {}), **extra,
         })
-        log(f"{code} ({n}/{len(images)})")
+        log(f"{code} ({n}/{len(todo)})")
 
     # Fixed display ranges, one pair per microscope, computed over all included images.
+    # When adding, microscopes already in the project keep their ranges, so images that
+    # were already scored look exactly the same.
     ranges = {}
+    if add:
+        for r in read_csv(project / "outputs" / "display_ranges.csv"):
+            ranges[r["system"]] = {"full": [int(float(r["standard_low"])), int(float(r["standard_high"]))],
+                                   "enhanced": [int(float(r["enhanced_low"])), int(float(r["enhanced_high"]))]}
     for system, vals in stats.items():
+        if system in ranges:
+            continue
         sat = next(p[8] for p in pending if p[0]["system"] == system)
         lo = round(float(np.median([v[0] for v in vals])))
         hi = round(float(np.median([v[1] for v in vals])))
@@ -355,6 +410,9 @@ def prepare(project, reassign=False, log=print):
         (d / "meta.json").write_text(json.dumps(meta, indent=1))
 
     out = project / "outputs"
+    if add:
+        key_rows = read_csv(project / "key" / "key.csv") + key_rows
+        auto_rows = [r for r in read_csv(out / "auto_measurements.csv") if r.get("code") != "none"] + auto_rows
     write_csv(project / "key" / "key.csv", key_rows)
     write_csv(project / "key" / "settings_groups.csv",
               [{"settings_group": l, "system": c[0], "settings": c[1]} for c, l in letters.items()])
@@ -362,6 +420,20 @@ def prepare(project, reassign=False, log=print):
     write_csv(out / "display_ranges.csv", [{"system": k, "standard_low": v["full"][0], "standard_high": v["full"][1],
                                             "enhanced_low": v["enhanced"][0], "enhanced_high": v["enhanced"][1]}
                                            for k, v in ranges.items()])
+    if add:
+        added = dict(Counter(s["system"] for s in todo))
+        append_log(project, "prepare: images added", [
+            f"Software: {json.dumps(software_versions())}",
+            f"Added {len(todo)} images {added} to the existing {len(images) - len(todo)}. Existing codes, images, "
+            "settings groups and display ranges are unchanged. New codes continue after the highest existing "
+            "code and were shuffled among themselves; seed stored in key/ (not in this log). Which codes are "
+            "new is recorded only in the key (added_on column).",
+            "Images added after scoring began can be recognised as a later batch by the scorer; if a batch is "
+            "one genotype, blinding is weaker for it.",
+            f"Display ranges: {json.dumps(ranges)}",
+        ] + interaction_log_lines(cfg), cfg)
+        log(f"Added {len(todo)} images {added}; {len(images)} images in blind/ in total.")
+        return ranges
     n_counted = sum(s["counted_by_default"] for s in images)
     per_system = dict(Counter(s["system"] for s in images))
     append_log(project, "prepare", [

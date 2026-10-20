@@ -26,6 +26,8 @@ def main(argv=None):
     s = sub.add_parser("prepare", help="build the blind image set, key and automatic measurements")
     s.add_argument("project")
     s.add_argument("--reassign-codes", action="store_true", help="new codes (only allowed before any scoring)")
+    s.add_argument("--add-new-images", dest="add", action="store_true",
+                   help="code only images not yet in the key; existing codes are kept")
     s = sub.add_parser("app", help="open the scoring app")
     s.add_argument("project")
     s.add_argument("--port", type=int, default=8765)
@@ -58,7 +60,7 @@ def main(argv=None):
             inventory(a.project)
         elif a.cmd == "prepare":
             from .pipeline import prepare
-            prepare(a.project, reassign=a.reassign_codes)
+            prepare(a.project, reassign=a.reassign_codes, add=a.add)
         elif a.cmd == "app":
             from .server import serve
             serve(a.project, port=a.port, open_browser=not a.no_browser)

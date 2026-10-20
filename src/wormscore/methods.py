@@ -55,7 +55,8 @@ def interaction_sentence(cfg, interaction_tests):
 
 
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
-              interaction_tests=()):
+              interaction_tests=(), added=()):
+    """added: (date, number of images) for each batch added to an existing key."""
     b = cfg["blinding"]
     who = lambda k, default: b.get(k) or default
     mc, sc = cfg["measurement"], cfg["scoring"]
@@ -79,7 +80,9 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         + f". On {_date(project / 'key' / 'seed.txt')}, "
         f"{who('coded_by', '[name]')} assigned every included image a random code; the key linking codes to "
         "files and genotypes was kept in a separate folder that the scoring software does not read. "
-        f"{who('scored_by', '[name]')} scored the coded images {span}, seeing no file names, genotypes or "
+        + "".join(f"{n} image{'s' if n != 1 else ''} added on {d} received new codes after the existing ones, "
+                  "shuffled among themselves, without changing any existing code. " for d, n in added)
+        + f"{who('scored_by', '[name]')} scored the coded images {span}, seeing no file names, genotypes or "
         "brightness measurements, with every image from the same microscope shown at the same fixed "
         f"brightness range. Each neuron was called {calls}; "
         f"{' or '.join(sc['defect_calls'])} counted as affected. Codes were linked "

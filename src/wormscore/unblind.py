@@ -185,7 +185,9 @@ def unblind(project, finished=False, anyway=False, log=print):
     excluded = [r for r in opt(project / "outputs" / "excluded.csv") if r.get("local_path")]
     (out / "methods_text.md").write_text(methods.statement(
         project, cfg, len(key), len(excluded), history, len(scores), tests,
-        outcome_tests=outcome_tests, interaction_tests=itests), encoding="utf-8")
+        outcome_tests=outcome_tests, interaction_tests=itests,
+        added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key.values()) if d).items())),
+        encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [
         f"{len(scores)} images scored at unblinding" + (" (below the planned minimum; override used)" if len(scores) < need else ""),

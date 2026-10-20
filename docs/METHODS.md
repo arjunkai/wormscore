@@ -49,6 +49,16 @@ code-to-file key are written to `key/`, which the scoring app never reads. The s
 images, plane counts, pixel size and quality questions, but no genotype, file name, path or brightness
 number. Re-running `prepare` keeps the same codes; new codes are refused once any score is saved.
 
+Images imaged later can be added with `prepare --add-new-images` (or Yes in the launcher's build step
+once scoring has started). Only images not yet in the key are coded: their codes continue after the
+highest existing code, shuffled among themselves with a new seed (kept in `key/`). Existing codes,
+blind images, settings-group letters and display ranges are not changed, so images already scored look
+exactly the same; a new microscope gets its own ranges. Adding refuses to run if any coded image would be
+dropped. Which codes were added, and when, is recorded only in the key (`added_on`), and the draft Methods
+text reports each added batch. Limit: the scorer can tell which images arrived later. If a later batch is
+all one genotype, blinding is weaker for it, so mix genotypes in each batch where possible, or add all
+images before scoring starts.
+
 ## 5. Images shown
 
 For each image the marker channel is saved plane by plane and as a maximum-intensity projection
