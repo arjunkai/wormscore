@@ -61,7 +61,10 @@ In the launcher window the same steps are buttons: **Demo... > 1. Scan data > 2.
 5. **Score:** `wormscore app my_project`. For each image: answer any yellow questions, score each
    neuron, save, then outline each cell body (or accept a suggestion) and save regions.
 6. **Unblind after scoring:** `wormscore unblind my_project --i-have-finished-scoring`. Writes
-   `outputs/unblinded/merged.csv` (scores + numbers + key, one row per image) and a summary.
+   `outputs/unblinded/merged.csv` (scores + numbers + key, one row per image), a summary, and results
+   tables: `per_neuron.csv` (one row per animal and neuron, for plotting), `penetrance.csv` (animals with
+   0, 1, 2 ... affected neurons) and `fisher_tests.csv` (Fisher's exact within each microscope,
+   Bonferroni-corrected). Set `unblinding.reference_genotype` in `config.json` to test against a control.
 
 ## Project folder
 

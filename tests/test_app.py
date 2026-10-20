@@ -109,3 +109,6 @@ def test_unblind_locks_and_traceability(app):
     scored = [r for r in merged if r.get("score_saved")]
     assert scored and all(r["original_path"] and r["file_sha256"] for r in scored)
     assert "override used" in (project / "log.md").read_text(encoding="utf-8")
+    for name in ("per_neuron.csv", "penetrance.csv", "fisher_tests.csv"):
+        assert (out / name).exists()
+    assert len(read_csv(out / "per_neuron.csv")) == 2     # one counted animal x two neurons

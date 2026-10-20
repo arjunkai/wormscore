@@ -102,6 +102,20 @@ every image, the key (original path, local copy, location in file, checksum, gen
 settings group), the score, and the measurements. The summary counts calls per microscope and genotype
 and lists drawn-region brightness by call within each settings group only.
 
+Results tables use counted, usable images only, with the animal as the unit (one image per animal):
+
+- `per_neuron.csv`: one row per animal and neuron (genotype, microscope, settings group, imaging date,
+  call, affected yes/no, region measurements), ready for plots that show every animal, such as SuperPlots.
+- `penetrance.csv`: per microscope and genotype, the number of animals with 0, 1, 2, ... affected
+  neurons (a neuron is affected when its call is one of `defect_calls`), the share with at least one
+  (penetrance), and the share affected for each neuron. Animals with a neuron left uncalled are counted
+  separately and left out of the percentages.
+- `fisher_tests.csv`: two-sided Fisher's exact test on animals with versus without an affected neuron,
+  comparing each genotype with `reference_genotype` (or every pair of genotypes if none is set). Tests
+  are run only between genotypes imaged on the same microscope, because calls made on different
+  microscopes are not interchangeable. p-values are Bonferroni-corrected for the number of tests in the
+  file. Other tests (for example per neuron) can be run from `per_neuron.csv`; correct them too.
+
 ## Limits to state
 
 - Brightness depends on detector gain, laser power and the microscope. Numbers are comparable only

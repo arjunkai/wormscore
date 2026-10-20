@@ -2,7 +2,8 @@
 
 Joins scores, measurements and the key into outputs/unblinded/merged.csv (every row
 carries the original path, local copy, location in file and checksum of its image)
-and writes a descriptive summary. It classifies nothing and runs no statistical tests.
+and writes a summary, results tables and Fisher's exact tests (see stats.py). It never
+classifies a cell; every call in these tables is the scorer's.
 """
 import json
 from collections import Counter, defaultdict
@@ -10,6 +11,7 @@ from pathlib import Path
 from statistics import median
 
 from . import config as C
+from . import stats
 from .pipeline import append_log, read_csv, write_csv
 
 
@@ -97,11 +99,31 @@ def unblind(project, finished=False, anyway=False, log=print):
             lines.append(f"  WARNING: group {grp} mixes stack shapes {dict(shapes)} (planes x z-step um); "
                          "stack_sum_minus_bg is comparable only between stacks of the same shape.")
 
+    pen = stats.penetrance(counted, cfg)
+    tests = stats.fisher_tests(pen, cfg["unblinding"]["reference_genotype"])
+    lines.append("")
+    lines.append("Penetrance (animals with at least one affected neuron; outputs/unblinded/penetrance.csv):")
+    for p in pen:
+        lines.append(f"  {p['system']} | {p['genotype']}: {p['animals_any_affected']}/{p['animals']} "
+                     f"({p['penetrance_pct']}%)" + (f", {p['animals_incomplete']} with a neuron uncalled"
+                                                    if p["animals_incomplete"] else ""))
+    lines.append("Fisher's exact tests within each microscope, Bonferroni-corrected "
+                 "(outputs/unblinded/fisher_tests.csv):")
+    for t in tests:
+        lines.append(f"  {t['system']} | {t['genotype_a']} {t['a_affected']} vs {t['genotype_b']} "
+                     f"{t['b_affected']}: p = {t['p_fisher_two_sided']}, corrected p = {t['p_bonferroni']}")
+    if not tests:
+        lines.append("  none (need two genotypes with scored animals on the same microscope)")
+
+    write_csv(out / "per_neuron.csv", stats.per_neuron_rows(counted, cfg) or [{"note": "no usable counted images"}])
+    write_csv(out / "penetrance.csv", pen or [{"note": "no usable counted images"}])
+    write_csv(out / "fisher_tests.csv", tests or [{"note": "no comparison possible"}])
     write_csv(out / "summary_by_genotype.csv", summary or [{"note": "no usable counted images"}])
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [
         f"{len(scores)} images scored at unblinding" + (" (below the planned minimum; override used)" if len(scores) < need else ""),
-        "Merged table: outputs/unblinded/merged.csv; summary: outputs/unblinded/summary.txt",
+        "Merged table: outputs/unblinded/merged.csv; summary: outputs/unblinded/summary.txt; "
+        "results tables: per_neuron.csv, penetrance.csv, fisher_tests.csv",
     ])
     for line in lines:
         log(line)

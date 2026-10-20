@@ -85,7 +85,9 @@ DEFAULTS = {
         ],
     },
 
-    "unblinding": {"min_scored_worms": 30},
+    # reference_genotype: the control that each other genotype is tested against (Fisher's
+    # exact, within each microscope). Empty: every pair of genotypes is tested.
+    "unblinding": {"min_scored_worms": 30, "reference_genotype": ""},
 }
 
 
