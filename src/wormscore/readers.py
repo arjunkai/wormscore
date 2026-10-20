@@ -16,7 +16,7 @@ from pathlib import Path
 import czifile
 import numpy as np
 import tifffile
-from readlif.reader import LifFile
+from liffile import LifFile
 
 from . import config as C
 
@@ -89,6 +89,44 @@ def _lif(path):
     return LifFile(str(path))
 
 
+def _lif_series(lf):
+    """Image series in the order, and with the names and numbers, that wormscore 0.1.x
+    got from readlif. Series numbers are part of an image's identity in the key, so
+    this walk must not change."""
+    pixels = {id(im.xml_element): im for im in lf.images}
+    out = []
+
+    def walk(tree, path):
+        children = tree.findall("./Children/Element") or tree.findall("./Element")
+        for item in children:
+            sub = item.attrib["Name"] if path == "" else f"{path}/{item.attrib['Name']}"
+            if item.find("./Data/Image") is not None:
+                dims = item.findall("./Data/Image/ImageDescription/Dimensions/")
+                n = {int(d.get("DimID")): int(d.get("NumberOfElements")) for d in dims}
+                scale = {}
+                for d in dims:
+                    k = int(d.get("DimID"))
+                    try:
+                        scale[k] = (n[k] - 1) / (float(d.get("Length")) * (1 if k == 4 else 10**6))
+                    except (TypeError, ZeroDivisionError):
+                        scale[k] = None
+                chans = item.findall("./Data/Image/ImageDescription/Channels/ChannelDescription")
+                st = item.find("./Data/Image/Attachment/ATLConfocalSettingDefinition")
+                out.append({
+                    "name": "/".join(f"{path}/{item.attrib['Name']}".split("/")[1:]),
+                    "x": n.get(1, 1), "y": n.get(2, 1), "z": n.get(3, 1), "t": n.get(4, 1),
+                    "scale_x": scale.get(1), "scale_z": scale.get(3),
+                    "bit_depth": [int(c.get("Resolution")) for c in chans], "channels": len(chans),
+                    "settings": dict(st.attrib) if st is not None else {},
+                    "element": item, "image": pixels.get(id(item)),
+                })
+            if item.findall("./Children/Element/Data"):
+                walk(item, sub)
+
+    walk(lf.xml_element, "")
+    return out
+
+
 def _leica_channels(elem):
     seq = elem.find(".//LDM_Block_Sequential_List")
     steps = seq.findall(".//ATLConfocalSettingDefinition") if seq is not None else []
@@ -111,16 +149,13 @@ def _leica_channels(elem):
 
 def leica_images(path, cfg):
     lf = _lif(path)
-    elems = [e for e in lf.xml_root.iter("Element") if e.find("./Data/Image") is not None]
-    aligned = [e.get("Name") for e in elems] == [im["name"] for im in lf.image_list]
-    system = next((a.get("SystemTypeName") for a in lf.xml_root.iter("Attachment") if a.get("SystemTypeName")), "")
+    system = next((a.get("SystemTypeName") for a in lf.xml_element.iter("Attachment") if a.get("SystemTypeName")), "")
     out = []
-    for i, im in enumerate(lf.image_list):
-        st = im.get("settings", {})
-        elem = elems[i] if aligned else None
-        luts = [c.get("LUTName") for c in elem.iter("ChannelDescription")] if elem is not None else []
-        chans = _leica_channels(elem) if elem is not None else []
-        flags = [] if aligned else ["XML/series order mismatch"]
+    for i, im in enumerate(_lif_series(lf)):
+        st, elem = im["settings"], im["element"]
+        luts = [c.get("LUTName") for c in elem.iter("ChannelDescription")]
+        chans = _leica_channels(elem)
+        flags = []
         if len(chans) == im["channels"]:
             roles = [marker_from_leica(c, l, cfg) for c, l in zip(chans, luts)]
         else:
@@ -128,13 +163,13 @@ def leica_images(path, cfg):
             flags.append(f"{len(chans)} detectors for {im['channels']} channels")
         mi = pick(roles, "MARKER")
         g = chans[mi] if mi is not None else {}
-        sx, sz = im["scale"][0], im["scale"][2]
+        sx, sz = im["scale_x"], im["scale_z"]
         bits = max(im["bit_depth"])
         out.append({
             "format": "Leica LIF", "system": f"Leica {system}".strip(),
             "location_in_file": f"series {i} ({im['name']})",
             "objective": st.get("ObjectiveName", "").strip(),
-            "n_z": im["dims"].z, "n_t": im["dims"].t, "width": im["dims"].x, "height": im["dims"].y,
+            "n_z": im["z"], "n_t": im["t"], "width": im["x"], "height": im["y"],
             "pixel_um": round(1 / sx, 4) if sx else 0.0, "z_step_um": round(abs(1 / sz), 3) if sz else 0.0,
             "bits": bits, "channel_roles": roles, "channel_names": luts,
             "settings": (f"HyD gain {g['gain']:.1f}; " + ";".join(f"{ln}nm@{p:.1f}%" for ln, p in g["lasers"])
@@ -252,9 +287,11 @@ def read(img, channel):
     """One channel as a (z, y, x) array, first time point, original bit depth."""
     kind, path, i = img["_reader"][:3]
     if kind == "lif":
-        im = _lif(path).get_image(i)
-        return np.stack([np.asarray(im.get_frame(z=k, c=channel, t=0)) for k in range(img["n_z"])])
-    if kind == "czi":
+        im = _lif_series(_lif(path))[i]["image"]
+        if im is None:
+            raise ValueError(f"{Path(path).name} series {i}: no pixel data found")
+        arr, dims = im.asarray(), "".join(im.dims)
+    elif kind == "czi":
         with czifile.CziFile(path) as f:
             scene = f.scenes[i]
             arr, dims = scene.asarray(), "".join(scene.dims)

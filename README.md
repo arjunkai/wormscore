@@ -102,3 +102,7 @@ Do not commit or upload data that belongs to someone else.
 
 MIT License (see [LICENSE](LICENSE)). If you use wormscore in research, please cite it: GitHub's
 "Cite this repository" button (from [CITATION.cff](CITATION.cff)) gives the reference.
+
+wormscore reads Leica files with [liffile](https://github.com/cgohlke/liffile) and Zeiss files with
+[czifile](https://github.com/cgohlke/czifile) (both BSD-3). The Windows app bundles these and other
+libraries; their licenses are in `THIRD_PARTY_LICENSES.txt` next to `wormscore.exe`.

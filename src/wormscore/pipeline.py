@@ -64,16 +64,10 @@ def append_log(project, title, lines, cfg=None):
 
 
 def software_versions():
-    import czifile, PIL, readlif, scipy, tifffile  # noqa: E401
-    import importlib.metadata as md
-    v = {"wormscore": __version__, "python": sys.version.split()[0], "numpy": np.__version__,
-         "scipy": scipy.__version__, "pillow": PIL.__version__, "tifffile": tifffile.__version__}
-    for name in ("readlif", "czifile"):
-        try:
-            v[name] = md.version(name)
-        except md.PackageNotFoundError:
-            v[name] = "unknown"
-    return v
+    import czifile, liffile, PIL, scipy, tifffile  # noqa: E401
+    return {"wormscore": __version__, "python": sys.version.split()[0], "numpy": np.__version__,
+            "scipy": scipy.__version__, "pillow": PIL.__version__, "tifffile": tifffile.__version__,
+            "liffile": liffile.__version__, "czifile": czifile.__version__}
 
 
 # ------------------------------------------------------------------ inventory
