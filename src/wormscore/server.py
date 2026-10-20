@@ -19,7 +19,10 @@ from . import config as C
 from . import measure as M
 
 STATIC = Path(__file__).resolve().parent / "static"
+STATIC_FILES = {"app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8",
+                "icon.svg": "image/svg+xml"}
 CODE = re.compile(r"^W\d{4,6}$")
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
 ROI_FIELDS = ["code", "region", "source", "area_um2", "peak_raw", "peak_filtered", "mean_mip",
               "background_mip", "peak_minus_bg", "mean_mip_minus_bg", "best_z", "n_z",
               "best_z_at_stack_edge", "mean_best_plane", "background_best_plane", "mean_best_minus_bg",
@@ -36,6 +39,13 @@ def score_fields(cfg):
             fields.append(f"n{i}_side")
         fields += [f"n{i}_{q['id']}" for q in sc["neuron_questions"]]
     return fields + ["confidence", "display_preset_when_saved", "flag_answers", "notes"]
+
+
+def safe_cell(v):
+    """Stop spreadsheet programs from running text typed into the app as a formula."""
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + v
+    return v
 
 
 def roi_mask(roi, h, w, cands):
@@ -82,7 +92,8 @@ class Project:
         fields = score_fields(self.cfg)
 
         def flat(c, s):
-            return {**s, "code": c, "flag_answers": json.dumps(s.get("flag_answers", {}))}
+            row = {**s, "code": c, "flag_answers": json.dumps(s.get("flag_answers", {}))}
+            return {k: safe_cell(v) for k, v in row.items()}
         with open(self.scoring / "scores.csv", "w", newline="", encoding="utf-8") as fh:
             w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
             w.writeheader()
@@ -159,17 +170,24 @@ def make_handler(project):
             self.end_headers()
             self.wfile.write(data)
 
+        def local_request(self):
+            """Only answer requests addressed to this computer. A web page on another site that
+            tries to reach the app through a DNS trick arrives with a different Host header."""
+            host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
+            return host in LOCAL_HOSTS
+
         def do_GET(self):
+            if not self.local_request():
+                return self.send_error(403)
             parts = [p for p in self.path.split("?")[0].split("/") if p]
             if not parts:
                 return self.send_file(STATIC / "index.html", "text/html; charset=utf-8")
-            if parts[0] == "static" and len(parts) == 2 and (STATIC / parts[1]).is_file():
-                ctype = {"js": "text/javascript", "css": "text/css", "svg": "image/svg+xml"}.get(
-                    parts[1].rsplit(".", 1)[-1], "text/plain")
-                return self.send_file(STATIC / parts[1], ctype + ("; charset=utf-8" if "svg" not in ctype else ""))
+            if parts[0] == "static" and len(parts) == 2 and parts[1] in STATIC_FILES:
+                return self.send_file(STATIC / parts[1], STATIC_FILES[parts[1]])
             if parts[0] == "favicon.ico":
                 return self.send_file(STATIC / "icon.svg", "image/svg+xml")
-            if parts[0] == "img" and len(parts) >= 3 and CODE.match(parts[1]):
+            if parts[0] == "img" and 3 <= len(parts) <= 4 and CODE.match(parts[1]) \
+                    and all(re.fullmatch(r"[A-Za-z0-9_.]+", p) and ".." not in p for p in parts[2:]):
                 p = (project.blind / parts[1]).joinpath(*parts[2:])
                 if p.suffix == ".png" and p.is_file() and project.blind.resolve() in p.resolve().parents:
                     return self.send_file(p, "image/png")
@@ -197,6 +215,13 @@ def make_handler(project):
             self.send_error(404)
 
         def do_POST(self):
+            # Saves must come from the app's own page: a local Host, a JSON body (other sites
+            # cannot send one without a permission check this server never grants), and, if the
+            # browser says where the request came from, that origin must be this server.
+            origin = self.headers.get("Origin")
+            if not self.local_request() or self.headers.get("Content-Type", "").split(";")[0] != "application/json" \
+                    or (origin and origin.split("://")[-1].rsplit(":", 1)[0] not in LOCAL_HOSTS):
+                return self.send_error(403)
             parts = [p for p in self.path.split("/") if p]
             if len(parts) != 4 or parts[:2] != ["api", "worm"] or not CODE.match(parts[2]) \
                     or not (project.blind / parts[2]).is_dir():

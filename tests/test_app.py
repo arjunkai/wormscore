@@ -18,10 +18,10 @@ def app(fresh_project):
     srv.server_close()
 
 
-def request(port, method, path, body=None):
+def request(port, method, path, body=None, headers=None):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
     conn.request(method, path, body=json.dumps(body) if body is not None else None,
-                 headers={"Content-Type": "application/json"})
+                 headers={"Content-Type": "application/json", **(headers or {})})
     res = conn.getresponse()
     data = res.read()
     conn.close()
@@ -46,9 +46,31 @@ def test_pages_and_api_never_reveal_genotype(app):
 def test_key_and_raw_files_cannot_be_fetched(app):
     _, port = app
     for path in ("/img/W0001/../../key/key.csv", "/img/W0001/..%2F..%2Fkey%2Fkey.csv", "/key/key.csv",
-                 "/img/W0001/meta.json", "/static/../config.json"):
+                 "/img/W0001/meta.json", "/static/../config.json", "/static/..\\..\\config.py",
+                 "/static/..\\server.py", "/img/W0001/..\\..\\key\\key.csv", "/static/index.html"):
         status, _ = request(port, "GET", path)
         assert status == 404, path
+
+
+def test_requests_from_other_sites_are_refused(app):
+    _, port = app
+    score = {"usable": "no", "unusable_reason": "x", "flag_answers": {}}
+    # DNS-rebinding style request: the browser sends the attacker's host name
+    assert request(port, "GET", "/api/worms", headers={"Host": "evil.example:8765"})[0] == 403
+    assert request(port, "POST", "/api/worm/W0001/score", score, headers={"Host": "evil.example"})[0] == 403
+    # cross-site form post: wrong content type, or a foreign Origin
+    assert request(port, "POST", "/api/worm/W0001/score", score, headers={"Content-Type": "text/plain"})[0] == 403
+    assert request(port, "POST", "/api/worm/W0001/score", score, headers={"Origin": "https://evil.example"})[0] == 403
+    assert request(port, "POST", "/api/worm/W0001/score", score,
+                   headers={"Origin": f"http://127.0.0.1:{port}"})[0] == 200
+
+
+def test_typed_text_cannot_become_a_spreadsheet_formula(app):
+    project, port = app
+    request(port, "POST", "/api/worm/W0003/score",
+            {"usable": "no", "unusable_reason": "other", "notes": "=HYPERLINK(\"http://x\")", "flag_answers": {}})
+    row = read_csv(project / "scoring" / "scores.csv")[0]
+    assert row["notes"].startswith("'=")
 
 
 def test_score_and_regions_are_saved_and_measured(app):
