@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,9 @@ name = "wormscore"
 version = "0.1.1"
 description = "Blind scoring and fluorescence measurement of neurons in confocal image stacks (C. elegans and similar)."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Arjun Bansal" }]
 requires-python = ">=3.12"
 dependencies = [
   "numpy>=1.26",

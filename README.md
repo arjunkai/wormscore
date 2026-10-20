@@ -97,3 +97,8 @@ Build the Windows app: `packaging\build_windows.bat`.
 
 This repository contains code only. `.gitignore` excludes image formats, keys, scores and outputs.
 Do not commit or upload data that belongs to someone else.
+
+## License and citation
+
+MIT License (see [LICENSE](LICENSE)). If you use wormscore in research, please cite it: GitHub's
+"Cite this repository" button (from [CITATION.cff](CITATION.cff)) gives the reference.
