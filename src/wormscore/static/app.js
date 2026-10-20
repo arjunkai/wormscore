@@ -341,7 +341,7 @@ function renderSuggestions() {
   const neurons = st.cfg.scoring.neurons;
   box.replaceChildren(...st.meta.candidates.map(c =>
     h("div", { class: "item" },
-      h("span", { class: "sw", style: "background:#ffd84a" }), `Suggested spot S${c.rank}`,
+      h("span", { class: "sw", style: "background:#ffd84a" }), h("span", { class: "nowrap" }, `Spot S${c.rank}`),
       h("span", { class: "btns" }, neurons.map((n, i) =>
         h("button", { type: "button", title: `Use S${c.rank} as ${n}`,
           onclick: () => commitRoi({ type: "candidate", rank: c.rank, label: n, source: `suggestion S${c.rank}` }) },
@@ -401,17 +401,32 @@ function fillForm() {
   }
   saveMessage(st.score ? `Saved ${st.score.saved}` : "");
   $("#markTab").disabled = !st.score;
+  syncUsable();
 }
 
-$("#scoreForm").addEventListener("input", () => {
+// The reason only applies to an unusable image; the cell questions only to a usable one.
+function syncUsable() {
+  const usable = $("#scoreForm").querySelector('input[name="usable"]:checked')?.value;
+  $("#reasonSelect").classList.toggle("hidden", usable !== "no");
+  if (usable !== "no") $("#reasonSelect").value = "";
+  $("#countField").classList.toggle("hidden", usable === "no");
+  $("#neurons").classList.toggle("hidden", usable === "no");
+}
+
+$("#scoreForm").addEventListener("input", e => {
   st.formDirty = true;
   saveMessage("Unsaved changes");
+  if (e.target.name === "usable") syncUsable();
 });
 
 $("#scoreForm").addEventListener("submit", async e => {
   e.preventDefault();
   const fd = new FormData(e.target);
   const v = Object.fromEntries([...fd.entries()].filter(([k]) => !k.startsWith("flag_")));
+  if (v.usable === "no") {
+    // answers about cells do not apply to an unusable image, so they are not saved
+    for (const k of Object.keys(v)) if (k === "cells_seen" || /^n\d+_/.test(k)) delete v[k];
+  }
   const flag_answers = {};
   for (const f of st.meta.flags) {
     const a = fd.get(`flag_${f.id}`);
@@ -441,7 +456,7 @@ $("#scoreForm").addEventListener("submit", async e => {
     saveMessage(`Saved ${r.saved}`);
     $("#markTab").disabled = false;
     await loadList();
-    setTab("mark");
+    if (v.usable === "yes") setTab("mark");    // nothing to outline on an unusable image
   } catch (err) {
     saveMessage(`Not saved: ${err.message}`, true);
   }

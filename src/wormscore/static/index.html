@@ -54,7 +54,7 @@
         <legend>Usable image?</legend>
         <label><input type="radio" name="usable" value="yes"> Yes</label>
         <label><input type="radio" name="usable" value="no"> No</label>
-        <select name="unusable_reason" id="reasonSelect"><option value="">reason...</option></select>
+        <select name="unusable_reason" id="reasonSelect" class="hidden"><option value="">Why not usable?</option></select>
       </fieldset>
 
       <fieldset id="countField">
@@ -92,7 +92,7 @@
         </div>
       </div>
       <p class="small">Circle: press and drag from the center. Outline: click points, double-click to close. Esc cancels.</p>
-      <label class="chk"><input id="sugToggle" type="checkbox" checked> Show suggested spots</label>
+      <label class="chk"><input id="sugToggle" type="checkbox" checked> Show suggested spots (S1 = brightest)</label>
       <div id="sugList"></div>
       <div id="roiList"></div>
       <div class="actions">

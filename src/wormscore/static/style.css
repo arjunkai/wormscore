@@ -97,13 +97,14 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 
 fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 10px; padding: 8px 10px 10px; }
 legend { color: var(--muted); padding: 0 4px; font-size: 12px; }
-fieldset label { margin-right: 12px; cursor: pointer; white-space: nowrap; }
+fieldset label { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; line-height: 1.9; cursor: pointer; white-space: nowrap; }
+fieldset select { display: block; width: 100%; margin-top: 10px; }
+fieldset select + select { margin-top: 8px; }
 select, textarea {
   background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 6px;
 }
 textarea { width: 100%; resize: vertical; }
 .neurons { display: grid; gap: 0; }
-.neuron select { display: block; width: 100%; margin-top: 6px; }
 .neuron.n1 legend { color: var(--l1); }
 .neuron.n2 legend { color: var(--l2); }
 .neuron.n3 legend { color: var(--l3); }
@@ -142,3 +143,4 @@ textarea { width: 100%; resize: vertical; }
   main { grid-template-columns: 110px 1fr; }
   #panel { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
 }
+.nowrap { white-space: nowrap; }
