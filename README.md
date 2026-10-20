@@ -71,7 +71,10 @@ In the launcher window the same steps are buttons: **Demo... > 1. Scan data > 2.
    Optional, off unless set in `unblinding`: `question_outcomes` turns the per-neuron questions into
    the same penetrance and Fisher tables (for example "process defect" when a dendrite question is
    answered "no"), and `interaction` tests a double mutant against the value two single mutants predict
-   (Product model by default) with a binomial test. See [docs/METHODS.md](docs/METHODS.md#8-unblinding).
+   (Product model by default) with a binomial test. Also optional: a secondary definition of "affected"
+   (descriptive, within one microscope), planned comparisons, one-sided tests, labelled sources, and
+   comparisons across microscopes for chosen measures (with warnings). All of these are recorded as an
+   analysis plan before scoring and locked once scoring starts. See [docs/METHODS.md](docs/METHODS.md#8-unblinding).
    `methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
    `blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
 

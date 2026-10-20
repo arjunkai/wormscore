@@ -6,6 +6,7 @@ statistics. Facts wormscore cannot know (names, whether imaging was blind) come 
 "blinding" section of config.json, or are left as [brackets] for the author to fill in.
 """
 import datetime as dt
+from collections import Counter
 
 from . import __version__
 from . import config as C
@@ -40,23 +41,79 @@ def outcome_sentences(cfg, outcome_tests):
     return out
 
 
+def _where(cfg, measure):
+    if measure in cfg["unblinding"]["allow_cross_microscope"]:
+        return ("pooling each genotype's animals over the microscopes it was imaged on (genotypes imaged on "
+                "different microscopes were compared)")
+    return "only between animals imaged on the same microscope"
+
+
 def interaction_sentence(cfg, interaction_tests):
     ia = C.interaction(cfg)
     if not ia:
         return []
+    alt = cfg["unblinding"]["alternative"]
     what = "share of affected animals" if ia["outcome"] == "calls" else f"share of animals with {ia['outcome']}"
     pre = ("chosen before scoring and recorded in the project log" if interaction_tests
-           and all(t["set_before_scoring"] == "yes" for t in interaction_tests) else "[state when the model was chosen]")
-    return [f"Genetic interaction was tested with the {ia['model']} model (Mani et al. 2008, PNAS 105:3461), "
-            f"{pre}. The {what} expected in {ia['double']} was {FORMULAS[ia['model']]}, where P1 and P2 are the "
-            f"observed shares in {ia['single_a']} and {ia['single_b']}. The observed share was compared with this "
-            "value by a two-sided one-sample binomial test, only between animals imaged on the same microscope. "
-            "The expected value treats P1 and P2 as exact and ignores their sampling error."]
+           and all(t.get("set_before_scoring") == "yes" for t in interaction_tests) else "[state when the model was chosen]")
+    out = [f"Genetic interaction was tested with the {ia['model']} model (Mani et al. 2008, PNAS 105:3461), "
+           f"{pre}. The {what} expected in {ia['double']} was {FORMULAS[ia['model']]}, where P1 and P2 are the "
+           f"observed shares in {ia['single_a']} and {ia['single_b']}. The observed share was compared with this "
+           f"value by a {alt} one-sample binomial test, {_where(cfg, ia['outcome'])}. "
+           "The expected value treats P1 and P2 as exact and ignores their sampling error."]
+    if ia["expected_direction"]:
+        out.append(f"The hypothesis counted as supported only if the observed share was significantly "
+                   f"{ia['expected_direction']} than expected"
+                   + (f"; it was {interaction_tests[0]['observed_vs_expected']}"
+                      + (f" ({interaction_tests[0]['hypothesis']})" if interaction_tests[0].get("hypothesis") else "")
+                      if interaction_tests else "") + ".")
+    return out
+
+
+def fisher_sentence(cfg, tests):
+    un = cfg["unblinding"]
+    n = len([t for t in tests if t.get("definition", "primary") == "primary"])
+    who = ("; ".join(f"{a} vs {b}" for a, b in un["comparisons"]) if un["comparisons"] else
+           f"each genotype vs {un['reference_genotype']}" if un["reference_genotype"] else "every pair of genotypes")
+    return (f"The share of affected animals was compared by {un['alternative']} Fisher's exact test ({who}), "
+            f"{_where(cfg, 'calls')}, with Bonferroni correction for {n} test{'s' if n != 1 else ''}.")
+
+
+def definition_sentences(cfg):
+    un, sc = cfg["unblinding"], cfg["scoring"]
+    out = [f"An animal was affected if at least one neuron was called {_or(sc['defect_calls'])}"
+           + (" (primary definition)." if un["secondary_defect_calls"] else ".")]
+    if un["secondary_defect_calls"]:
+        out.append(f"A secondary definition counted an animal as affected if any neuron was called "
+                   f"{_or(un['secondary_defect_calls'])}; it was reported with 95% Wilson intervals within each "
+                   "microscope only, because brightness-based calls are not comparable between microscopes"
+                   + ("." if not un["test_secondary"] else ", and tested only within one microscope."))
+    if un["allow_cross_microscope"]:
+        out.append(f"Comparisons across microscopes were allowed for {_or(un['allow_cross_microscope'])}"
+                   + (f" because {un['cross_microscope_reason']}" if un.get("cross_microscope_reason")
+                      else " [state why]")
+                   + "; this was set before scoring, and the results tables mark every such comparison.")
+    return out
+
+
+def images_table(key_rows, excluded_rows, notes):
+    """Per genotype and microscope: objective, source, images included and excluded."""
+    inc = Counter((r["genotype"], r["system"]) for r in key_rows)
+    exc = Counter((r["genotype"], r["system"]) for r in excluded_rows)
+    rows = ["| Genotype | Microscope | Objective | Source | Included | Excluded |", "|---|---|---|---|---|---|"]
+    for g, s in sorted(set(inc) | set(exc)):
+        objs = sorted({r["objective"].strip() for r in key_rows if (r["genotype"], r["system"]) == (g, s)}) or ["[see excluded.csv]"]
+        srcs = sorted({r["source"] for r in key_rows if (r["genotype"], r["system"]) == (g, s)})
+        src = "; ".join(x + ("*" if x in notes else "") for x in srcs) or "[source]"
+        rows.append(f"| {g} | {s} | {'; '.join(' '.join(o.split()) for o in objs)} | {src} | {inc[(g, s)]} | {exc[(g, s)]} |")
+    rows += [""] + [f"*{name}: {note}" for name, note in sorted(notes.items())]
+    return rows
 
 
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
-              interaction_tests=(), added=()):
-    """added: (date, number of images) for each batch added to an existing key."""
+              interaction_tests=(), added=(), key_rows=(), excluded_rows=()):
+    """added: (date, number of images) for each batch added to an existing key.
+    key_rows, excluded_rows: for the table of images per genotype and microscope."""
     b = cfg["blinding"]
     who = lambda k, default: b.get(k) or default
     mc, sc = cfg["measurement"], cfg["scoring"]
@@ -100,10 +157,19 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "**Statistics.** "
         "Each animal was one image and the unit of analysis. Penetrance was the share of animals with at "
         "least one affected neuron. "
-        + (f"Each genotype was compared with {ref}" if ref else "Genotypes were compared pairwise")
-        + " by two-sided Fisher's exact test, only between animals imaged on the same microscope, with "
-        f"Bonferroni correction for {len(tests)} test{'s' if len(tests) != 1 else ''}."
-        + "".join(" " + x for x in outcome_sentences(cfg, outcome_tests) + interaction_sentence(cfg, interaction_tests)),
+        + " ".join(definition_sentences(cfg) + [fisher_sentence(cfg, tests)]
+                   + outcome_sentences(cfg, outcome_tests) + interaction_sentence(cfg, interaction_tests))
+        + (" The analysis plan (definitions, comparisons, test direction, cross-microscope measures and "
+           "interaction model) was recorded in the project log before scoring began."
+           if C.analysis_plan(cfg) and all(t.get("set_before_scoring") == "yes"
+                                           for t in list(tests) + list(interaction_tests)) and
+           (tests or interaction_tests) else ""),
+        "",
+        *([f"**Limitations.** {' '.join(cfg['unblinding']['methods_notes'])}", ""]
+          if cfg["unblinding"].get("methods_notes") else []),
+        "## Images per genotype and microscope",
+        "",
+        *images_table(key_rows, excluded_rows, {s.get("name"): s["note"] for s in cfg["sources"] if s.get("note")}),
         "",
         "## Who knew the genotype at each stage (ARRIVE 2.0 item 5)",
         "",

@@ -267,13 +267,15 @@ def assign_codes(project, images, reassign, add=False):
     return list(images)
 
 
-INTERACTION_LOG = "Interaction test set before scoring: "
+INTERACTION_LOG = "Interaction test set before scoring: "     # written by wormscore 0.3 to 0.4
+PLAN_LOG = "Analysis plan set before scoring: "
 
 
 def interaction_log_lines(cfg):
-    """The interaction test, recorded so unblinding can check it was chosen before scoring."""
-    ia = C.interaction(cfg)
-    return [INTERACTION_LOG + json.dumps(ia, sort_keys=True)] if ia else []
+    """The analysis plan (tests, definitions, direction, comparisons), recorded so unblinding can
+    check that it was chosen before scoring."""
+    plan = C.analysis_plan(cfg)
+    return [PLAN_LOG + json.dumps(plan, sort_keys=True)] if plan else []
 
 
 def saturation_for(img, cfg):

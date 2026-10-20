@@ -18,6 +18,8 @@ DEFAULTS = {
     # genotypes: first matching pattern (on the path relative to the source folder) wins.
     # exclude (optional): [{"match": pattern, "reason": text}]; matching images are left out of
     # the blind set and listed in outputs/excluded.csv with the reason.
+    # note (optional): a label such as "collected by others" shown with an asterisk next to
+    # this source in the results tables.
     "sources": [],
 
     # Which channel is the reporter. Identified from metadata only, never guessed.
@@ -98,8 +100,23 @@ DEFAULTS = {
     # interaction (optional): {"single_a": genotype, "single_b": genotype, "double": genotype,
     #   "model": "product" | "additive" | "min", "outcome": "calls" or a question_outcomes name}.
     # Chosen before scoring; prepare records it in log.md and unblinding tests only that model.
+    # secondary_defect_calls (optional): a second "affected" definition (for example dim or
+    #   missing), reported with 95% intervals within each microscope only; tested (Fisher's
+    #   exact, within one microscope) only if test_secondary is true.
+    # allow_cross_microscope (optional): measures ("calls" or a question_outcomes name) whose
+    #   tests may compare genotypes imaged on different microscopes; animals of each genotype
+    #   are then pooled over microscopes and every table says which microscopes contributed.
+    # alternative: "two-sided" (default), "greater" or "less" for the binomial and Fisher tests.
+    #   One-sided Fisher tests need comparisons, which give the direction (genotype_a vs _b).
+    # comparisons (optional): the planned [genotype_a, genotype_b] pairs for Fisher's exact
+    #   tests; Bonferroni counts only these.
+    # These settings and the interaction test form the analysis plan: prepare records it in
+    # log.md, and unblinding runs no test if it changed after the first score was saved.
+    # cross_microscope_reason and methods_notes (optional) only add text to methods_text.md.
     "unblinding": {"min_scored_worms": 30, "reference_genotype": "", "question_outcomes": [],
-                   "interaction": {}},
+                   "interaction": {}, "secondary_defect_calls": [], "test_secondary": False,
+                   "allow_cross_microscope": [], "alternative": "two-sided", "comparisons": [],
+                   "cross_microscope_reason": "", "methods_notes": []},
 
     # Used only for the Methods text written at unblinding. Left empty, it says [name].
     # imager_knew_genotype: "yes", "no" or "" (unknown).
@@ -153,7 +170,23 @@ INTERACTION_MODELS = ("product", "additive", "min")
 def interaction(cfg):
     """The interaction test settings with defaults filled in, or {} if none is configured."""
     ia = cfg["unblinding"]["interaction"]
-    return {"model": "product", "outcome": "calls", **ia} if ia else {}
+    return {"model": "product", "outcome": "calls", "expected_direction": "", **ia} if ia else {}
+
+
+ALTERNATIVES = ("two-sided", "greater", "less")
+PLAN_KEYS = ("secondary_defect_calls", "test_secondary", "allow_cross_microscope", "alternative", "comparisons",
+             "question_outcomes")
+
+
+def analysis_plan(cfg):
+    """Everything that decides which tests run, or {} if only defaults are used (then nothing
+    is recorded or locked)."""
+    un = cfg["unblinding"]
+    plan = {k: un[k] for k in PLAN_KEYS} | {"interaction": interaction(cfg),
+                                            "defect_calls": cfg["scoring"]["defect_calls"]}
+    used = un["secondary_defect_calls"] or un["allow_cross_microscope"] or un["comparisons"] \
+        or un["alternative"] != "two-sided" or un["interaction"] or un["question_outcomes"]
+    return plan if used else {}
 
 
 def check(cfg):
@@ -186,6 +219,26 @@ def check(cfg):
             raise SystemExit(f"interaction: model must be one of {', '.join(INTERACTION_MODELS)}.")
         if ia.get("outcome", "calls") not in ["calls"] + names:
             raise SystemExit("interaction: outcome must be 'calls' or a question_outcomes name.")
+        if ia.get("expected_direction", "") not in ("", "higher", "lower"):
+            raise SystemExit("interaction: expected_direction must be 'higher', 'lower' or left out.")
+    for key in ("defect_calls",):
+        if set(sc[key]) - set(sc["calls"]):
+            raise SystemExit(f"scoring.{key}: {sorted(set(sc[key]) - set(sc['calls']))} are not in scoring.calls.")
+    if set(un["secondary_defect_calls"]) - set(sc["calls"]):
+        raise SystemExit("secondary_defect_calls: "
+                         f"{sorted(set(un['secondary_defect_calls']) - set(sc['calls']))} are not in scoring.calls.")
+    for m in un["allow_cross_microscope"]:
+        if m == "secondary":
+            raise SystemExit("allow_cross_microscope: the secondary measure is compared only within one microscope.")
+        if m not in ["calls"] + names:
+            raise SystemExit(f"allow_cross_microscope: {m!r} is not 'calls' or a question_outcomes name.")
+    if un["alternative"] not in ALTERNATIVES:
+        raise SystemExit(f"alternative must be one of {', '.join(ALTERNATIVES)}.")
+    if any(not isinstance(c, (list, tuple)) or len(c) != 2 for c in un["comparisons"]):
+        raise SystemExit("comparisons: each entry must be a pair [genotype_a, genotype_b].")
+    if un["alternative"] != "two-sided" and not un["comparisons"]:
+        raise SystemExit("A one-sided alternative needs 'comparisons', so each test has a direction "
+                         "(genotype_a vs genotype_b).")
 
 
 def template(name="My project"):

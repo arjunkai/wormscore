@@ -149,10 +149,35 @@ Results tables use counted, usable images only, with the animal as the unit (one
   redundantly; this is a statistical statement, not proof of mechanism. The expected value treats P1
   and P2 as exact and ignores their sampling error, so the test is anti-conservative when the single
   mutant groups are small. `outcome` chooses the calls (default) or a `question_outcomes` name.
-  To stop anyone trying all three models after seeing results, `prepare` writes the interaction
-  settings to `log.md`, and unblinding runs the test only if the settings match the last ones recorded
-  before the first score was saved. If they changed, the test is not run and the file says why; if
-  they were never recorded before scoring, the test runs but is marked `set_before_scoring = NO`.
+  The model is part of the analysis plan that `prepare` records and unblinding checks (below), so
+  nobody can try all three models after seeing results.
+- **Optional analysis settings** (all in `unblinding`, all off by default):
+  - `secondary_defect_calls`: a second definition of "affected" (for example dim or missing, when the
+    primary `defect_calls` is missing only). It is reported per microscope with 95% Wilson intervals and
+    is never pooled over microscopes. It is tested (Fisher's exact, within one microscope) only if
+    `test_secondary` is true. Use this when one call (such as dim) depends on brightness, which is not
+    comparable between microscopes, while another (present or missing) is.
+  - `allow_cross_microscope`: the measures (`calls` or a `question_outcomes` name) whose tests may compare
+    genotypes imaged on different microscopes. For those measures each genotype's animals are pooled over
+    microscopes, every table lists the microscopes and the number of animals from each, and every test
+    whose genotypes come from different microscopes carries the warning "microscopes differ between
+    genotypes". Pooling hides differences in sensitivity between instruments (for example a faint cell is
+    more likely to be called missing on a less sensitive system); state this as a limitation.
+  - `comparisons`: the planned `[genotype_a, genotype_b]` pairs. Only these are tested, so the Bonferroni
+    correction counts only the planned tests.
+  - `alternative`: `two-sided` (default), `greater` or `less`, for Fisher's exact and the binomial test.
+    A one-sided test needs `comparisons` (the direction is genotype_a compared with genotype_b; for the
+    binomial test, the double compared with the expected value). `interaction.expected_direction`
+    (`higher` or `lower`) states the hypothesis; the interaction table then says whether the result
+    supports it (significant after correction and in that direction).
+  - Source `note`: a label such as "collected by others" on a source in `sources`; tables list the
+    sources of each group with an asterisk and the summary explains it.
+- **Analysis plan lock.** When any of the settings above, `question_outcomes` or `interaction` is set,
+  `prepare` writes the whole analysis plan (both definitions of affected, comparisons, direction,
+  cross-microscope measures, interaction model) to `log.md`. Unblinding compares the current settings with
+  the last plan recorded before the first score was saved. If they differ, no test is run and every test
+  file says why; descriptive tables are still written. If no plan was recorded before scoring, tests run
+  but are marked `set_before_scoring = NO`.
 - `methods_text.md`: a draft Methods paragraph built from the project files: inclusion counts, the date
   codes were assigned (date of `key/seed.txt`), the scoring dates (`scoring/score_history.csv`), the
   unblinding date, measurement parameters and the tests run, plus a table of who knew the genotype at
