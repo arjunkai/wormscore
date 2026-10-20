@@ -28,7 +28,7 @@ const FLAG_QUESTIONS = {
 
 const st = {
   cfg: null, colors: {}, worms: [], code: null, meta: null, score: null, rois: [], roisDirty: false, formDirty: false,
-  view: "mip", z: 0, range: "full", bf: false, zoom: 1, tab: "score", tool: "ellipse", label: null,
+  view: "mip", z: 0, range: "enhanced", bf: false, zoom: 1, tab: "score", tool: "ellipse", label: null,
   mip: null, bfVals: null, planes: [], drawing: null, geom: null,
 };
 
@@ -129,7 +129,7 @@ async function openWorm(code) {
   const r = await api(`/api/worm/${code}`);
   Object.assign(st, {
     code, meta: r.meta, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
-    view: "mip", range: "full", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), drawing: null,
+    view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), drawing: null,
   });
   const { width: w, height: hgt } = st.meta;
   [st.mip, st.bfVals] = await Promise.all([
