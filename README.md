@@ -57,7 +57,8 @@ In the launcher window the same steps are buttons: **Demo... > 1. Scan data > 2.
    and channel identity (`outputs/inventory.csv`). Check the flags column.
 4. **Build the blind set:** `wormscore prepare my_project` applies the inclusion rules, assigns codes,
    finds and measures suggested cells, and writes the sealed key. Excluded images and the reasons are
-   in `outputs/excluded.csv`.
+   in `outputs/excluded.csv`. To leave out images by name (for example a plate with the wrong
+   reporter), add `"exclude": [{"match": "*pattern*", "reason": "why"}]` to that source.
 5. **Score:** `wormscore app my_project`. For each image: answer any yellow questions, score each
    neuron, save, then outline each cell body (or accept a suggestion) and save regions.
 6. **Unblind after scoring:** `wormscore unblind my_project --i-have-finished-scoring`. Writes
@@ -65,6 +66,10 @@ In the launcher window the same steps are buttons: **Demo... > 1. Scan data > 2.
    tables: `per_neuron.csv` (one row per animal and neuron, for plotting), `penetrance.csv` (animals with
    0, 1, 2 ... affected neurons) and `fisher_tests.csv` (Fisher's exact within each microscope,
    Bonferroni-corrected). Set `unblinding.reference_genotype` in `config.json` to test against a control.
+   Optional, off unless set in `unblinding`: `question_outcomes` turns the per-neuron questions into
+   the same penetrance and Fisher tables (for example "process defect" when a dendrite question is
+   answered "no"), and `interaction` tests a double mutant against the value two single mutants predict
+   (Product model by default) with a binomial test. See [docs/METHODS.md](docs/METHODS.md#8-unblinding).
    `methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
    `blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
 

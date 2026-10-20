@@ -8,7 +8,7 @@ same microscope, because calls made on different microscopes are not interchange
 from collections import defaultdict
 from itertools import combinations
 
-from scipy.stats import fisher_exact
+from scipy.stats import binomtest, fisher_exact
 
 ROI_COLS = ("area_um2", "mean_best_minus_bg", "stack_sum_minus_bg", "saturated_px_mip")
 
@@ -29,6 +29,7 @@ def per_neuron_rows(rows, cfg):
                 "n_z": r["n_z"], "z_step_um": r["z_step_um"], "neuron": name, "call": call,
                 "affected": "" if not call else int(call in defect),
                 **{f"roi_{c}": r.get(f"n{i}_roi_{c}", "") for c in ROI_COLS},
+                **{oc["name"]: neuron_state(r, i, oc) for oc in cfg["unblinding"]["question_outcomes"]},
             })
     return out
 
@@ -82,4 +83,97 @@ def fisher_tests(pen, reference=""):
                       "a_affected": f"{ya}/{a['animals']}", "b_affected": f"{yb}/{b['animals']}",
                       "p_fisher_two_sided": float(f"{p:.4g}"),
                       "p_bonferroni": float(f"{min(1.0, p * len(pairs)):.4g}"), "n_tests": len(pairs)})
+    return tests
+
+
+# ------------------------------------------------------------- per-neuron question outcomes
+
+def neuron_state(row, i, oc):
+    """Neuron i under a question outcome: defect, normal, unclear, not_visible or unanswered."""
+    call = row.get(f"score_n{i}_call", "")
+    if call in oc.get("not_visible_calls", ["missing"]):
+        return "not_visible"
+    answers = [row.get(f"score_n{i}_{q}", "") for q in oc["questions"]]
+    if any(a in oc["defect_answers"] for a in answers):
+        return "defect"
+    if not call or "" in answers:
+        return "unanswered"
+    if any(a in oc.get("unclear_answers", []) for a in answers):
+        return "unclear"
+    return "normal"
+
+
+def animal_state(states, unclear_rule):
+    """Defective if any neuron is. Unclear neurons are dropped (exclude_neuron) or drop the
+    animal (exclude_animal). Animals with no assessed neuron are left out."""
+    if "defect" in states:
+        return "defect"
+    if "unanswered" in states:
+        return "incomplete"
+    if "unclear" in states and unclear_rule == "exclude_animal":
+        return "unclear"
+    if "normal" in states:
+        return "normal"
+    return "unclear" if "unclear" in states else "not_visible"
+
+
+def outcome_table(rows, cfg, oc):
+    """Same layout as penetrance(): per microscope and genotype, animals assessed and defective,
+    plus the animals left out and why."""
+    n_neurons = len(cfg["scoring"]["neurons"])
+    rule = oc.get("unclear", "exclude_neuron")
+    groups = defaultdict(list)
+    for r in rows:
+        states = [neuron_state(r, i, oc) for i in range(1, n_neurons + 1)]
+        groups[(r["system"], r["genotype"])].append(animal_state(states, rule))
+    table = []
+    for (system, geno), animals in sorted(groups.items()):
+        n = animals.count("defect") + animals.count("normal")
+        table.append({"outcome": oc["name"], "system": system, "genotype": geno, "animals": n,
+                      "animals_any_affected": animals.count("defect"),
+                      "penetrance_pct": round(100 * animals.count("defect") / n, 1) if n else "",
+                      "left_out_no_visible_neuron": animals.count("not_visible"),
+                      "left_out_unclear": animals.count("unclear"),
+                      "animals_incomplete": animals.count("incomplete")})
+    return table
+
+
+# ------------------------------------------------------------- genetic interaction
+
+# Expected share of affected double mutants from the two single-mutant shares. The models are
+# those of Mani et al. 2008 (PNAS 105:3461) applied to the share of unaffected animals
+# (W = 1 - penetrance): product W_ab = W_a * W_b; additive W_ab = W_a + W_b - 1; min W_ab = min(W_a, W_b).
+EXPECTED = {
+    "product": lambda a, b: 1 - (1 - a) * (1 - b),
+    "additive": lambda a, b: min(1.0, a + b),
+    "min": lambda a, b: max(a, b),
+}
+
+
+def interaction_tests(pen, ia):
+    """One-sample two-sided binomial test of the observed double-mutant penetrance against the
+    value the chosen model expects from the two singles, within each microscope that has all
+    three genotypes. Bonferroni if more than one microscope qualifies."""
+    by_system = defaultdict(dict)
+    for row in pen:
+        if row["animals"]:
+            by_system[row["system"]][row["genotype"]] = row
+    found = [(s, g) for s, g in sorted(by_system.items())
+             if all(ia[k] in g for k in ("single_a", "single_b", "double"))]
+    tests = []
+    for system, g in found:
+        a, b, d = (g[ia[k]] for k in ("single_a", "single_b", "double"))
+        pa, pb = a["animals_any_affected"] / a["animals"], b["animals_any_affected"] / b["animals"]
+        expected = EXPECTED[ia["model"]](pa, pb)
+        k, n = d["animals_any_affected"], d["animals"]
+        p = binomtest(k, n, expected).pvalue
+        tests.append({
+            "system": system, "outcome": ia["outcome"], "model": ia["model"],
+            "single_a": ia["single_a"], "single_a_affected": f"{a['animals_any_affected']}/{a['animals']}",
+            "single_b": ia["single_b"], "single_b_affected": f"{b['animals_any_affected']}/{b['animals']}",
+            "double": ia["double"], "double_affected": f"{k}/{n}",
+            "expected_double_pct": round(100 * expected, 1), "observed_double_pct": round(100 * k / n, 1),
+            "observed_vs_expected": "higher" if k / n > expected else "lower" if k / n < expected else "equal",
+            "p_binomial_two_sided": float(f"{p:.4g}"),
+            "p_bonferroni": float(f"{min(1.0, p * len(found)):.4g}"), "n_tests": len(found)})
     return tests

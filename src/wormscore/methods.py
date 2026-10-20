@@ -8,13 +8,54 @@ statistics. Facts wormscore cannot know (names, whether imaging was blind) come 
 import datetime as dt
 
 from . import __version__
+from . import config as C
 
 
 def _date(path):
     return dt.datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d") if path.exists() else "[date]"
 
 
-def statement(project, cfg, n_included, n_excluded, history, n_scored, tests):
+FORMULAS = {"product": "1 - (1 - P1)(1 - P2)", "additive": "P1 + P2 (at most 1)", "min": "the larger of P1 and P2"}
+
+
+def _or(items):
+    items = list(items)
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} or {items[-1]}"
+
+
+def outcome_sentences(cfg, outcome_tests):
+    labels = {q["id"]: q["label"] for q in cfg["scoring"]["neuron_questions"]}
+    out = []
+    for oc in cfg["unblinding"]["question_outcomes"]:
+        qs = " / ".join(f'"{labels[q]}"' for q in oc["questions"])
+        unclear = oc.get("unclear_answers", [])
+        n = sum(1 for t in outcome_tests if t["outcome"] == oc["name"])
+        out.append(
+            f"For {oc['name']}, a neuron was defective if the answer to {qs} was {_or(oc['defect_answers'])}; "
+            f"neurons called {_or(oc.get('not_visible_calls', ['missing']))} were not assessed"
+            + (f", and an answer of {_or(unclear)} left out the "
+               f"{'animal' if oc.get('unclear', 'exclude_neuron') == 'exclude_animal' else 'neuron'}" if unclear else "")
+            + ". An animal was defective if any assessed neuron was; animals with no assessed neuron were left "
+            f"out. Groups were compared by the same Fisher's exact tests (Bonferroni for {n} test{'s' if n != 1 else ''}).")
+    return out
+
+
+def interaction_sentence(cfg, interaction_tests):
+    ia = C.interaction(cfg)
+    if not ia:
+        return []
+    what = "share of affected animals" if ia["outcome"] == "calls" else f"share of animals with {ia['outcome']}"
+    pre = ("chosen before scoring and recorded in the project log" if interaction_tests
+           and all(t["set_before_scoring"] == "yes" for t in interaction_tests) else "[state when the model was chosen]")
+    return [f"Genetic interaction was tested with the {ia['model']} model (Mani et al. 2008, PNAS 105:3461), "
+            f"{pre}. The {what} expected in {ia['double']} was {FORMULAS[ia['model']]}, where P1 and P2 are the "
+            f"observed shares in {ia['single_a']} and {ia['single_b']}. The observed share was compared with this "
+            "value by a two-sided one-sample binomial test, only between animals imaged on the same microscope. "
+            "The expected value treats P1 and P2 as exact and ignores their sampling error."]
+
+
+def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
+              interaction_tests=()):
     b = cfg["blinding"]
     who = lambda k, default: b.get(k) or default
     mc, sc = cfg["measurement"], cfg["scoring"]
@@ -58,7 +99,8 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests):
         "least one affected neuron. "
         + (f"Each genotype was compared with {ref}" if ref else "Genotypes were compared pairwise")
         + " by two-sided Fisher's exact test, only between animals imaged on the same microscope, with "
-        f"Bonferroni correction for {len(tests)} test{'s' if len(tests) != 1 else ''}.",
+        f"Bonferroni correction for {len(tests)} test{'s' if len(tests) != 1 else ''}."
+        + "".join(" " + x for x in outcome_sentences(cfg, outcome_tests) + interaction_sentence(cfg, interaction_tests)),
         "",
         "## Who knew the genotype at each stage (ARRIVE 2.0 item 5)",
         "",

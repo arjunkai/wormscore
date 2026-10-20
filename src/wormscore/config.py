@@ -16,6 +16,8 @@ DEFAULTS = {
     # Folders of images. path = where the files are read from (ideally a read-only copy);
     # original_path = where they first came from, recorded in the key for traceability.
     # genotypes: first matching pattern (on the path relative to the source folder) wins.
+    # exclude (optional): [{"match": pattern, "reason": text}]; matching images are left out of
+    # the blind set and listed in outputs/excluded.csv with the reason.
     "sources": [],
 
     # Which channel is the reporter. Identified from metadata only, never guessed.
@@ -87,7 +89,17 @@ DEFAULTS = {
 
     # reference_genotype: the control that each other genotype is tested against (Fisher's
     # exact, within each microscope). Empty: every pair of genotypes is tested.
-    "unblinding": {"min_scored_worms": 30, "reference_genotype": ""},
+    # question_outcomes (optional): tables built from the per-neuron questions, for example
+    #   {"name": "process defect", "questions": ["q1", "q2"], "defect_answers": ["no"],
+    #    "unclear_answers": ["can't tell"], "unclear": "exclude_neuron", "not_visible_calls": ["missing"]}
+    # A neuron is defective if any listed question has a defect answer. Neurons whose call is in
+    # not_visible_calls are not assessed; animals with no assessed neuron are left out.
+    # unclear: "exclude_neuron" drops a neuron with an unclear answer, "exclude_animal" drops the animal.
+    # interaction (optional): {"single_a": genotype, "single_b": genotype, "double": genotype,
+    #   "model": "product" | "additive" | "min", "outcome": "calls" or a question_outcomes name}.
+    # Chosen before scoring; prepare records it in log.md and unblinding tests only that model.
+    "unblinding": {"min_scored_worms": 30, "reference_genotype": "", "question_outcomes": [],
+                   "interaction": {}},
 
     # Used only for the Methods text written at unblinding. Left empty, it says [name].
     # imager_knew_genotype: "yes", "no" or "" (unknown).
@@ -113,12 +125,67 @@ def load(project):
         return merge(DEFAULTS, json.load(fh))
 
 
-def genotype_for(source, rel_path):
+def matches(pattern, rel_path):
     rel = rel_path.replace("\\", "/")
+    return fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch(Path(rel).name, pattern)
+
+
+def genotype_for(source, rel_path):
     for rule in source.get("genotypes", []):
-        if fnmatch.fnmatch(rel, rule["match"]) or fnmatch.fnmatch(Path(rel).name, rule["match"]):
+        if matches(rule["match"], rel_path):
             return rule["genotype"]
     return source.get("default_genotype", "UNKNOWN")
+
+
+def exclude_rule_for(cfg, source_name, rel_path):
+    """The config exclude rule matching this image, or None."""
+    for src in cfg["sources"]:
+        if src.get("name") == source_name:
+            for rule in src.get("exclude", []):
+                if matches(rule["match"], rel_path):
+                    return rule
+    return None
+
+
+INTERACTION_MODELS = ("product", "additive", "min")
+
+
+def interaction(cfg):
+    """The interaction test settings with defaults filled in, or {} if none is configured."""
+    ia = cfg["unblinding"]["interaction"]
+    return {"model": "product", "outcome": "calls", **ia} if ia else {}
+
+
+def check(cfg):
+    """Stop with a plain message if the optional results settings do not fit the scoring setup."""
+    un, sc = cfg["unblinding"], cfg["scoring"]
+    questions = {q["id"]: q for q in sc["neuron_questions"]}
+    names = []
+    for oc in un["question_outcomes"]:
+        name = oc.get("name", "")
+        if not name or name in names or name == "calls":
+            raise SystemExit(f"question_outcomes: each entry needs a unique 'name' other than 'calls' (got {name!r}).")
+        names.append(name)
+        if not oc.get("questions") or not oc.get("defect_answers"):
+            raise SystemExit(f"question_outcomes '{name}': set 'questions' and 'defect_answers'.")
+        for qid in oc["questions"]:
+            if qid not in questions:
+                raise SystemExit(f"question_outcomes '{name}': no neuron question with id {qid!r} in scoring.neuron_questions.")
+            unknown = set(oc["defect_answers"]) | set(oc.get("unclear_answers", []))
+            unknown -= set(questions[qid]["options"])
+            if unknown:
+                raise SystemExit(f"question_outcomes '{name}': {sorted(unknown)} are not options of question {qid!r}.")
+        if oc.get("unclear", "exclude_neuron") not in ("exclude_neuron", "exclude_animal"):
+            raise SystemExit(f"question_outcomes '{name}': 'unclear' must be exclude_neuron or exclude_animal.")
+    ia = un["interaction"]
+    if ia:
+        for k in ("single_a", "single_b", "double"):
+            if not ia.get(k):
+                raise SystemExit(f"interaction: set '{k}' to a genotype name.")
+        if ia.get("model", "product") not in INTERACTION_MODELS:
+            raise SystemExit(f"interaction: model must be one of {', '.join(INTERACTION_MODELS)}.")
+        if ia.get("outcome", "calls") not in ["calls"] + names:
+            raise SystemExit("interaction: outcome must be 'calls' or a question_outcomes name.")
 
 
 def template(name="My project"):

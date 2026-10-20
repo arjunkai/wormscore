@@ -91,8 +91,10 @@ evidence that people struggle with it, and what wormscore does.
   ([Rodrigues et al. 2022, SAIBR](https://doi.org/10.1242/dev.200545)); wormscore does not measure or
   correct it.
 - **Limited statistics.** Since 0.2.0 it writes penetrance tables and Fisher's exact tests (within each
-  microscope, Bonferroni-corrected) and a per-neuron table for plotting. It does not fit models, compare
-  brightness statistically or make plots.
+  microscope, Bonferroni-corrected) and a per-neuron table for plotting; since 0.3.0 also the same tables
+  for yes/no questions (for example process defects) and a binomial test of a double mutant against a
+  pre-chosen interaction model. It does not fit regression models, account for uncertainty in the single
+  mutant estimates, compare brightness statistically or make plots.
 - **No automatic segmentation at scale.** Suggested cells come from a simple local-maximum rule. For
   many cells, use Cellpose, StarDist, ilastik, CellProfiler or QuPath.
 - **No neuron identification.** You must know which cell is which. For whole-brain identification use

@@ -35,7 +35,9 @@ If not exactly one channel matches, the marker is UNRESOLVED and the image is ex
 Decided before scoring and applied without regard to genotype. An image is used if its marker channel
 was identified, its objective is at least `min_objective_magnification` (when the metadata names one),
 it has no more than `max_time_points`, and its z-stack covers at least `min_z_extent_um`
-((planes - 1) x step). An image is never excluded for having no fluorescent signal: a missing cell is
+((planes - 1) x step). Images can also be left out by file name with a per-source `exclude` rule
+(`{"match": pattern, "reason": text}`), for example a plate found to carry a different reporter; the
+reason is written to `excluded.csv`. Such rules should be set before scoring. An image is never excluded for having no fluorescent signal: a missing cell is
 a result. Images taken at the same stage position in the same file are treated as the same animal
 imaged again; only one is counted (by default the one with more planes; the scorer can change this
 while still blind).
@@ -115,6 +117,31 @@ Results tables use counted, usable images only, with the animal as the unit (one
   are run only between genotypes imaged on the same microscope, because calls made on different
   microscopes are not interchangeable. p-values are Bonferroni-corrected for the number of tests in the
   file. Other tests (for example per neuron) can be run from `per_neuron.csv`; correct them too.
+- `question_outcomes.csv` and `question_outcome_tests.csv` (only if `unblinding.question_outcomes` is
+  set): the same penetrance and Fisher's exact tables, built from the per-neuron questions instead of the
+  calls. For each outcome the config names the questions, the answers that count as a defect (for
+  example `no`) and the answers that count as unclear (for example `can't tell`). A neuron is defective
+  if any listed question has a defect answer. A neuron whose call is in `not_visible_calls` (default
+  `missing`) is not assessed, because its processes cannot be judged. An unclear answer leaves out that
+  neuron (`"unclear": "exclude_neuron"`, the default) or the whole animal (`"exclude_animal"`). An
+  animal is defective if any assessed neuron is defective; animals with no assessed neuron are left out
+  and counted in their own columns, as are animals with a question left unanswered. `per_neuron.csv`
+  gets one column per outcome with each neuron's state.
+- `interaction_test.csv` (only if `unblinding.interaction` is set): a test of genetic interaction
+  between two single mutants (P1, P2 = share of affected animals) and their double. The expected share
+  in the double comes from one model, chosen before scoring (Mani et al. 2008, PNAS 105:3461, applied to
+  the share of unaffected animals): `product` (default) 1 - (1 - P1)(1 - P2), the share expected if the
+  two genes act independently; `additive` P1 + P2 (at most 1); `min` the larger of P1 and P2. The
+  observed count in the double is compared with the expected share by a two-sided one-sample binomial
+  test (`scipy.stats.binomtest`), only within a microscope where all three genotypes were scored
+  (Bonferroni if more than one). A double above the expected share is consistent with the genes acting
+  redundantly; this is a statistical statement, not proof of mechanism. The expected value treats P1
+  and P2 as exact and ignores their sampling error, so the test is anti-conservative when the single
+  mutant groups are small. `outcome` chooses the calls (default) or a `question_outcomes` name.
+  To stop anyone trying all three models after seeing results, `prepare` writes the interaction
+  settings to `log.md`, and unblinding runs the test only if the settings match the last ones recorded
+  before the first score was saved. If they changed, the test is not run and the file says why; if
+  they were never recorded before scoring, the test runs but is marked `set_before_scoring = NO`.
 - `methods_text.md`: a draft Methods paragraph built from the project files: inclusion counts, the date
   codes were assigned (date of `key/seed.txt`), the scoring dates (`scoring/score_history.csv`), the
   unblinding date, measurement parameters and the tests run, plus a table of who knew the genotype at

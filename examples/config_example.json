@@ -7,7 +7,11 @@
       "original_path": "C:/Users/me/OneDrive/microscope exports",
       "genotypes": [
         {"match": "*control*", "genotype": "reporter only (control)"},
+        {"match": "*single_b*", "genotype": "gene-b; reporter"},
         {"match": "*double*", "genotype": "gene-a; gene-b; reporter"}
+      ],
+      "exclude": [
+        {"match": "*other_marker*", "reason": "plate carries a different reporter"}
       ]
     },
     {
@@ -54,6 +58,16 @@
       "Score each neuron separately. The animal is the unit for statistics."
     ]
   },
-  "unblinding": {"min_scored_worms": 30, "reference_genotype": "reporter only (control)"},
+  "unblinding": {
+    "min_scored_worms": 30,
+    "reference_genotype": "reporter only (control)",
+    "question_outcomes": [
+      {"name": "process defect", "questions": ["dendrite_to_nose", "axon_to_nerve_ring"],
+       "defect_answers": ["no"], "unclear_answers": ["can't tell"], "unclear": "exclude_neuron",
+       "not_visible_calls": ["missing"]}
+    ],
+    "interaction": {"single_a": "gene-a; reporter", "single_b": "gene-b; reporter",
+                    "double": "gene-a; gene-b; reporter", "model": "product", "outcome": "calls"}
+  },
   "blinding": {"coded_by": "A. Researcher", "scored_by": "A. Researcher", "imager_knew_genotype": "yes"}
 }

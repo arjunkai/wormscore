@@ -12,7 +12,7 @@ from statistics import median
 
 from . import config as C
 from . import methods, stats
-from .pipeline import append_log, read_csv, write_csv
+from .pipeline import INTERACTION_LOG, append_log, read_csv, write_csv
 
 
 def stack_shapes(rows):
@@ -23,12 +23,26 @@ def stack_shapes(rows):
     return shapes
 
 
+def recorded_interaction(project, first_score):
+    """The interaction settings last written to log.md before the first score was saved
+    (any time, if nothing is scored), or None if never recorded."""
+    log_path = project / "log.md"
+    rec, ts = None, ""
+    for line in (log_path.read_text(encoding="utf-8").splitlines() if log_path.exists() else []):
+        if line.startswith("## "):
+            ts = line[3:19]
+        elif line.startswith("- " + INTERACTION_LOG) and (not first_score or ts <= first_score[:16]):
+            rec = line[2 + len(INTERACTION_LOG):]
+    return rec
+
+
 def unblind(project, finished=False, anyway=False, log=print):
     project = Path(project)
     if not finished:
         raise SystemExit("Unblinding reveals genotypes. Confirm you have finished scoring "
                          "(--i-have-finished-scoring, or the checkbox in the launcher).")
     cfg = C.load(project)
+    C.check(cfg)
     sc = cfg["scoring"]
     opt = lambda p: read_csv(p) if p.exists() else []
     scores = {r["code"]: r for r in opt(project / "scoring" / "scores.csv")}
@@ -115,14 +129,63 @@ def unblind(project, finished=False, anyway=False, log=print):
     if not tests:
         lines.append("  none (need two genotypes with scored animals on the same microscope)")
 
+    ref = cfg["unblinding"]["reference_genotype"]
+    outcome_rows, outcome_tests, by_outcome = [], [], {"calls": pen}
+    for oc in cfg["unblinding"]["question_outcomes"]:
+        t = stats.outcome_table(counted, cfg, oc)
+        by_outcome[oc["name"]] = t
+        outcome_rows += t
+        outcome_tests += [{"outcome": oc["name"], **x} for x in stats.fisher_tests(t, ref)]
+        lines.append("")
+        lines.append(f"{oc['name']} (from the per-neuron questions; outputs/unblinded/question_outcomes.csv):")
+        for p in t:
+            lines.append(f"  {p['system']} | {p['genotype']}: {p['animals_any_affected']}/{p['animals']} "
+                         f"({p['penetrance_pct']}%); left out: {p['left_out_no_visible_neuron']} no visible "
+                         f"neuron, {p['left_out_unclear']} unclear, {p['animals_incomplete']} incomplete")
+        for x in outcome_tests:
+            if x["outcome"] == oc["name"]:
+                lines.append(f"  Fisher: {x['system']} | {x['genotype_a']} {x['a_affected']} vs {x['genotype_b']} "
+                             f"{x['b_affected']}: p = {x['p_fisher_two_sided']}, corrected p = {x['p_bonferroni']}")
+
+    history = opt(project / "scoring" / "score_history.csv")
+    ia, itests, inote = C.interaction(cfg), [], ""
+    if ia:
+        first = min((r["saved"] for r in history if r.get("saved")), default="")
+        rec = recorded_interaction(project, first)
+        lines.append("")
+        lines.append(f"Genetic interaction ({ia['model']} model, outcome: {ia['outcome']}; "
+                     "outputs/unblinded/interaction_test.csv):")
+        if rec is not None and rec != json.dumps(ia, sort_keys=True):
+            inote = ("NOT RUN: the interaction settings differ from those recorded in log.md before scoring "
+                     f"began ({rec}). Restore them to run the planned test.")
+            lines.append("  " + inote)
+        else:
+            itests = [{**t, "set_before_scoring": "yes" if rec else "NO (not in log.md before scoring)"}
+                      for t in stats.interaction_tests(by_outcome[ia["outcome"]], ia)]
+            for t in itests:
+                lines.append(f"  {t['system']}: {t['single_a']} {t['single_a_affected']}, {t['single_b']} "
+                             f"{t['single_b_affected']}; expected double {t['expected_double_pct']}%, observed "
+                             f"{t['double_affected']} ({t['observed_double_pct']}%), {t['observed_vs_expected']}; "
+                             f"binomial p = {t['p_binomial_two_sided']}, corrected p = {t['p_bonferroni']}")
+            if not itests:
+                inote = "none (need all three genotypes with assessed animals on the same microscope)"
+                lines.append("  " + inote)
+            if rec is None:
+                lines.append("  WARNING: these settings were not recorded in log.md before scoring began.")
+
     write_csv(out / "per_neuron.csv", stats.per_neuron_rows(counted, cfg) or [{"note": "no usable counted images"}])
     write_csv(out / "penetrance.csv", pen or [{"note": "no usable counted images"}])
     write_csv(out / "fisher_tests.csv", tests or [{"note": "no comparison possible"}])
     write_csv(out / "summary_by_genotype.csv", summary or [{"note": "no usable counted images"}])
+    if cfg["unblinding"]["question_outcomes"]:
+        write_csv(out / "question_outcomes.csv", outcome_rows or [{"note": "no usable counted images"}])
+        write_csv(out / "question_outcome_tests.csv", outcome_tests or [{"note": "no comparison possible"}])
+    if ia:
+        write_csv(out / "interaction_test.csv", itests or [{"note": inote}])
     excluded = [r for r in opt(project / "outputs" / "excluded.csv") if r.get("local_path")]
     (out / "methods_text.md").write_text(methods.statement(
-        project, cfg, len(key), len(excluded), opt(project / "scoring" / "score_history.csv"),
-        len(scores), tests), encoding="utf-8")
+        project, cfg, len(key), len(excluded), history, len(scores), tests,
+        outcome_tests=outcome_tests, interaction_tests=itests), encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [
         f"{len(scores)} images scored at unblinding" + (" (below the planned minimum; override used)" if len(scores) < need else ""),

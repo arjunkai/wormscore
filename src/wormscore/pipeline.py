@@ -143,6 +143,9 @@ def load_images(project):
 def include_reason(img, cfg):
     """'' if the image passes the inclusion rules, otherwise why it fails."""
     inc = cfg["inclusion"]
+    rule = C.exclude_rule_for(cfg, img["source"], img["relative_path"])
+    if rule:
+        return f"excluded by config rule '{rule['match']}': {rule.get('reason') or 'no reason given'}"
     if img["marker_channel"] is None:
         return f"{cfg['marker']['label']} channel could not be identified from metadata"
     mag = re.search(r"(\d+)x", img["objective"] or "")
@@ -206,6 +209,15 @@ def assign_codes(project, images, reassign):
         images[k]["code"] = f"W{n:0{width}d}"
 
 
+INTERACTION_LOG = "Interaction test set before scoring: "
+
+
+def interaction_log_lines(cfg):
+    """The interaction test, recorded so unblinding can check it was chosen before scoring."""
+    ia = C.interaction(cfg)
+    return [INTERACTION_LOG + json.dumps(ia, sort_keys=True)] if ia else []
+
+
 def saturation_for(img, cfg):
     return cfg["saturation_value"].get(img["system"], 2 ** img["bits"] - 1)
 
@@ -213,6 +225,7 @@ def saturation_for(img, cfg):
 def prepare(project, reassign=False, log=print):
     project = Path(project)
     cfg = C.load(project)
+    C.check(cfg)
     images, excluded = [], []
     for img in load_images(project):
         reason = include_reason(img, cfg)
@@ -358,6 +371,6 @@ def prepare(project, reassign=False, log=print):
         "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
         f"Settings groups: {len(letters)} (key/settings_groups.csv).",
         f"Display ranges: {json.dumps(ranges)}",
-    ], cfg)
+    ] + interaction_log_lines(cfg), cfg)
     log(f"{len(images)} images in blind/ {per_system}; {len(excluded)} excluded.")
     return ranges
