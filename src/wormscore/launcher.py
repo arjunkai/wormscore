@@ -28,6 +28,7 @@ class Launcher(tk.Tk):
         self.server = None
         self.busy = False
         self._build()
+        self._status()
         self.after(100, self._drain)
         self.protocol("WM_DELETE_WINDOW", self._close)
 
@@ -116,11 +117,26 @@ class Launcher(tk.Tk):
         threading.Thread(target=work, daemon=True).start()
 
     # -------------------------------------------------------------- actions
+    def _status(self):
+        """Say which steps are already done, so nobody reruns a long step by accident."""
+        p = Path(self.project.get())
+        if not (p / "config.json").exists():
+            return
+        done = []
+        if (p / "outputs" / "inventory.csv").exists():
+            done.append("1")
+        if (p / "key" / "key.csv").exists() and (p / "blind").is_dir():
+            done.append("2")
+        if done:
+            self.say(f"Project: {p}. Already done: step {' and '.join(done)}."
+                     + (" Go to 3. Score." if "2" in done else ""))
+
     def _choose(self):
         d = filedialog.askdirectory(title="Choose a project folder")
         if d:
             self.project.set(d)
             self._remember()
+            self._status()
 
     def _new(self):
         d = filedialog.askdirectory(title="Choose an empty folder for the new project")
@@ -158,15 +174,34 @@ class Launcher(tk.Tk):
             return
         from .pipeline import prepare
         reassign = False
-        if (p / "key" / "key.csv").exists() and not ((p / "scoring").exists() and any((p / "scoring").iterdir())):
-            reassign = messagebox.askyesno(
-                "wormscore", "A blind set already exists and nothing has been scored.\n\n"
-                "Yes: assign new codes (needed if images were added or removed).\nNo: keep the current codes.")
+        if (p / "key" / "key.csv").exists():
+            scored = (p / "scoring").exists() and any((p / "scoring").iterdir())
+            if scored:
+                if not messagebox.askokcancel(
+                        "wormscore", "A blind set already exists and scoring has started.\n\n"
+                        "Rebuilding keeps the same codes and takes a while. You only need it if settings "
+                        "changed. Do not score while it runs.\n\nRebuild anyway?"):
+                    return
+            else:
+                answer = messagebox.askyesnocancel(
+                    "wormscore", "A blind set already exists, so you can go straight to 3. Score.\n\n"
+                    "Rebuilding takes a while; only do it if images or settings changed. "
+                    "Do not score while it runs.\n\n"
+                    "Yes: rebuild with NEW codes (only if images were added or removed).\n"
+                    "No: rebuild keeping the current codes.\n"
+                    "Cancel: do nothing.")
+                if answer is None:
+                    return
+                reassign = answer
         self._run("build blind set", lambda: prepare(p, reassign=reassign, log=self.say))
 
     def _app(self):
         p = self._need_project()
         if not p:
+            return
+        if self.busy:
+            messagebox.showinfo("wormscore", "A step is still running. Wait until the log says it is done, "
+                                "then open the scoring app.")
             return
         if self.server is not None:
             webbrowser.open(self.server_url)
