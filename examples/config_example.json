@@ -54,5 +54,6 @@
       "Score each neuron separately. The animal is the unit for statistics."
     ]
   },
-  "unblinding": {"min_scored_worms": 30}
+  "unblinding": {"min_scored_worms": 30, "reference_genotype": "reporter only (control)"},
+  "blinding": {"coded_by": "A. Researcher", "scored_by": "A. Researcher", "imager_knew_genotype": "yes"}
 }

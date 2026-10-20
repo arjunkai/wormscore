@@ -112,3 +112,6 @@ def test_unblind_locks_and_traceability(app):
     for name in ("per_neuron.csv", "penetrance.csv", "fisher_tests.csv"):
         assert (out / name).exists()
     assert len(read_csv(out / "per_neuron.csv")) == 2     # one counted animal x two neurons
+    text = (out / "methods_text.md").read_text(encoding="utf-8")
+    assert "[name]" in text and "after 1 image had been scored" in text and "Fisher's exact" in text
+    assert "—" not in text

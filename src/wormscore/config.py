@@ -88,6 +88,10 @@ DEFAULTS = {
     # reference_genotype: the control that each other genotype is tested against (Fisher's
     # exact, within each microscope). Empty: every pair of genotypes is tested.
     "unblinding": {"min_scored_worms": 30, "reference_genotype": ""},
+
+    # Used only for the Methods text written at unblinding. Left empty, it says [name].
+    # imager_knew_genotype: "yes", "no" or "" (unknown).
+    "blinding": {"coded_by": "", "scored_by": "", "imager_knew_genotype": ""},
 }
 
 

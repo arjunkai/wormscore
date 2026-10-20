@@ -11,7 +11,7 @@ from pathlib import Path
 from statistics import median
 
 from . import config as C
-from . import stats
+from . import methods, stats
 from .pipeline import append_log, read_csv, write_csv
 
 
@@ -119,11 +119,15 @@ def unblind(project, finished=False, anyway=False, log=print):
     write_csv(out / "penetrance.csv", pen or [{"note": "no usable counted images"}])
     write_csv(out / "fisher_tests.csv", tests or [{"note": "no comparison possible"}])
     write_csv(out / "summary_by_genotype.csv", summary or [{"note": "no usable counted images"}])
+    excluded = [r for r in opt(project / "outputs" / "excluded.csv") if r.get("local_path")]
+    (out / "methods_text.md").write_text(methods.statement(
+        project, cfg, len(key), len(excluded), opt(project / "scoring" / "score_history.csv"),
+        len(scores), tests), encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [
         f"{len(scores)} images scored at unblinding" + (" (below the planned minimum; override used)" if len(scores) < need else ""),
         "Merged table: outputs/unblinded/merged.csv; summary: outputs/unblinded/summary.txt; "
-        "results tables: per_neuron.csv, penetrance.csv, fisher_tests.csv",
+        "results tables: per_neuron.csv, penetrance.csv, fisher_tests.csv; draft Methods text: methods_text.md",
     ])
     for line in lines:
         log(line)

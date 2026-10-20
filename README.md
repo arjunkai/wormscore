@@ -65,6 +65,8 @@ In the launcher window the same steps are buttons: **Demo... > 1. Scan data > 2.
    tables: `per_neuron.csv` (one row per animal and neuron, for plotting), `penetrance.csv` (animals with
    0, 1, 2 ... affected neurons) and `fisher_tests.csv` (Fisher's exact within each microscope,
    Bonferroni-corrected). Set `unblinding.reference_genotype` in `config.json` to test against a control.
+   `methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
+   `blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
 
 ## Project folder
 

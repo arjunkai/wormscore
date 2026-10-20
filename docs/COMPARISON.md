@@ -78,18 +78,21 @@ evidence that people struggle with it, and what wormscore does.
   a chosen share of images to check consistency (sources above). wormscore has neither hidden repeats nor a
   second-scorer mode, and computes no kappa. Kappa below 0.60 is considered inadequate
   ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)).
-- **Max projections.** Two of its measures (`mean_mip`, background on the projection) use the
-  maximum-intensity projection. Max projections "shouldn't be used for intensity quantification"
-  according to [Culley et al., "Made to measure" (preprint)](https://arxiv.org/abs/2302.01657), and image.sc replies say the
-  same ([image.sc 83431](https://forum.image.sc/t/use-avg-intensity-or-max-intensity-for-data-analysis/83431)).
-  wormscore also reports the sharpest single plane, but has no sum or 3D measure yet.
+- **Max projections in some measures.** `mean_mip` and `peak_filtered` use the maximum-intensity
+  projection, which "shouldn't be used for intensity quantification" according to
+  [Culley et al., "Made to measure" (preprint)](https://arxiv.org/abs/2302.01657) (also
+  [image.sc 83431](https://forum.image.sc/t/use-avg-intensity-or-max-intensity-for-data-analysis/83431)).
+  Since 0.2.0 wormscore also reports `stack_sum_minus_bg`, a background-subtracted sum over all planes,
+  and the sharpest-plane mean; it has no full 3D segmentation.
 - **No session correction.** No flat-field or reference-slide correction between imaging days, which
   [Waters 2009](https://doi.org/10.1083/jcb.200903097) recommends collecting "at each imaging session".
   wormscore only keeps groups apart.
 - **No autofluorescence check.** Gut autofluorescence overlaps GFP
   ([Rodrigues et al. 2022, SAIBR](https://doi.org/10.1242/dev.200545)); wormscore does not measure or
   correct it.
-- **No statistics output.** It writes a merged table but no penetrance table or Fisher's exact test.
+- **Limited statistics.** Since 0.2.0 it writes penetrance tables and Fisher's exact tests (within each
+  microscope, Bonferroni-corrected) and a per-neuron table for plotting. It does not fit models, compare
+  brightness statistically or make plots.
 - **No automatic segmentation at scale.** Suggested cells come from a simple local-maximum rule. For
   many cells, use Cellpose, StarDist, ilastik, CellProfiler or QuPath.
 - **No neuron identification.** You must know which cell is which. For whole-brain identification use

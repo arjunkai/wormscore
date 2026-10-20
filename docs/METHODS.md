@@ -115,6 +115,12 @@ Results tables use counted, usable images only, with the animal as the unit (one
   are run only between genotypes imaged on the same microscope, because calls made on different
   microscopes are not interchangeable. p-values are Bonferroni-corrected for the number of tests in the
   file. Other tests (for example per neuron) can be run from `per_neuron.csv`; correct them too.
+- `methods_text.md`: a draft Methods paragraph built from the project files: inclusion counts, the date
+  codes were assigned (date of `key/seed.txt`), the scoring dates (`scoring/score_history.csv`), the
+  unblinding date, measurement parameters and the tests run, plus a table of who knew the genotype at
+  each stage (ARRIVE 2.0 item 5). Names and whether imaging was blind come from the `blinding` section
+  of `config.json` (`coded_by`, `scored_by`, `imager_knew_genotype`); anything not set is left in
+  [brackets] to fill in. Check every sentence before use.
 
 ## Limits to state
 
