@@ -56,6 +56,13 @@ def test_inclusion_rules_exclude_with_reason(fresh_project):
     assert rows and all("z-stack covers" in r["reason"] for r in rows)
 
 
+def test_missing_source_folder_is_reported(tmp_path):
+    from wormscore.pipeline import inventory
+    (tmp_path / "config.json").write_text(json.dumps({"sources": [{"name": "x", "path": str(tmp_path / "nope")}]}))
+    with pytest.raises(SystemExit, match="Source folder not found"):
+        inventory(tmp_path, log=lambda *a: None)
+
+
 def test_log_records_parameters(demo_project):
     log = (demo_project / "log.md").read_text(encoding="utf-8")
     assert "median_filter_px" in log and "Software:" in log

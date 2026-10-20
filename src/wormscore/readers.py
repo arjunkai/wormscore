@@ -276,6 +276,9 @@ def scan(cfg, log=print):
     manifest, images = [], []
     for src in cfg["sources"]:
         root = Path(src["path"])
+        if not root.is_dir():
+            raise SystemExit(f"Source folder not found: {root}\nFix 'path' for source "
+                             f"'{src.get('name', root)}' in config.json.")
         original = Path(src.get("original_path") or src["path"])
         files = sorted(p for p in root.rglob("*") if p.is_file())
         log(f"Scanning {root} ({len(files)} files)")

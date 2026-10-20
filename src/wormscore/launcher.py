@@ -224,9 +224,18 @@ class Launcher(tk.Tk):
         if not self.finished.get():
             messagebox.showinfo("wormscore", "Tick 'I have finished scoring' first. Unblinding reveals genotypes.")
             return
+        from . import config as C
         from .unblind import unblind
-        anyway = messagebox.askyesno("wormscore", "Unblind even if fewer images are scored than the project plan says?"
-                                     "\n\n(Choosing Yes is recorded in log.md.)")
+        scores = p / "scoring" / "scores.json"
+        n = len(json.loads(scores.read_text(encoding="utf-8"))) if scores.exists() else 0
+        need = C.load(p)["unblinding"]["min_scored_worms"]
+        anyway = False
+        if n < need:
+            anyway = messagebox.askyesno(
+                "wormscore", f"Only {n} images are scored; the project plan says at least {need}.\n\n"
+                "Unblind anyway? (Choosing Yes is recorded in log.md.)")
+            if not anyway:
+                return
         self._run("unblind", lambda: unblind(p, finished=True, anyway=anyway, log=self.say))
 
     def _open_folder(self):
