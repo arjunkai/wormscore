@@ -1,0 +1,41 @@
+# Never commit image data, keys or scores. This repository holds code only.
+*.lif
+*.lof
+*.xlef
+*.xlif
+*.czi
+*.tif
+*.tiff
+*.ome
+*.nd2
+*.oib
+*.oir
+*.ims
+*.npy
+*.npz
+blind/
+key/
+scoring/
+outputs/
+raw_copies/
+projects/
+demo_project/
+
+# Python and build output
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+venv/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+._*
+Thumbs.db
+desktop.ini
+.playwright-mcp/

@@ -1,0 +1,369 @@
+"""The two batch steps: inventory (what is there) and prepare (blind set + measurements).
+
+inventory -> outputs/manifest.csv   every file in every source folder, with its role
+          -> outputs/inventory.csv  one row per raw image: metadata, channel identity, flags
+prepare   -> blind/<code>/          images for scoring, named only by code
+          -> key/key.csv            code -> paths, location in file, checksum, genotype, settings
+          -> outputs/excluded.csv, outputs/auto_measurements.csv, outputs/display_ranges.csv
+Both append what they did, with every parameter, to log.md.
+"""
+import csv
+import datetime as dt
+import json
+import random
+import re
+import secrets
+import shutil
+import sys
+from collections import Counter
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+from . import __version__
+from . import config as C
+from . import measure as M
+from . import readers as R
+
+INVENTORY_FIELDS = [
+    "source", "genotype", "system", "format", "file", "location_in_file", "relative_path",
+    "local_path", "original_path", "file_sha256", "objective", "n_z", "n_t", "width", "height", "pixel_um",
+    "z_step_um", "bits", "channel_names", "channel_roles", "marker_channel", "bf_channel", "settings", "zoom",
+    "acquired", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes",
+]
+
+
+def now():
+    return dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+def write_csv(path, rows, fields=None):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = fields or list(dict.fromkeys(k for r in rows for k in r))
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+
+
+def read_csv(path):
+    with open(path, encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
+def append_log(project, title, lines, cfg=None):
+    with open(Path(project) / "log.md", "a", encoding="utf-8") as fh:
+        fh.write(f"\n## {now()} {title}\n")
+        for line in lines:
+            fh.write(f"- {line}\n")
+        if cfg is not None:
+            fh.write("- Parameters (merged config.json at the time of this run):\n\n```json\n")
+            fh.write(json.dumps(cfg, indent=2))
+            fh.write("\n```\n")
+
+
+def software_versions():
+    import czifile, PIL, readlif, scipy, tifffile  # noqa: E401
+    import importlib.metadata as md
+    v = {"wormscore": __version__, "python": sys.version.split()[0], "numpy": np.__version__,
+         "scipy": scipy.__version__, "pillow": PIL.__version__, "tifffile": tifffile.__version__}
+    for name in ("readlif", "czifile"):
+        try:
+            v[name] = md.version(name)
+        except md.PackageNotFoundError:
+            v[name] = "unknown"
+    return v
+
+
+# ------------------------------------------------------------------ inventory
+
+def inventory(project, log=print):
+    project = Path(project)
+    cfg = C.load(project)
+    manifest, images = R.scan(cfg, log=log)
+    rows = []
+    for img in images:
+        roles = img["channel_roles"]
+        mi, bi = R.pick(roles, "MARKER"), R.pick(roles, "BF")
+        flags = list(img["flags"])
+        if mi is None:
+            flags.append(f"{cfg['marker']['label']} channel UNRESOLVED")
+        if bi is None:
+            flags.append("no brightfield channel identified")
+        rk = img["_reader"]
+        rows.append({**{k: img.get(k, "") for k in INVENTORY_FIELDS},
+                     "channel_names": "/".join(img["channel_names"]), "channel_roles": "/".join(roles),
+                     "marker_channel": "" if mi is None else mi, "bf_channel": "" if bi is None else bi,
+                     "stage_x": "" if img["stage_x"] is None else round(img["stage_x"], 2),
+                     "stage_y": "" if img["stage_y"] is None else round(img["stage_y"], 2),
+                     "flags": flags, "reader_kind": rk[0], "reader_index": rk[2],
+                     "reader_axes": rk[3] if len(rk) > 3 else ""})
+    # Settings that differ from the most common value on the same microscope.
+    for system in {r["system"] for r in rows}:
+        same = [r for r in rows if r["system"] == system]
+        for key in ("objective", "settings", "bits", "pixel_um"):
+            mode = Counter(str(r[key]) for r in same).most_common(1)[0][0]
+            for r in same:
+                if str(r[key]) != mode:
+                    r["flags"].append(f"{key} differs from most images on this microscope")
+    for r in rows:
+        r["flags"] = "; ".join(r["flags"])
+    write_csv(project / "outputs" / "manifest.csv", manifest)
+    write_csv(project / "outputs" / "inventory.csv", rows, INVENTORY_FIELDS)
+    roles = Counter(m["role"] for m in manifest)
+    append_log(project, "inventory", [
+        f"Software: {json.dumps(software_versions())}",
+        f"{len(manifest)} files scanned; roles: {dict(roles)}",
+        f"{len(rows)} raw images listed in outputs/inventory.csv; "
+        f"{sum(1 for r in rows if r['flags'])} with flags",
+        "Channel rule: marker = channel whose metadata matches the configured excitation line, emission "
+        "band, dye or channel name (and Leica LUT, if set); brightfield = transmitted-light channel. "
+        "Otherwise UNRESOLVED.",
+    ])
+    log(f"{len(manifest)} files, {len(rows)} raw images. See outputs/manifest.csv and outputs/inventory.csv.")
+    return rows
+
+
+# ------------------------------------------------------------------ prepare
+
+def load_images(project):
+    """Image records from inventory.csv, ready for reading."""
+    out = []
+    for r in read_csv(Path(project) / "outputs" / "inventory.csv"):
+        img = dict(r)
+        for k in ("n_z", "n_t", "width", "height", "bits"):
+            img[k] = int(r[k])
+        for k in ("pixel_um", "z_step_um"):
+            img[k] = float(r[k] or 0)
+        for k in ("stage_x", "stage_y"):
+            img[k] = float(r[k]) if r[k] != "" else None
+        for k in ("marker_channel", "bf_channel"):
+            img[k] = int(r[k]) if r[k] != "" else None
+        img["channel_roles"] = r["channel_roles"].split("/")
+        img["_reader"] = (r["reader_kind"], r["local_path"], int(r["reader_index"]), r["reader_axes"])
+        out.append(img)
+    return out
+
+
+def include_reason(img, cfg):
+    """'' if the image passes the inclusion rules, otherwise why it fails."""
+    inc = cfg["inclusion"]
+    if img["marker_channel"] is None:
+        return f"{cfg['marker']['label']} channel could not be identified from metadata"
+    mag = re.search(r"(\d+)x", img["objective"] or "")
+    if mag and int(mag.group(1)) < inc["min_objective_magnification"]:
+        return f"objective is {img['objective']} (minimum {inc['min_objective_magnification']}x)"
+    if img["n_t"] > inc["max_time_points"]:
+        return f"time series ({img['n_t']} time points)"
+    extent = (img["n_z"] - 1) * img["z_step_um"]
+    if extent < inc["min_z_extent_um"]:
+        return f"z-stack covers {extent:.1f} um ({img['n_z']} planes; minimum {inc['min_z_extent_um']} um)"
+    return ""
+
+
+def same_field_groups(images, tol_um):
+    """Images in the same file at the same stage position are the same field imaged again.
+    Images without a stage position each get their own group."""
+    groups, next_id = {}, 1
+    for s in images:
+        for t in images:
+            if t is s or id(t) not in groups or s["stage_x"] is None or t["stage_x"] is None:
+                continue
+            if t["local_path"] == s["local_path"] and abs(t["stage_x"] - s["stage_x"]) <= tol_um \
+                    and abs(t["stage_y"] - s["stage_y"]) <= tol_um:
+                groups[id(s)] = groups[id(t)]
+                break
+        else:
+            groups[id(s)] = next_id
+            next_id += 1
+    return groups
+
+
+def assign_codes(project, images, reassign):
+    """Random codes. An existing key is reused so codes never change while scoring."""
+    key_dir = project / "key"
+    key_dir.mkdir(exist_ok=True)
+    key_path = key_dir / "key.csv"
+    ident = lambda s: (s["local_path"], s["location_in_file"])
+    if key_path.exists() and not reassign:
+        old = {(r["local_path"], r["location_in_file"]): r["code"] for r in read_csv(key_path)}
+        if set(old) != {ident(s) for s in images}:
+            raise SystemExit("The included images differ from the existing key, so codes would change.\n"
+                             "If nothing has been scored yet, run prepare again with --reassign-codes.")
+        for s in images:
+            s["code"] = old[ident(s)]
+        return
+    scoring = project / "scoring"
+    if reassign and scoring.exists() and any(scoring.iterdir()):
+        raise SystemExit("scoring/ already has saved scores. Refusing to reassign codes.")
+    if key_path.exists():
+        old_dir = key_dir / f"superseded_{dt.datetime.now():%Y%m%d_%H%M%S}"
+        old_dir.mkdir()
+        for f in ("key.csv", "seed.txt", "settings_groups.csv"):
+            if (key_dir / f).exists():
+                (key_dir / f).rename(old_dir / f)
+    seed = secrets.randbits(32)
+    (key_dir / "seed.txt").write_text(f"{seed}\n")
+    order = list(range(len(images)))
+    random.Random(seed).shuffle(order)
+    width = max(4, len(str(len(images))))
+    for n, k in enumerate(order, start=1):
+        images[k]["code"] = f"W{n:0{width}d}"
+
+
+def saturation_for(img, cfg):
+    return cfg["saturation_value"].get(img["system"], 2 ** img["bits"] - 1)
+
+
+def prepare(project, reassign=False, log=print):
+    project = Path(project)
+    cfg = C.load(project)
+    images, excluded = [], []
+    for img in load_images(project):
+        reason = include_reason(img, cfg)
+        if reason:
+            excluded.append({k: img[k] for k in ("system", "genotype", "original_path", "local_path",
+                                                  "location_in_file")} | {"reason": reason})
+        else:
+            images.append(img)
+    write_csv(project / "outputs" / "excluded.csv", excluded or [{"reason": "none excluded"}])
+    if not images:
+        raise SystemExit("No images passed the inclusion rules. See outputs/excluded.csv.")
+
+    groups = same_field_groups(images, cfg["inclusion"]["same_field_tolerance_um"])
+    for s in images:
+        s["field_group"] = groups[id(s)]
+    for g in set(groups.values()):
+        members = [s for s in images if s["field_group"] == g]
+        primary = max(members, key=lambda s: (s["n_z"], s["location_in_file"]))
+        for s in members:
+            s["counted_by_default"] = s is primary
+
+    combos = sorted({(s["system"], s["settings"]) for s in images})
+    letters = {c: (chr(ord("A") + i) if i < 26 else f"G{i}") for i, c in enumerate(combos)}
+    assign_codes(project, images, reassign)
+    by_field = {}
+    for s in images:
+        by_field.setdefault(s["field_group"], []).append(s["code"])
+
+    blind = project / "blind"
+    if blind.exists():
+        shutil.rmtree(blind)
+    blind.mkdir()
+    mc = cfg["measurement"]
+    auto_rows, key_rows, stats, pending = [], [], {}, []
+    for n, s in enumerate(sorted(images, key=lambda s: s["code"]), start=1):
+        code, d = s["code"], blind / s["code"]
+        (d / "planes").mkdir(parents=True)
+        sat = saturation_for(s, cfg)
+        raw = R.read(s, s["marker_channel"])
+        px = s["pixel_um"]
+        filt = M.median_filter_stack(raw, mc["median_filter_px"])
+        mip, mip_f = raw.max(0), filt.max(0)
+        stats.setdefault(s["system"], []).append((float(np.median(mip)), float(np.percentile(mip, 99.9))))
+
+        for z in range(raw.shape[0]):
+            Image.fromarray(M.pack16(raw[z])).save(d / "planes" / f"z{z:02d}.png")
+        Image.fromarray(M.pack16(mip)).save(d / "mip.png")
+        bf_disp = None
+        if s["bf_channel"] is not None:
+            bf_disp = M.brightfield_plane(R.read(s, s["bf_channel"]), cfg)
+            Image.fromarray(bf_disp).save(d / "brightfield.png")
+
+        cands = M.candidate_spots(mip_f, px, cfg)
+        exclude = np.zeros(mip.shape, bool)
+        for c in cands:
+            exclude |= c["mask"]
+        cand_meta = []
+        for rank, c in enumerate(cands, start=1):
+            m = M.measure_region(raw, filt, c["mask"], exclude, px, sat, cfg)
+            auto_rows.append({"code": code, "candidate": rank, "y_px": c["y"], "x_px": c["x"],
+                              "prominence": round(c["prominence"], 1), **m})
+            ys, xs = np.nonzero(c["mask"])
+            cand_meta.append({"rank": rank, "y": c["y"], "x": c["x"],
+                              "r": float(max(np.hypot(ys - c["y"], xs - c["x"]).max(), 2.0)),
+                              "best_z_at_stack_edge": m["best_z_at_stack_edge"],
+                              "saturated": m["saturated_px_mip"] > 0})
+        np.savez_compressed(d / "candidates.npz", *[c["mask"] for c in cands])
+
+        flags = []
+        others = [c for c in by_field[s["field_group"]] if c != code]
+        if others:
+            flags.append({"id": "repeat", "text": f"Same stage position as {', '.join(others)}: probably the same "
+                          f"animal imaged again. Count only one image per animal. Default: "
+                          f"{'count this one' if s['counted_by_default'] else 'do not count this one'}."})
+        if cand_meta and cand_meta[0]["best_z_at_stack_edge"]:
+            flags.append({"id": "edge", "text": "The brightest spot is sharpest in the first or last plane. "
+                          "Part of a cell may be outside the stack. Page through the planes."})
+        if any(c["saturated"] for c in cand_meta[:2]):
+            flags.append({"id": "saturation", "text": "A suggested cell has pixels at the detector's maximum. "
+                          "Its peak brightness is underestimated."})
+        streaks = M.streak_rows(mip, sat, cfg)
+        if streaks:
+            flags.append({"id": "streak", "text": f"Horizontal scan-line artifact near row {streaks[0]}. "
+                          "Ignore the line when judging brightness."})
+        pending.append((s, d, mip, bf_disp, flags, cand_meta, others, raw.shape, sat))
+
+        extra = {}
+        if mc["other_channel_qc"]:
+            for ci, role in enumerate(s["channel_roles"]):
+                if role == "OTHER":
+                    omip = M.median_filter_stack(R.read(s, ci), 3).max(0)
+                    extra[f"other_ch{ci}_max"] = int(omip.max())
+                    extra[f"other_ch{ci}_p99_9"] = round(float(np.percentile(omip, 99.9)), 1)
+        key_rows.append({
+            "code": code, "genotype": s["genotype"], "source": s["source"], "system": s["system"],
+            "original_path": s["original_path"], "local_path": s["local_path"],
+            "location_in_file": s["location_in_file"], "file_sha256": s["file_sha256"], "file": s["file"],
+            "objective": s["objective"], "settings_group": letters[(s["system"], s["settings"])],
+            "settings": s["settings"], "pixel_um": px, "z_step_um": s["z_step_um"], "n_z": s["n_z"],
+            "acquired": s["acquired"], "stage_x_um": "" if s["stage_x"] is None else round(s["stage_x"], 1),
+            "stage_y_um": "" if s["stage_y"] is None else round(s["stage_y"], 1),
+            "same_field_group": s["field_group"], "counted_by_default": s["counted_by_default"], **extra,
+        })
+        log(f"{code} ({n}/{len(images)})")
+
+    # Fixed display ranges, one pair per microscope, computed over all included images.
+    ranges = {}
+    for system, vals in stats.items():
+        sat = next(p[8] for p in pending if p[0]["system"] == system)
+        lo = round(float(np.median([v[0] for v in vals])))
+        hi = round(float(np.median([v[1] for v in vals])))
+        ranges[system] = {"full": [0, sat], "enhanced": [lo, max(hi, lo + 1)]}
+
+    for s, d, mip, bf_disp, flags, cand_meta, others, shape, sat in pending:
+        r = ranges[s["system"]]
+        for name in ("full", "enhanced"):
+            g = M.window(mip, *r[name])
+            Image.fromarray(g).save(d / f"marker_mip_{name}.png")
+            if bf_disp is not None:
+                Image.fromarray(M.overlay(g, bf_disp)).save(d / f"overlay_{name}.png")
+        meta = {"code": s["code"], "n_z": int(shape[0]), "width": int(shape[2]), "height": int(shape[1]),
+                "pixel_um": s["pixel_um"], "display_um_per_px": cfg["display"]["display_um_per_px"],
+                "frame_px": cfg["display"]["frame_px"], "has_brightfield": bf_disp is not None,
+                "full_range": r["full"], "enhanced_range": r["enhanced"], "saturation_value": sat,
+                "flags": flags, "candidates": cand_meta, "same_field_as": others,
+                "counted_by_default": s["counted_by_default"]}
+        (d / "meta.json").write_text(json.dumps(meta, indent=1))
+
+    out = project / "outputs"
+    write_csv(project / "key" / "key.csv", key_rows)
+    write_csv(project / "key" / "settings_groups.csv",
+              [{"settings_group": l, "system": c[0], "settings": c[1]} for c, l in letters.items()])
+    write_csv(out / "auto_measurements.csv", auto_rows or [{"code": "none"}])
+    write_csv(out / "display_ranges.csv", [{"system": k, "standard_low": v["full"][0], "standard_high": v["full"][1],
+                                            "enhanced_low": v["enhanced"][0], "enhanced_high": v["enhanced"][1]}
+                                           for k, v in ranges.items()])
+    n_counted = sum(s["counted_by_default"] for s in images)
+    per_system = dict(Counter(s["system"] for s in images))
+    append_log(project, "prepare", [
+        f"Software: {json.dumps(software_versions())}",
+        f"Included images: {len(images)} {per_system} ({n_counted} counted by default, "
+        f"{len(images) - n_counted} repeats of the same field). Excluded: {len(excluded)} (outputs/excluded.csv).",
+        "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
+        f"Settings groups: {len(letters)} (key/settings_groups.csv).",
+        f"Display ranges: {json.dumps(ranges)}",
+    ], cfg)
+    log(f"{len(images)} images in blind/ {per_system}; {len(excluded)} excluded.")
+    return ranges

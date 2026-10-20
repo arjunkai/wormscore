@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wormscore"
+version = "0.1.0"
+description = "Blind scoring and fluorescence measurement of neurons in confocal image stacks (C. elegans and similar)."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy>=1.26",
+  "scipy>=1.11",
+  "pillow>=10",
+  "readlif>=0.6.5",
+  "czifile>=2026.10.14",
+  "tifffile>=2024.1",
+  "imagecodecs>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pyinstaller>=6.10"]
+
+[project.scripts]
+wormscore = "wormscore.cli:main"
+
+[project.gui-scripts]
+wormscore-launcher = "wormscore.launcher:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wormscore = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

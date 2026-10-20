@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wormscore</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>wormscore <span class="sub" id="projectName"></span></h1>
+  <div class="progress"><div class="bar"><div id="progFill"></div></div><span id="progText"></span></div>
+  <details class="defs">
+    <summary>Scoring rules</summary>
+    <ul id="rules"></ul>
+  </details>
+</header>
+
+<main>
+  <nav id="list" aria-label="Images"></nav>
+
+  <section id="viewer">
+    <div class="toolbar">
+      <div class="seg" role="group" aria-label="View">
+        <button data-view="mip" class="on">Projection</button>
+        <button data-view="plane">Planes</button>
+      </div>
+      <label class="plane">Plane <input id="zSlider" type="range" min="0" max="0" value="0" disabled> <span id="zText">-</span></label>
+      <div class="seg" role="group" aria-label="Display range">
+        <button data-range="full" class="on" title="Full detector range, same for every image from this microscope">Standard</button>
+        <button data-range="enhanced" title="Background to typical bright spot, same for every image from this microscope">Enhanced</button>
+      </div>
+      <label class="chk"><input id="bfToggle" type="checkbox"> Brightfield</label>
+      <div class="seg" role="group" aria-label="Zoom">
+        <button data-zoom="1" class="on">1x</button><button data-zoom="2">2x</button><button data-zoom="3">3x</button>
+      </div>
+    </div>
+    <div id="canvasWrap"><canvas id="cv"></canvas></div>
+    <div class="hint">Keys: left/right = plane, P = projection/planes, E = range, B = brightfield, N = next image</div>
+  </section>
+
+  <aside id="panel">
+    <div class="code" id="codeTitle">-</div>
+    <div class="tabs">
+      <button data-tab="score" class="on">1. Score</button>
+      <button data-tab="mark" id="markTab">2. Mark cells</button>
+    </div>
+
+    <form id="scoreForm" class="tab" data-tab="score" autocomplete="off">
+      <div id="flags"></div>
+
+      <fieldset>
+        <legend>Usable image?</legend>
+        <label><input type="radio" name="usable" value="yes"> Yes</label>
+        <label><input type="radio" name="usable" value="no"> No</label>
+        <select name="unusable_reason" id="reasonSelect"><option value="">reason...</option></select>
+      </fieldset>
+
+      <fieldset id="countField">
+        <legend id="countLabel"></legend>
+        <div id="countOptions"></div>
+      </fieldset>
+
+      <div id="neurons"></div>
+
+      <fieldset>
+        <legend>Confidence</legend>
+        <label><input type="radio" name="confidence" value="sure"> Sure</label>
+        <label><input type="radio" name="confidence" value="fairly sure"> Fairly sure</label>
+        <label><input type="radio" name="confidence" value="unsure"> Unsure</label>
+      </fieldset>
+
+      <textarea name="notes" rows="3" placeholder="Notes (optional)"></textarea>
+      <div class="actions">
+        <span id="saveMsg" role="status"></span>
+        <button type="submit" class="primary">Save score</button>
+      </div>
+    </form>
+
+    <div class="tab hidden" data-tab="mark">
+      <p class="small">Outline each cell body so it can be measured. Numbers are written to a file, not shown here.</p>
+      <div class="row">
+        <span>Draw as</span>
+        <div class="seg" id="labelSeg"></div>
+      </div>
+      <div class="row">
+        <span>Tool</span>
+        <div class="seg" id="toolSeg">
+          <button data-tool="ellipse" class="on">Circle</button>
+          <button data-tool="polygon">Outline</button>
+        </div>
+      </div>
+      <p class="small">Circle: press and drag from the center. Outline: click points, double-click to close. Esc cancels.</p>
+      <label class="chk"><input id="sugToggle" type="checkbox" checked> Show suggested spots</label>
+      <div id="sugList"></div>
+      <div id="roiList"></div>
+      <div class="actions">
+        <span id="roiMsg" role="status"></span>
+        <button id="saveRois" class="primary">Save regions</button>
+      </div>
+    </div>
+  </aside>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

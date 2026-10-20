@@ -1,0 +1,58 @@
+{
+  "project_name": "Sensory neuron specification",
+  "sources": [
+    {
+      "name": "my 2026 confocal images",
+      "path": "C:/data/my_lif_copies",
+      "original_path": "C:/Users/me/OneDrive/microscope exports",
+      "genotypes": [
+        {"match": "*control*", "genotype": "reporter only (control)"},
+        {"match": "*double*", "genotype": "gene-a; gene-b; reporter"}
+      ]
+    },
+    {
+      "name": "lab archive 2022",
+      "path": "C:/data/lab_archive_copy",
+      "original_path": "D:/archive on the lab drive",
+      "genotypes": [
+        {"match": "control folder*", "genotype": "reporter only (control)"},
+        {"match": "mutant folder*", "genotype": "gene-a; reporter"}
+      ],
+      "default_genotype": "UNKNOWN"
+    }
+  ],
+  "marker": {
+    "label": "GFP",
+    "excitation_nm": [488],
+    "emission_band_start_nm": [490, 530],
+    "dye_names": ["EGFP", "GFP", "Leica/EGFP"],
+    "channel_name_prefixes": ["GFP", "EGFP"],
+    "leica_lut": "Green"
+  },
+  "inclusion": {
+    "min_objective_magnification": 40,
+    "min_z_extent_um": 9.0,
+    "max_time_points": 1,
+    "same_field_tolerance_um": 5.0
+  },
+  "duplicate_preference": [],
+  "saturation_value": {},
+  "scoring": {
+    "neurons": ["Neuron L", "Neuron R"],
+    "calls": ["normal", "dim", "missing"],
+    "defect_calls": ["dim", "missing"],
+    "sides": ["left", "right"],
+    "count_question": {"label": "GFP cell bodies seen in head", "options": ["0", "1", "2", "3+"]},
+    "neuron_questions": [
+      {"id": "dendrite_to_nose", "label": "dendrite to nose tip?", "options": ["yes", "no", "can't tell"]},
+      {"id": "axon_to_nerve_ring", "label": "axon into nerve ring?", "options": ["yes", "no", "can't tell"]}
+    ],
+    "rules": [
+      "Normal: cell body clearly visible at the expected brightness.",
+      "Dim: visible but weaker than controls imaged at the same settings.",
+      "Missing: no cell body in any plane.",
+      "Score each neuron separately. The animal is the unit for statistics."
+    ]
+  },
+  "unblinding": {"min_scored_worms": 30}
+}
