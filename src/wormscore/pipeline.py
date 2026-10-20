@@ -30,7 +30,7 @@ INVENTORY_FIELDS = [
     "source", "genotype", "system", "format", "file", "location_in_file", "relative_path",
     "local_path", "original_path", "file_sha256", "objective", "n_z", "n_t", "width", "height", "pixel_um",
     "z_step_um", "bits", "channel_names", "channel_roles", "marker_channel", "bf_channel", "settings", "zoom",
-    "acquired", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes",
+    "acquired", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes", "pixel_sha256",
 ]
 
 
@@ -76,7 +76,7 @@ def inventory(project, log=print):
     project = Path(project)
     cfg = C.load(project)
     manifest, images = R.scan(cfg, log=log)
-    rows = []
+    rows, by_pixels = [], {}
     for img in images:
         roles = img["channel_roles"]
         mi, bi = R.pick(roles, "MARKER"), R.pick(roles, "BF")
@@ -85,6 +85,15 @@ def inventory(project, log=print):
             flags.append(f"{cfg['marker']['label']} channel UNRESOLVED")
         if bi is None:
             flags.append("no brightfield channel identified")
+        try:
+            pixels = R.pixel_sha256(img)
+        except Exception as exc:  # unreadable pixels are reported, not fatal here
+            pixels = ""
+            flags.append(f"pixels could not be read ({type(exc).__name__})")
+        if pixels in by_pixels:
+            flags.append(f"identical pixels to {by_pixels[pixels]}")
+        elif pixels:
+            by_pixels[pixels] = f"{img['relative_path']} {img['location_in_file']}"
         rk = img["_reader"]
         rows.append({**{k: img.get(k, "") for k in INVENTORY_FIELDS},
                      "channel_names": "/".join(img["channel_names"]), "channel_roles": "/".join(roles),
@@ -92,7 +101,7 @@ def inventory(project, log=print):
                      "stage_x": "" if img["stage_x"] is None else round(img["stage_x"], 2),
                      "stage_y": "" if img["stage_y"] is None else round(img["stage_y"], 2),
                      "flags": flags, "reader_kind": rk[0], "reader_index": rk[2],
-                     "reader_axes": rk[3] if len(rk) > 3 else ""})
+                     "reader_axes": rk[3] if len(rk) > 3 else "", "pixel_sha256": pixels})
     # Settings that differ from the most common value on the same microscope.
     for system in {r["system"] for r in rows}:
         same = [r for r in rows if r["system"] == system]
@@ -157,6 +166,26 @@ def include_reason(img, cfg):
     if extent < inc["min_z_extent_um"]:
         return f"z-stack covers {extent:.1f} um ({img['n_z']} planes; minimum {inc['min_z_extent_um']} um)"
     return ""
+
+
+def drop_identical(images, cfg):
+    """The same image saved inside two files (identical pixels) is kept once: the copy whose path
+    contains the first matching duplicate_preference text, otherwise the shortest path."""
+    def rank(s):
+        pref = next((i for i, t in enumerate(cfg["duplicate_preference"]) if t in s["local_path"]), 99)
+        return pref, len(s["local_path"]), s["local_path"], s["location_in_file"]
+    groups = {}
+    for s in images:
+        groups.setdefault(s.get("pixel_sha256") or id(s), []).append(s)
+    keep, copies = [], []
+    for members in groups.values():
+        members.sort(key=rank)
+        keep.append(members[0])
+        for s in members[1:]:
+            copies.append({k: s[k] for k in ("system", "genotype", "original_path", "local_path", "location_in_file")}
+                          | {"reason": f"identical pixels to {members[0]['relative_path']} "
+                                       f"{members[0]['location_in_file']} (same image saved in two files)"})
+    return [s for s in images if any(s is k for k in keep)], copies
 
 
 def same_field_groups(images, tol_um):
@@ -267,6 +296,8 @@ def prepare(project, reassign=False, add=False, log=print):
                                                   "location_in_file")} | {"reason": reason})
         else:
             images.append(img)
+    images, copies = drop_identical(images, cfg)
+    excluded += copies
     write_csv(project / "outputs" / "excluded.csv", excluded or [{"reason": "none excluded"}])
     if not images:
         raise SystemExit("No images passed the inclusion rules. See outputs/excluded.csv.")

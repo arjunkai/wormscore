@@ -37,7 +37,8 @@ was identified, its objective is at least `min_objective_magnification` (when th
 it has no more than `max_time_points`, and its z-stack covers at least `min_z_extent_um`
 ((planes - 1) x step). Images can also be left out by file name with a per-source `exclude` rule
 (`{"match": pattern, "reason": text}`), for example a plate found to carry a different reporter; the
-reason is written to `excluded.csv`. Such rules should be set before scoring. An image is never excluded for having no fluorescent signal: a missing cell is
+reason is written to `excluded.csv`. Such rules should be set before scoring. The same image saved inside two different files (identical pixels, found by a checksum of
+every pixel recorded at inventory) is coded only once; the other copy is listed in `excluded.csv`. An image is never excluded for having no fluorescent signal: a missing cell is
 a result. Images taken at the same stage position in the same file are treated as the same animal
 imaged again; only one is counted (by default the one with more planes; the scorer can change this
 while still blind).

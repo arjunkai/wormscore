@@ -283,8 +283,14 @@ def images_in(path, cfg):
 
 # ------------------------------------------------------------------ pixels
 
-def read(img, channel):
-    """One channel as a (z, y, x) array, first time point, original bit depth."""
+def pixel_sha256(img):
+    """Checksum of every pixel of an image (all channels, planes and time points), to find the
+    same image saved inside two different files."""
+    arr, _ = _raw(img)
+    return hashlib.sha256(np.ascontiguousarray(arr).tobytes()).hexdigest()
+
+
+def _raw(img):
     kind, path, i = img["_reader"][:3]
     if kind == "lif":
         im = _lif_series(_lif(path))[i]["image"]
@@ -297,6 +303,12 @@ def read(img, channel):
             arr, dims = scene.asarray(), "".join(scene.dims)
     else:
         arr, dims = tifffile.imread(path, series=i), img["_reader"][3]
+    return arr, dims
+
+
+def read(img, channel):
+    """One channel as a (z, y, x) array, first time point, original bit depth."""
+    arr, dims = _raw(img)
     if "C" in dims:
         arr = np.take(arr, channel, axis=dims.index("C"))
         dims = dims.replace("C", "")

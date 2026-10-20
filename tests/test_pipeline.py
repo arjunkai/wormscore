@@ -67,3 +67,24 @@ def test_log_records_parameters(demo_project):
     log = (demo_project / "log.md").read_text(encoding="utf-8")
     assert "median_filter_px" in log and "Software:" in log
     assert (demo_project / "key" / "seed.txt").read_text().strip() not in log
+
+
+def test_same_image_saved_in_two_files_is_coded_once(tmp_path):
+    import tifffile
+    from wormscore.demo import make_demo
+    from wormscore.pipeline import inventory
+    project = make_demo(tmp_path / "p", n_per_group=2, log=lambda *a: None)
+    original = sorted((project / "data").glob("demo_mutant_*.ome.tif"))[0]
+    with tifffile.TiffFile(original) as tf:
+        pixels, ome = tf.asarray(), tf.ome_metadata
+    # Same pixels, different file bytes (as when an image is saved again into a second file).
+    tifffile.imwrite(project / "data" / "zz_resaved_mutant.ome.tif", pixels, description=ome,
+                     photometric="minisblack", metadata=None, software="resaved")
+    inventory(project, log=lambda *a: None)
+    inv = read_csv(project / "outputs" / "inventory.csv")
+    assert any("identical pixels to" in r["flags"] for r in inv)
+    prepare(project, log=lambda *a: None)
+    key = read_csv(project / "key" / "key.csv")
+    assert len(key) == 4 and not any("zz_resaved" in r["file"] for r in key)
+    (copy,) = [r for r in read_csv(project / "outputs" / "excluded.csv") if "identical pixels" in r["reason"]]
+    assert "zz_resaved" in copy["local_path"] and original.name in copy["reason"]
