@@ -1,8 +1,9 @@
 # wormscore
 
-Blind scoring and fluorescence measurement of identified neurons in confocal z-stacks.
-Built for scoring *C. elegans* reporter neurons (normal / dim / missing), but nothing is tied
-to one neuron, marker or microscope: those are settings in each project's `config.json`.
+Blind scoring of fluorescent neurons in *C. elegans*, with measurement and genetics statistics.
+Built for scoring reporter neurons (normal / dim / missing) in confocal z-stacks. Nothing is tied
+to one neuron, marker or microscope: those are settings in each project's `config.json`, so other
+organisms work the same way.
 
 - **Blind:** every image gets a random code. Genotypes and file names stay in a sealed key
   until you finish scoring.
@@ -43,6 +44,14 @@ wormscore app my_demo
 `demo` writes 20 simulated worm heads (controls with two normal cells; mutants with cells that are
 normal, dim or missing at random) and a `demo_truth.csv` you can check your calls against later.
 In the launcher window the same steps are buttons: **Demo... > 1. Scan data > 2. Build blind set > 3. Score**.
+
+**Real worms:** `wormscore demo my_demo --real` (or Yes in the launcher's Demo dialog) downloads four
+L1 heads with an endogenous GFP reporter, about 150 MB, from
+[Sun and Hobert 2021](https://doi.org/10.1038/s41586-021-04071-4)
+([Zenodo 5602160](https://doi.org/10.5281/zenodo.5602160), CC BY 4.0). Each file is checked against its
+MD5 from the Zenodo record and cached in `%LOCALAPPDATA%\wormscore\demo_cache` (`~/.cache` elsewhere).
+The two reporters stand in for two genotypes; both are normal animals, so this is for practice.
+The images are not part of this repository.
 
 ## Using it on your own images
 

@@ -121,8 +121,8 @@ def inventory(project, log=print):
         f"{len(rows)} raw images listed in outputs/inventory.csv; "
         f"{sum(1 for r in rows if r['flags'])} with flags",
         "Channel rule: marker = channel whose metadata matches the configured excitation line, emission "
-        "band, dye or channel name (and Leica LUT, if set); brightfield = transmitted-light channel. "
-        "Otherwise UNRESOLVED.",
+        "band, dye or channel name (and Leica LUT, if set); if several match, the one channel named by a "
+        "configured dye; brightfield = transmitted-light channel. Otherwise UNRESOLVED.",
     ])
     log(f"{len(manifest)} files, {len(rows)} raw images. See outputs/manifest.csv and outputs/inventory.csv.")
     return rows

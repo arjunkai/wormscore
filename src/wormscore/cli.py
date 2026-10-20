@@ -18,6 +18,8 @@ def main(argv=None):
     s = sub.add_parser("demo", help="create a demo project with simulated worms")
     s.add_argument("project")
     s.add_argument("--n", type=int, default=10, help="simulated worms per genotype")
+    s.add_argument("--real", action="store_true",
+                   help="download 4 real worm heads (about 150 MB, CC BY 4.0) instead of simulating")
     s = sub.add_parser("copy", help="copy a data folder and verify every file by SHA-256")
     s.add_argument("source")
     s.add_argument("destination")
@@ -49,8 +51,12 @@ def main(argv=None):
             cfg.write_text(json.dumps(template(a.name), indent=2), encoding="utf-8")
             print(f"Created {cfg}. Edit 'sources' to point at your images, then run 'wormscore inventory {proj}'.")
         elif a.cmd == "demo":
-            from .demo import make_demo
-            make_demo(a.project, n_per_group=a.n)
+            if a.real:
+                from .realdemo import make_real_demo
+                make_real_demo(a.project)
+            else:
+                from .demo import make_demo
+                make_demo(a.project, n_per_group=a.n)
             print(f"Next: wormscore inventory {a.project} && wormscore prepare {a.project} && wormscore app {a.project}")
         elif a.cmd == "copy":
             from .copydata import copy_verified

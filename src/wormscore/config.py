@@ -31,7 +31,7 @@ DEFAULTS = {
         "channel_name_prefixes": ["GFP", "EGFP"],
         "leica_lut": "Green",
     },
-    "brightfield_channel_names": ["BF", "Brightfield", "DIC", "Trans", "T-PMT", "TL"],
+    "brightfield_channel_names": ["BF", "Brightfield", "DIC", "Trans", "T-PMT", "T PMT", "TL"],
 
     "inclusion": {
         "min_objective_magnification": 40,

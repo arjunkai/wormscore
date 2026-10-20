@@ -78,6 +78,16 @@ def marker_from_named(name, fluor, excitation, transmitted, cfg):
     return "OTHER"
 
 
+def prefer_named_dye(roles, fluors, cfg):
+    """Several channels can match the marker by laser line (for example a second fluorophore
+    excited at 488 nm). If exactly one of them names a configured dye, that one is the marker."""
+    hits = [i for i, r in enumerate(roles) if r == "MARKER"]
+    named = [i for i in hits if fluors[i] and fluors[i] in cfg["marker"]["dye_names"]]
+    if len(hits) > 1 and len(named) == 1:
+        return ["OTHER" if r == "MARKER" and i != named[0] else r for i, r in enumerate(roles)]
+    return roles
+
+
 def pick(roles, role):
     return roles.index(role) if roles.count(role) == 1 else None
 
@@ -192,13 +202,19 @@ def zeiss_images(path, cfg):
     text = lambda tag: next((e.text.strip() for e in md.iter(tag) if e.text and e.text.strip()), "")
     scale = {d.get("Id"): float(d.findtext("Value")) * 1e6 for d in md.iter("Distance") if d.get("Id") in ("X", "Z")}
     chans = md.find(".//Information/Image/Dimensions/Channels")
-    names, roles, volts = [], [], []
+    names, roles, volts, fluors = [], [], [], []
     for c in chans if chans is not None else []:
         names.append(c.get("Name") or "")
         volts.append(c.findtext("DetectorSettings/Voltage") or "")
+        fluors.append(c.findtext("Fluor"))
         roles.append(marker_from_named(c.get("Name") or "", c.findtext("Fluor"), c.findtext("ExcitationWavelength"),
                                        c.findtext("IlluminationType") == "Transmitted", cfg))
+    roles = prefer_named_dye(roles, fluors, cfg)
     mi = pick(roles, "MARKER")
+    objective = text("ObjectiveName")
+    if not objective and text("NominalMagnification"):
+        na = f"/{float(text('LensNA')):g}" if text("LensNA") else ""
+        objective = f"{text('NominalMagnification')}x{na} {text('Immersion')}".strip()
     lights = sorted({(l.findtext("Wavelength"), l.findtext("Transmission")) for l in md.iter("LightSourceSettings")
                      if l.findtext("Wavelength")})
     settings = "; ".join(x for x in [
@@ -212,7 +228,7 @@ def zeiss_images(path, cfg):
         out.append({
             "format": "Zeiss CZI", "system": f"Zeiss {text('System')}".strip(),
             "location_in_file": f"whole file (scene {i})" if len(scenes) == 1 else f"scene {i}",
-            "objective": text("ObjectiveName"),
+            "objective": objective,
             "n_z": shape[dims.index("Z")] if "Z" in dims else 1,
             "n_t": shape[dims.index("T")] if "T" in dims else 1,
             "width": shape[dims.index("X")], "height": shape[dims.index("Y")],
@@ -252,6 +268,7 @@ def ome_images(path, cfg):
             names.append(c.get("Name", ""))
             roles.append(marker_from_named(c.get("Name", ""), c.get("Fluor"), c.get("ExcitationWavelength"),
                                            c.get("IlluminationType") == "Transmitted", cfg))
+        roles = prefer_named_dye(roles, [c.get("Fluor") for c in px.findall("o:Channel", OME_NS)], cfg)
         mi = pick(roles, "MARKER")
         exposures = sorted({p.get("ExposureTime") for p in px.findall("o:Plane", OME_NS)
                             if p.get("TheC") == str(mi) and p.get("ExposureTime")})

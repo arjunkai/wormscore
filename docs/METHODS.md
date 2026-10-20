@@ -26,7 +26,10 @@ From metadata only:
   lookup-table color. Brightfield is the transmitted-light detector.
 - **Zeiss and OME-TIFF:** the marker is the channel whose fluorophore, channel name or excitation
   wavelength matches the configuration; brightfield is the channel recorded with transmitted light
-  (or named BF, Brightfield, DIC, Trans, T-PMT).
+  (or named BF, Brightfield, DIC, Trans, T-PMT, T PMT). If several channels match, for example a
+  second fluorophore excited by the same 488 nm laser, and exactly one of them names a configured dye
+  (EGFP, GFP), that one is the marker. If the file gives no objective name, the objective is written
+  from its magnification, NA and immersion.
 
 If not exactly one channel matches, the marker is UNRESOLVED and the image is excluded.
 

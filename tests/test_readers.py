@@ -95,3 +95,28 @@ def test_gpl_leica_reader_is_not_used():
     import wormscore.pipeline  # noqa: F401
     assert "readlif" not in sys.modules
     assert not any(r.lower().startswith("readlif") for r in md.requires("wormscore"))
+
+
+def test_dye_name_breaks_a_tie_between_channels_on_the_same_laser(tmp_path):
+    """Six channels as in a NeuroPAL stack: GFP and a second fluorophore are both excited at 488 nm,
+    the transmitted channel is named 'T PMT'. The GFP channel by dye name is the marker."""
+    cfg = C.merge(C.DEFAULTS, {})
+    names = ["Ch1-T1", "Ch2-T1", "T PMT-T1", "ChS1-T2", "Ch2-T2", "Ch2-T3"]
+    fluors = ["EBFP", "TagRFP", "", "EGFP", "mRFP1.2", "mCherry"]
+    ex = [405, 561, 0, 488, 488, 633]
+    stack = np.random.default_rng(0).integers(0, 4000, (6, 3, 16, 16), dtype=np.uint16)
+    channels = {"Name": names, "Fluor": fluors, "ExcitationWavelength": ex}
+    path = tmp_path / "six.ome.tif"
+    import tifffile
+    tifffile.imwrite(path, stack, ome=True, metadata={"axes": "CZYX", "PhysicalSizeX": 0.2,
+                                                      "PhysicalSizeZ": 1.0, "Channel": channels})
+    img = readers.ome_images(path, cfg)[0]
+    assert img["channel_roles"] == ["OTHER", "OTHER", "BF", "MARKER", "OTHER", "OTHER"]
+    assert np.array_equal(readers.read(img, 3), stack[3])
+
+
+def test_two_dye_named_channels_stay_unresolved():
+    cfg = C.merge(C.DEFAULTS, {})
+    roles = ["MARKER", "MARKER", "BF"]
+    assert readers.prefer_named_dye(roles, ["EGFP", "GFP", None], cfg) == roles
+    assert readers.prefer_named_dye(roles, [None, None, None], cfg) == roles
