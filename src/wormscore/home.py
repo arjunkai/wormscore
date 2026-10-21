@@ -42,6 +42,20 @@ PROGRESS_LINE = re.compile(r"\((\d+)/(\d+)\)\s*$")
 
 # ------------------------------------------------------------------ settings
 
+def log_event(text):
+    """One line in app.log (next to the update files): when the app started and why it closed,
+    so a window that lost its connection can be explained afterwards. Kept small."""
+    try:
+        f = U.data_dir() / "app.log"
+        f.parent.mkdir(parents=True, exist_ok=True)
+        if f.exists() and f.stat().st_size > 200_000:
+            f.write_text(f.read_text(encoding="utf-8")[-100_000:], encoding="utf-8")
+        with open(f, "a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {__version__} {text}\n")
+    except OSError:
+        pass
+
+
 def same_path(a, b):
     return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
 
@@ -192,7 +206,6 @@ def edge_path():
     return None
 
 
-_edge_pids = set()     # Edge processes this app started; only their windows get our icon
 # When an app window was last seen (Windows). The app closes when its windows are gone, not when
 # a page goes quiet: Edge pauses minimized and hidden windows, so a quiet page can still be open.
 WINDOWS = {"tracking": False, "last": 0.0}
@@ -206,13 +219,12 @@ def open_window(url, size=(1200, 820)):
         try:
             # Started from the home folder: a window started from the app folder would hold
             # that folder open, and an update could not replace it.
-            p = subprocess.Popen([str(exe), f"--app={url}", f"--window-size={size[0]},{size[1]}",
+            subprocess.Popen([str(exe), f"--app={url}", f"--window-size={size[0]},{size[1]}",
                                   f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
                                   # keep the pages running when the window is minimized or covered
                                   "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
                                   "--disable-backgrounding-occluded-windows"],
                                  cwd=str(Path.home()))
-            _edge_pids.add(p.pid)
             _start_icon_keeper()
             return
         except OSError:
@@ -224,57 +236,57 @@ _icon_keeper = None
 APP_ID = "arjunkai.wormscore"
 
 
-def profile_pids():
-    """Edge processes using this app's own profile folder: Edge relaunches itself, and if an
-    earlier app window is still open it hands new windows to that process."""
-    if sys.platform != "win32":
-        return set()
-    profile = str(Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "wormscore" / "window")
-    ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
-          # the path is quoted on Edge's command line, so match the path alone
-          "Where-Object { $_.CommandLine -like '*" + profile.replace("'", "''") + "*' } | "
-          "ForEach-Object { $_.ProcessId }")
-    try:
-        out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
-                             timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
-        return {int(x) for x in out.split() if x.isdigit()}
-    except (OSError, subprocess.SubprocessError):
-        return set()
-
-
-def is_browser_window(hwnd):
-    """An Edge top-level window (not one of its helper windows, and not another program's)."""
+def app_window_kind(hwnd):
+    """'home' or 'scoring' for a wormscore app window, else None. A wormscore window is a
+    visible Edge top-level window (class Chrome_WidgetWin_1, owned by msedge.exe) titled
+    "wormscore" (home) or "Scoring: <project> - wormscore". Ordinary Edge windows add
+    " - Microsoft Edge" to their titles, so they never match. Identifying windows this way
+    needs no list of processes, which can come back incomplete (for example while the
+    network changes)."""
     import ctypes
-    buf = ctypes.create_unicode_buffer(64)
-    ctypes.windll.user32.GetClassNameW(hwnd, buf, 64)
-    return buf.value == "Chrome_WidgetWin_1"
+    from ctypes import wintypes
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    if not user32.IsWindowVisible(hwnd):
+        return None
+    buf = ctypes.create_unicode_buffer(256)
+    user32.GetWindowTextW(hwnd, buf, 256)
+    title = buf.value
+    kind = "home" if title == HOME_TITLE else "scoring" if (
+        title.startswith(SCORE_TITLE + ":") and title.endswith(" - wormscore")) else None
+    if kind is None:
+        return None
+    cls = ctypes.create_unicode_buffer(64)
+    user32.GetClassNameW(hwnd, cls, 64)
+    if cls.value != "Chrome_WidgetWin_1":
+        return None
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    proc = kernel32.OpenProcess(0x1000, False, pid.value)      # PROCESS_QUERY_LIMITED_INFORMATION
+    if not proc:
+        return None
+    try:
+        path = ctypes.create_unicode_buffer(1024)
+        size = wintypes.DWORD(1024)
+        ok = kernel32.QueryFullProcessImageNameW(proc, 0, path, ctypes.byref(size))
+    finally:
+        kernel32.CloseHandle(proc)
+    return kind if ok and path.value.lower().endswith("\\msedge.exe") else None
 
 
-def find_app_windows(title, pids=None):
-    """Visible wormscore app windows: the home window (title exactly "wormscore") or scoring
-    windows (title starting with "Scoring"). Windows only."""
+def find_app_windows(title):
+    """Visible wormscore app windows: home (HOME_TITLE) or scoring (SCORE_TITLE). Windows only."""
     if sys.platform != "win32":
         return []
     import ctypes
     from ctypes import wintypes
-    pids = pids if pids is not None else (_edge_pids | profile_pids())
-    if not pids:
-        return []
-    user32 = ctypes.windll.user32
-    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    want = "home" if title == HOME_TITLE else "scoring"
     found = []
 
     def each(hwnd, _):
-        pid = wintypes.DWORD()
-        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        if pid.value in pids and user32.IsWindowVisible(hwnd) and is_browser_window(hwnd):
-            buf = ctypes.create_unicode_buffer(256)
-            user32.GetWindowTextW(hwnd, buf, 256)
-            if buf.value == title or (title == SCORE_TITLE and buf.value.startswith(title)):
-                found.append(hwnd)
+        if app_window_kind(hwnd) == want:
+            found.append(hwnd)
         return True
-    user32.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(each), 0)
+    ctypes.windll.user32.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(each), 0)
     return found
 
 
@@ -381,11 +393,8 @@ def _start_icon_keeper():
             return handles[px]
 
         def each(hwnd, _):
-            pid = wintypes.DWORD()
-            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            if pid.value in _edge_pids and user32.IsWindowVisible(hwnd) and is_browser_window(hwnd):
-                if user32.GetWindowTextLengthW(hwnd) > 0:      # a page window, not a helper
-                    WINDOWS["last"] = time.time()
+            if app_window_kind(hwnd):
+                WINDOWS["last"] = time.time()
                 if hwnd not in done:
                     try:
                         if _set_window_identity(hwnd, ico):
@@ -400,13 +409,6 @@ def _start_icon_keeper():
         callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(each)
         rounds = 0
         while True:
-            if rounds % 10 == 0:        # at once, then every 30 s
-                # Replaced, not added to: Windows reuses the IDs of closed processes, and another
-                # program's window must never count as a wormscore window.
-                live = profile_pids()
-                if live:
-                    global _edge_pids
-                    _edge_pids = live
             try:
                 user32.EnumWindows(callback, 0)
             except OSError:
@@ -470,7 +472,7 @@ def open_in_browser(url, title_part):
         def each(hwnd, _):
             pid = wintypes.DWORD()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            if user32.IsWindowVisible(hwnd) and pid.value not in _edge_pids:
+            if user32.IsWindowVisible(hwnd) and not app_window_kind(hwnd):
                 buf = ctypes.create_unicode_buffer(512)
                 user32.GetWindowTextW(hwnd, buf, 512)
                 if title_part in buf.value:
@@ -517,6 +519,7 @@ class HomeApp:
         self.pick = pick
         self.opener = opener
         self.exit_app = lambda: None   # set by main(): closes the app so an update can replace it
+        self.can_start = False         # set by main(): a wormscore://start link starts this app
         self.upd = {"info": None, "error": None, "checking": False, "dismissed": False,
                     "phase": "", "frac": None, "message": "", "result": None}
         if check_updates:
@@ -638,7 +641,7 @@ class HomeApp:
     def state(self, since):
         s = load_settings()
         recent = [project_status(p) for p in s["recent"]]
-        return {"version": __version__, "theme": s["theme"], "recent": recent,
+        return {"version": __version__, "theme": s["theme"], "recent": recent, "can_start": self.can_start,
                 "update": self.update_view(recent),
                 "project": project_status(s["project"]) if s["project"] else None,
                 "scoring_url": self.scoring[2] if self.scoring and self.scoring[0] == s["project"] else None,
@@ -693,6 +696,7 @@ class HomeApp:
                     srv = make_server(p, port=0)
             except SystemExit as exc:
                 raise ValueError(str(exc))
+            srv.project.can_start = self.can_start
             threading.Thread(target=srv.serve_forever, daemon=True).start()
             self.scoring = (p, srv, f"http://127.0.0.1:{srv.server_address[1]}")
         if self.open_windows:
@@ -877,6 +881,119 @@ def should_close(app, now=None):
     return app.quiet_for() > IDLE_EXIT_S
 
 
+def any_app_window():
+    return bool(find_app_windows(HOME_TITLE) or find_app_windows(SCORE_TITLE))
+
+
+def watchdog_step(app, tick, now, window_open=any_app_window):
+    """One check of the watchdog (every 5 s). True when the app should close now."""
+    if now - tick > 20:
+        # The computer slept (lid closed): nothing ran meanwhile, so neither the pages'
+        # check-ins nor the window watch say anything about whether a window is open.
+        log_event(f"woke after about {now - tick:.0f} s asleep")
+        WINDOWS["last"] = app.last_seen = now
+    if not should_close(app, now):
+        return False
+    # Look once more, right now, before closing (Windows): a window that is there keeps the
+    # app running whatever the timers say.
+    if window_open():
+        WINDOWS["last"] = now
+        return False
+    log_event(close_reason(app, now))
+    return True
+
+
+def close_reason(app, now=None):
+    now = time.time() if now is None else now
+    seen = f"last window seen {now - WINDOWS['last']:.0f} s ago" if WINDOWS["last"] else "no window seen"
+    return f"closing: {seen}, page quiet {app.quiet_for():.0f} s"
+
+
+LAUNCH_SCHEME = "wormscore"
+
+# Gives Start menu and desktop shortcuts to this wormscore.exe the app's taskbar ID, so a pin
+# made from them groups with the app windows (which carry the same ID) instead of showing a
+# second button. Arguments: exe path, app ID. Prints one line per shortcut it changed.
+SHORTCUT_FIX = r"""param([string]$Exe, [string]$Id)
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+[StructLayout(LayoutKind.Sequential, Pack = 4)] public struct PK { public Guid fmtid; public uint pid; }
+[StructLayout(LayoutKind.Explicit)] public struct PV { [FieldOffset(0)] public ushort vt; [FieldOffset(8)] public IntPtr p; [FieldOffset(16)] public IntPtr pad; }
+[ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IPS { void GetCount(out uint c); void GetAt(uint i, out PK k); void GetValue(ref PK k, out PV v); void SetValue(ref PK k, ref PV v); void Commit(); }
+[ComImport, Guid("0000010b-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IPF { void GetClassID(out Guid g); [PreserveSig] int IsDirty(); void Load([MarshalAs(UnmanagedType.LPWStr)] string f, uint m); void Save([MarshalAs(UnmanagedType.LPWStr)] string f, bool r); void SaveCompleted(string f); void GetCurFile(out IntPtr f); }
+public static class WsLink {
+  static PK Key() { PK k = new PK(); k.fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"); k.pid = 5; return k; }
+  static object Open(string path, uint mode) { object o = Activator.CreateInstance(Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"))); ((IPF)o).Load(path, mode); return o; }
+  public static string Get(string path) { PK k = Key(); PV v; ((IPS)Open(path, 0)).GetValue(ref k, out v); return v.vt == 31 ? Marshal.PtrToStringUni(v.p) : ""; }
+  public static void Set(string path, string id) { object o = Open(path, 2); PK k = Key(); PV v = new PV(); v.vt = 31; v.p = Marshal.StringToCoTaskMemUni(id); ((IPS)o).SetValue(ref k, ref v); ((IPS)o).Commit(); ((IPF)o).Save(path, true); }
+}
+'@
+$sh = New-Object -ComObject WScript.Shell
+$dirs = @([Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Desktop'))
+foreach ($d in $dirs) {
+  if (-not $d -or -not (Test-Path -LiteralPath $d)) { continue }
+  Get-ChildItem -LiteralPath $d -Filter *.lnk -Recurse -Depth 2 -ErrorAction SilentlyContinue | ForEach-Object {
+    try {
+      if ($sh.CreateShortcut($_.FullName).TargetPath -ieq $Exe -and [WsLink]::Get($_.FullName) -ne $Id) {
+        [WsLink]::Set($_.FullName, $Id); "set $($_.FullName)" }
+    } catch { "skipped $($_.FullName): $($_.Exception.Message)" }
+  }
+}
+"""
+
+
+def fix_shortcuts():
+    """Once per version of the downloaded Windows app: see SHORTCUT_FIX. Runs hidden, in the
+    background, and only touches shortcuts that point at this wormscore.exe."""
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+    marker = U.data_dir() / f"shortcuts-{__version__}.done"
+    if marker.exists():
+        return
+
+    def run():
+        try:
+            script = U.data_dir() / "shortcut-fix.ps1"
+            script.write_text(SHORTCUT_FIX, encoding="utf-8")
+            r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+                                "-Exe", sys.executable, "-Id", APP_ID], capture_output=True, text=True,
+                               timeout=120, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            for line in r.stdout.splitlines():
+                log_event(f"shortcut: {line}")
+            if r.returncode == 0:
+                marker.write_text("", encoding="utf-8")
+        except (OSError, subprocess.SubprocessError) as exc:
+            log_event(f"shortcut fix failed: {exc}")
+    threading.Thread(target=run, daemon=True).start()
+
+
+def register_launch_link():
+    """Windows, downloaded app: let a wormscore://start link (the Start wormscore button on a
+    window that lost its connection) start this copy of the app. Written for this user only."""
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return False
+    import winreg
+    command = f'"{sys.executable}" "%1"'
+    key = rf"Software\Classes\{LAUNCH_SCHEME}"
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key + r"\shell\open\command") as k:
+            if winreg.QueryValueEx(k, "")[0] == command:
+                return True
+    except OSError:
+        pass
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key) as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "URL:wormscore")
+            winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key + r"\shell\open\command") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, command)
+        return True
+    except OSError:
+        return False
+
+
 def make_home_server(app, port=0):
     return LocalServer(("127.0.0.1", port), make_handler(app))
 
@@ -908,6 +1025,7 @@ def show_home_window(app, url, started):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    argv = [a for a in argv if not a.lower().startswith(LAUNCH_SCHEME + ":")]   # started by the link
     if "--classic" in argv:
         from .launcher import main as classic
         return classic()
@@ -919,6 +1037,7 @@ def main(argv=None):
     except OSError:
         if running_home(HOME_PORT):
             # wormscore is already running: show its window instead of starting a second copy
+            log_event("already running: showing its window")
             windows = find_app_windows(HOME_TITLE)
             if windows:
                 raise_window(windows[0])
@@ -927,19 +1046,32 @@ def main(argv=None):
             return
         srv = make_home_server(app)
     app.start_updates()
-    app.exit_app = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()
+    app.can_start = register_launch_link()
+    fix_shortcuts()
+
+    def exit_app():
+        log_event("closing for an update or go back")
+        threading.Thread(target=srv.shutdown, daemon=True).start()
+    app.exit_app = exit_app
     url = f"http://127.0.0.1:{srv.server_address[1]}"
+    log_event(f"started on port {srv.server_address[1]}")
 
     def watchdog():
+        tick = time.time()
         while True:
             time.sleep(5)
-            if should_close(app):
+            now = time.time()
+            if watchdog_step(app, tick, now):
                 srv.shutdown()
                 return
+            tick = now
     threading.Thread(target=watchdog, daemon=True).start()
     threading.Thread(target=show_home_window, args=(app, url, started), daemon=True).start()
     try:
         srv.serve_forever()
+    except BaseException as exc:
+        log_event(f"stopped by an error: {type(exc).__name__}: {exc}")
+        raise
     finally:
         app.stop_scoring()
         srv.server_close()

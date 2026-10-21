@@ -191,3 +191,33 @@ def test_app_stays_open_while_its_window_exists(monkeypatch):
     assert not home.should_close(app, now)                       # no tracking: wait much longer
     app.last_seen = now - 4000
     assert home.should_close(app, now)
+
+
+def test_app_log_records_why_it_closed(tmp_path, monkeypatch):
+    from wormscore import update as U
+    monkeypatch.setattr(U, "data_dir", lambda: tmp_path)
+    app = home.HomeApp(open_windows=False)
+    app.last_seen = time.time() - 120
+    monkeypatch.setattr(home, "WINDOWS", {"tracking": True, "last": time.time() - 90})
+    home.log_event(home.close_reason(app))
+    line = (tmp_path / "app.log").read_text(encoding="utf-8").strip()
+    assert "closing: last window seen 90 s ago, page quiet 120 s" in line
+
+
+def test_waking_from_sleep_never_closes_the_app(tmp_path, monkeypatch):
+    """Lid closed for an hour: on waking every timer looks stale, but the app must stay."""
+    from wormscore import update as U
+    monkeypatch.setattr(U, "data_dir", lambda: tmp_path)
+    app = home.HomeApp(open_windows=False)
+    now = time.time()
+    app.last_seen = now - 3600
+    monkeypatch.setattr(home, "WINDOWS", {"tracking": True, "last": now - 3600})
+    assert not home.watchdog_step(app, tick=now - 3600, now=now, window_open=lambda: False)
+    assert "woke after about 3600 s asleep" in (tmp_path / "app.log").read_text(encoding="utf-8")
+    # an ordinary check: windows gone a minute ago, but one is found when looking again
+    app.last_seen = now - 60
+    home.WINDOWS["last"] = now - 60
+    assert not home.watchdog_step(app, tick=now - 5, now=now, window_open=lambda: True)
+    # windows really gone: close
+    home.WINDOWS["last"] = now - 60
+    assert home.watchdog_step(app, tick=now - 5, now=now, window_open=lambda: False)

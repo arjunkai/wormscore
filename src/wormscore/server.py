@@ -251,6 +251,7 @@ def make_handler(project):
             if parts == ["api", "config"]:
                 sc = project.cfg["scoring"]
                 return self.send_json({"project_name": project.cfg["project_name"], "project_id": project.id,
+                                       "can_start": getattr(project, "can_start", False),
                                        "marker": project.cfg["marker"]["label"], "scoring": sc,
                                        "min_scored": project.cfg["unblinding"]["min_scored_worms"]})
             if parts == ["api", "worms"]:

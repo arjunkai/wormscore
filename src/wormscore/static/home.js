@@ -42,9 +42,9 @@ function icon(name, size = 16) {
 }
 
 const st = { data: null, since: 0, log: [], showLog: false, finished: false, lastRunning: false, timer: null,
-  updOpen: false, updAgree: false, updKey: "", resultShown: false, closing: false, fails: 0 };
+  updOpen: false, updAgree: false, updKey: "", resultShown: false, closing: false, downSince: null };
 
-const GONE = "This window lost its connection to wormscore. Open wormscore again; your work is saved.";
+const GONE = "wormscore is not running right now. This window reconnects by itself once it starts again.";
 
 async function api(path, body) {
   let res;
@@ -53,7 +53,7 @@ async function api(path, body) {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
   } catch {
-    showGone();
+    connectionLost();
     throw new Error(GONE);   // the browser's own "Failed to fetch" says nothing useful
   }
   const data = await res.json().catch(() => ({}));
@@ -463,10 +463,30 @@ async function startStep(body) {
 
 // ---------------------------------------------------------------- polling
 
-// The app closes itself after a few quiet minutes (or for an update); its window can stay open.
-function showGone() {
-  if (st.closing || !$("#goneModal").hidden) return;
-  $("#goneModal").hidden = false;
+// Connection to the wormscore program. Like chat and editor apps: a short "Reconnecting..."
+// first, retrying every 2 s and at once when the computer wakes or the window gets focus; only
+// if the program stays away does the window explain what happened, with a button to start it.
+const GONE_AFTER_MS = 8000;
+
+function connectionLost() {
+  if (st.closing) return;              // an update is restarting the app; its dialog says so
+  st.downSince ??= Date.now();
+  const long = Date.now() - st.downSince > GONE_AFTER_MS;
+  $("#reconn").hidden = long;
+  $("#goneModal").hidden = !long;
+  $("#goneStart").hidden = !st.data?.can_start;
+  $("#goneHow").textContent = st.data?.can_start
+    ? "Click Start wormscore, then Open when your browser asks. This window reconnects by itself."
+    : "Open wormscore again the way you usually do. This window reconnects by itself.";
+}
+
+function connectionBack() {
+  if (st.downSince === null || st.downSince === undefined) return;
+  const long = Date.now() - st.downSince > GONE_AFTER_MS;
+  st.downSince = null;
+  $("#reconn").hidden = true;
+  $("#goneModal").hidden = true;
+  if (long) toast("Connected to wormscore again.", "ok");
 }
 
 async function refresh(soon) {
@@ -474,8 +494,7 @@ async function refresh(soon) {
     const d = await (await fetch(`/api/state?since=${st.since}`)).json();
     // Another version answers on this address (after an update or a go back): load its page.
     if (st.data && d.version !== st.data.version) return location.reload();
-    st.fails = 0;
-    $("#goneModal").hidden = true;
+    connectionBack();
     if (d.job.next < st.since) { st.log = []; st.since = 0; }
     st.log.push(...d.job.lines);
     st.since = d.job.next;
@@ -484,14 +503,17 @@ async function refresh(soon) {
     st.data = d;
     render();
   } catch {
-    // One miss can be a busy moment; two in a row means the app is gone. Polling goes on,
-    // so the window recovers by itself if the app answers again.
-    if (++st.fails >= 2) showGone();
+    connectionLost();       // polling goes on, so the window recovers by itself
   }
   clearTimeout(st.timer);
   const fast = st.data?.job.running || st.data?.update.phase === "downloading" || st.data?.update.checking;
-  st.timer = setTimeout(refresh, fast ? 700 : soon ? 1500 : 4000);
+  st.timer = setTimeout(refresh, st.downSince ? 2000 : fast ? 700 : soon ? 1500 : 4000);
 }
+
+// Waking the computer, getting the network back or clicking into the window: check at once.
+for (const ev of ["focus", "online"]) window.addEventListener(ev, () => refresh(true));
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(true); });
+$("#goneStart").onclick = () => { location.href = "wormscore://start"; };
 
 $$("[data-act]").forEach(b => (b.onclick = () => sideAction(b.dataset.act)));
 $("#guideBtn").onclick = () => act("/api/guide", {});

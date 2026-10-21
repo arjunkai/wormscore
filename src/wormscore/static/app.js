@@ -64,28 +64,51 @@ async function api(path, body) {
 
 // ---------------------------------------------------------------- connection
 
-// The page checks in every 20 s, and every 3 s once the connection is lost, so it reconnects
-// by itself as soon as wormscore runs again (same address). Unsaved answers stay in the form.
+// Connection to the wormscore program. The page checks in every 20 s; once a check fails it
+// says "Reconnecting...", retries every 2 s and at once when the computer wakes or the window
+// gets focus. If the program stays away it says so, with a button to start it. Unsaved answers
+// stay in the form the whole time (and in the draft the app already has).
+const GONE_AFTER_MS = 8000;
+
 function setConnected(ok) {
-  const was = st.connected;
-  st.connected = ok;
-  $("#conn").classList.toggle("hidden", ok);
-  if (ok && was === false && st.formDirty) {
+  if (st.otherProject) return;
+  const bar = $("#conn");
+  if (!ok) {
+    st.downSince ??= Date.now();
+    const long = Date.now() - st.downSince > GONE_AFTER_MS;
+    $("#connText").textContent = long
+      ? "wormscore is not running. Your answers stay in this window. " +
+        (st.cfg?.can_start ? "Click Start wormscore, then Open when your browser asks; this window reconnects by itself."
+                            : "Open wormscore again; this window reconnects by itself.")
+      : "Reconnecting to wormscore...";
+    $("#connStart").classList.toggle("hidden", !(long && st.cfg?.can_start));
+    bar.classList.remove("hidden");
+    return;
+  }
+  const was = st.downSince;
+  st.downSince = null;
+  bar.classList.add("hidden");
+  if (was && st.formDirty) {
     saveDraft();
     saveMessage("Connected again. Click Save to save this image.");
   }
 }
 
 async function checkIn() {
+  clearTimeout(st.checkTimer);
   let ok = true;
   try { await api("/api/ping"); } catch { ok = false; }
   if (ok) setConnected(true);
-  if (!st.otherProject) setTimeout(checkIn, ok ? 20000 : 3000);
+  if (!st.otherProject) st.checkTimer = setTimeout(checkIn, ok ? 20000 : 2000);
 }
+
+for (const ev of ["focus", "online"]) window.addEventListener(ev, checkIn);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkIn(); });
 
 function otherProject() {
   st.otherProject = true;
-  $("#conn").textContent = "This scoring window belongs to another project. Close it, then click Continue scoring in the wormscore window.";
+  $("#connStart").classList.add("hidden");
+  $("#connText").textContent = "This scoring window belongs to another project. Close it, then click Continue scoring in the wormscore window.";
   $("#conn").classList.remove("hidden");
 }
 
@@ -639,4 +662,5 @@ window.addEventListener("beforeunload", e => {
 })();
 
 // Tells the desktop app this page is still open, and reconnects after a lost connection.
-setTimeout(checkIn, 20000);
+st.checkTimer = setTimeout(checkIn, 20000);
+$("#connStart").onclick = () => { location.href = "wormscore://start"; };

@@ -257,3 +257,11 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px; bac
   .s-act { grid-column: 2; align-items: flex-start; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* connection */
+.reconn {
+  position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 25;
+  padding: 6px 14px; border-radius: 999px; font-size: 13px; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
+}
+.reconn[hidden] { display: none; }
