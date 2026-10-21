@@ -42,12 +42,20 @@ function icon(name, size = 16) {
 }
 
 const st = { data: null, since: 0, log: [], showLog: false, finished: false, lastRunning: false, timer: null,
-  updOpen: false, updAgree: false, updKey: "", resultShown: false, closing: false };
+  updOpen: false, updAgree: false, updKey: "", resultShown: false, closing: false, fails: 0 };
+
+const GONE = "wormscore has closed. Close this window and open wormscore again.";
 
 async function api(path, body) {
-  const res = await fetch(path, body === undefined ? {} : {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
+  let res;
+  try {
+    res = await fetch(path, body === undefined ? {} : {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+  } catch {
+    showGone();
+    throw new Error(GONE);   // the browser's own "Failed to fetch" says nothing useful
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data.ok === false && data.error) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
@@ -457,9 +465,17 @@ async function startStep(body) {
 
 // ---------------------------------------------------------------- polling
 
+// The app closes itself after a few quiet minutes (or for an update); its window can stay open.
+function showGone() {
+  if (st.closing || !$("#goneModal").hidden) return;
+  $("#goneModal").hidden = false;
+}
+
 async function refresh(soon) {
   try {
     const d = await (await fetch(`/api/state?since=${st.since}`)).json();
+    st.fails = 0;
+    $("#goneModal").hidden = true;
     if (d.job.next < st.since) { st.log = []; st.since = 0; }
     st.log.push(...d.job.lines);
     st.since = d.job.next;
@@ -468,7 +484,9 @@ async function refresh(soon) {
     st.data = d;
     render();
   } catch {
-    /* the app may be closing; the next poll tries again */
+    // One miss can be a busy moment; two in a row means the app is gone. Polling goes on,
+    // so the window recovers by itself if the app answers again.
+    if (++st.fails >= 2) showGone();
   }
   clearTimeout(st.timer);
   const fast = st.data?.job.running || st.data?.update.phase === "downloading" || st.data?.update.checking;

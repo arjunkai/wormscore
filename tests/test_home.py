@@ -161,3 +161,14 @@ def test_app_icon_ships_with_every_size_the_taskbar_needs():
     ico = Image.open(home.STATIC / "wormscore.ico")
     assert {(16, 16), (32, 32), (48, 48), (64, 64), (256, 256)} <= set(ico.info["sizes"])
     assert "wormscore.home" in home._relaunch_command() or home._relaunch_command().endswith('.exe"')
+
+
+def test_remove_from_list_matches_any_path_spelling(desk):
+    """A settings file can hold C:/a/b while the page sends C:\a\b; the X must still remove it."""
+    port, proj = desk["port"], desk["project"]
+    home.SETTINGS.write_text(json.dumps({"project": proj.as_posix(), "recent": [proj.as_posix()]}), encoding="utf-8")
+    shown = state(port)["recent"][0]["path"]
+    assert shown == str(proj)
+    assert call(port, "POST", "/api/forget", {"path": shown})[0] == 200
+    s = home.load_settings()
+    assert s["recent"] == [] and s["project"] == ""

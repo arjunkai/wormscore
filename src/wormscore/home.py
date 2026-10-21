@@ -34,15 +34,24 @@ PROGRESS_LINE = re.compile(r"\((\d+)/(\d+)\)\s*$")
 
 # ------------------------------------------------------------------ settings
 
+def same_path(a, b):
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
 def load_settings():
     try:
         s = json.loads(SETTINGS.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         s = {}
-    recent = [p for p in s.get("recent", []) if isinstance(p, str)]
-    if s.get("project") and s["project"] not in recent:
-        recent.insert(0, s["project"])
-    return {"project": s.get("project", ""), "recent": recent[:8],
+    # Paths are kept in one spelling (C:\a\b, not C:/a/b), so the page can send them back and match.
+    recent = []
+    for p in s.get("recent", []):
+        if isinstance(p, str) and p and not any(same_path(p, q) for q in recent):
+            recent.append(str(Path(p)))
+    project = str(Path(s["project"])) if isinstance(s.get("project"), str) and s["project"] else ""
+    if project and not any(same_path(project, q) for q in recent):
+        recent.insert(0, project)
+    return {"project": project, "recent": recent[:8],
             "theme": s.get("theme") if s.get("theme") in ("dark", "light") else "dark",
             "update_check": s.get("update_check") is not False,
             "skip_version": s.get("skip_version") if isinstance(s.get("skip_version"), str) else ""}
@@ -630,8 +639,9 @@ class HomeApp:
             remember(p)
         elif route == "forget":
             s = load_settings()
-            s["recent"] = [p for p in s["recent"] if p != body.get("path")]
-            if s["project"] == body.get("path"):
+            gone = str(body.get("path", ""))
+            s["recent"] = [p for p in s["recent"] if not (gone and same_path(p, gone))]
+            if s["project"] and gone and same_path(s["project"], gone):
                 s["project"] = s["recent"][0] if s["recent"] else ""
             save_settings(s)
         elif route == "guide":
