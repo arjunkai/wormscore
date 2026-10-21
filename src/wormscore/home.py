@@ -190,9 +190,12 @@ def pick_folder(title):
     """The system folder picker. Windows and Linux: Tk's native dialog on its own thread.
     macOS allows Tk windows only on the main thread, so there the Finder dialog is used."""
     if sys.platform == "darwin":
-        script = (f'POSIX path of (choose folder with prompt "{title}" '
-                  f'default location (POSIX file "{start_folder()}"))')
-        r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+        # Title and folder go in as arguments, never into the script text, so a folder name
+        # with quotes in it cannot change the script.
+        r = subprocess.run(["osascript", "-e", "on run argv",
+                            "-e", "POSIX path of (choose folder with prompt (item 1 of argv) "
+                                  "default location (POSIX file (item 2 of argv)))",
+                            "-e", "end run", title, start_folder()], capture_output=True, text=True)
         return r.stdout.strip().rstrip("/") or None if r.returncode == 0 else None
     result = {}
 
