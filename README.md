@@ -1,6 +1,14 @@
 # wormscore
 
+<p>
+  <a href="https://github.com/arjunkai/wormscore/releases/latest/download/wormscore-windows.zip"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for-Windows-0078D4?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMy40IDkuOCAydjkuNUgwek0xMC45IDEuOSAyNCAwdjExLjVIMTAuOXpNMCAxMi42aDkuOHY5LjVMMCAyMC42ek0xMC45IDEyLjZIMjRWMjRsLTEzLjEtMS45eiIvPjwvc3ZnPg=="></a>
+  <a href="https://github.com/arjunkai/wormscore/releases/latest/download/wormscore-mac.zip"><img alt="Download for macOS" src="https://img.shields.io/badge/Download_for-macOS-111111?style=for-the-badge&logo=apple&logoColor=white"></a>
+</p>
+
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23520610.svg)](https://doi.org/10.5281/zenodo.23520610)
+[![PyPI](https://img.shields.io/pypi/v/wormscore?label=PyPI)](https://pypi.org/project/wormscore/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/arjunkai/wormscore/blob/main/LICENSE)
+[![Tests](https://github.com/arjunkai/wormscore/actions/workflows/tests.yml/badge.svg)](https://github.com/arjunkai/wormscore/actions/workflows/tests.yml)
 
 Blind scoring of fluorescent neurons in *C. elegans*, with measurement and genetics statistics.
 Built for scoring reporter neurons (normal / dim / missing) in confocal z-stacks. Nothing is tied
@@ -23,10 +31,15 @@ a `.companion.ome`). Channel identity (marker vs brightfield) is read from metad
 
 ## Install
 
-**Windows, no Python needed:** download `wormscore-windows.zip` from the Releases page, unzip it,
-and double-click `wormscore.exe`. It opens the wormscore app window: your projects on the left and the
+**Windows, no Python needed:** click **Download for Windows** above (or get `wormscore-windows.zip`
+from the [Releases page](https://github.com/arjunkai/wormscore/releases)), unzip it, and double-click `wormscore.exe`. It opens the wormscore app window: your projects on the left and the
 four steps (Scan data, Build blind set, Score, Unblind) as a guided list with progress and time left.
 The older launcher window is still there for one version: `wormscore.exe --classic`.
+
+**Mac (Apple silicon, M1 and newer), no Python needed:** click **Download for macOS** above, unzip,
+and drag `wormscore.app` into Applications. The app is not signed with a paid Apple developer
+account, so the first time macOS blocks it: close the warning, then open **System Settings > Privacy &
+Security** and click **Open Anyway**. It opens in your web browser. On an Intel Mac, use Python below.
 
 **With Python 3.12 or newer:**
 
