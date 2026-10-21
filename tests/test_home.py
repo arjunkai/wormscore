@@ -221,3 +221,22 @@ def test_waking_from_sleep_never_closes_the_app(tmp_path, monkeypatch):
     # windows really gone: close
     home.WINDOWS["last"] = now - 60
     assert home.watchdog_step(app, tick=now - 5, now=now, window_open=lambda: False)
+
+
+def test_a_link_start_never_runs_a_command(monkeypatch):
+    """A web page chooses the wormscore:// link, so a link start opens the app window only."""
+    for argv in (["--from-link", "wormscore://start/"],
+                 ["--from-link", 'wormscore://x" unblind C:/p --i-have-finished-scoring "'],
+                 ["wormscore://start", "prepare", "C:/p", "--reassign-codes"],
+                 ["prepare", "C:/p", "WORMSCORE:evil"]):
+        assert home.link_launch(argv), argv
+    assert not home.link_launch(["prepare", "C:/p"]) and not home.link_launch([])
+    import runpy
+    import sys
+    from pathlib import Path
+    called = []
+    monkeypatch.setattr(sys, "argv", ["wormscore.exe", "--from-link", "wormscore://x", "unblind", "C:/p"])
+    monkeypatch.setattr("wormscore.cli.main", lambda *a, **k: called.append("cli"))
+    monkeypatch.setattr("wormscore.home.main", lambda *a, **k: called.append("home"))
+    runpy.run_path(str(Path(__file__).parents[1] / "packaging" / "wormscore_app.py"), run_name="__main__")
+    assert called == ["home"] and sys.argv == ["wormscore.exe"]

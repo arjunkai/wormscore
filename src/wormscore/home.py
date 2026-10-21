@@ -910,6 +910,13 @@ def close_reason(app, now=None):
 
 
 LAUNCH_SCHEME = "wormscore"
+FROM_LINK = "--from-link"    # marks a start from the link; every other argument is then ignored
+
+
+def link_launch(argv):
+    """True when the app was started from a wormscore:// link. A web page chooses that link,
+    so nothing from such a start may reach the command line (no prepare, unblind, ...)."""
+    return any(a == FROM_LINK or a.lower().startswith(LAUNCH_SCHEME + ":") for a in argv)
 
 # Gives Start menu and desktop shortcuts to this wormscore.exe the app's taskbar ID, so a pin
 # made from them groups with the app windows (which carry the same ID) instead of showing a
@@ -975,7 +982,7 @@ def register_launch_link():
     if sys.platform != "win32" or not getattr(sys, "frozen", False):
         return False
     import winreg
-    command = f'"{sys.executable}" "%1"'
+    command = f'"{sys.executable}" {FROM_LINK} "%1"'
     key = rf"Software\Classes\{LAUNCH_SCHEME}"
     try:
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key + r"\shell\open\command") as k:
@@ -1025,7 +1032,8 @@ def show_home_window(app, url, started):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    argv = [a for a in argv if not a.lower().startswith(LAUNCH_SCHEME + ":")]   # started by the link
+    if link_launch(argv):
+        argv = []              # started from the link: just the app window
     if "--classic" in argv:
         from .launcher import main as classic
         return classic()

@@ -8,8 +8,10 @@ import sys
 if __name__ == "__main__":
     # Older macOS versions add a -psn_... argument when an app is opened from Finder.
     sys.argv = [a for a in sys.argv if not a.startswith("-psn_")]
-    # wormscore://start (the Start wormscore button on a window that lost its connection)
-    sys.argv = [a for a in sys.argv if not a.lower().startswith("wormscore:")]
+    # Started from the wormscore:// link (the Start wormscore button on a window that lost its
+    # connection): a web page picks that link, so ignore every argument and open the app window.
+    if any(a == "--from-link" or a.lower().startswith("wormscore:") for a in sys.argv[1:]):
+        sys.argv = sys.argv[:1]
     if len(sys.argv) > 1 and sys.argv[1:] != ["--classic"]:
         from wormscore.cli import main
     else:
