@@ -154,3 +154,10 @@ def test_guide_opens_in_the_default_browser(desk, monkeypatch):
     monkeypatch.setattr(home.webbrowser, "open", opened.append)
     assert call(desk["port"], "POST", "/api/guide", {})[0] == 200
     assert opened == [home.GUIDE_URL]
+
+
+def test_app_icon_ships_with_every_size_the_taskbar_needs():
+    from PIL import Image
+    ico = Image.open(home.STATIC / "wormscore.ico")
+    assert {(16, 16), (32, 32), (48, 48), (64, 64), (256, 256)} <= set(ico.info["sizes"])
+    assert "wormscore.home" in home._relaunch_command() or home._relaunch_command().endswith('.exe"')

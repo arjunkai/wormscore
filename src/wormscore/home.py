@@ -172,18 +172,152 @@ def edge_path():
     return None
 
 
+_edge_pids = set()     # Edge processes this app started; only their windows get our icon
+
+
 def open_window(url, size=(1200, 820)):
     """Open url in its own app window (no tabs or address bar); fall back to the default browser."""
     exe = edge_path()
     if exe:
         profile = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "wormscore" / "window"
         try:
-            subprocess.Popen([str(exe), f"--app={url}", f"--window-size={size[0]},{size[1]}",
-                              f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"])
+            p = subprocess.Popen([str(exe), f"--app={url}", f"--window-size={size[0]},{size[1]}",
+                                  f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"])
+            _edge_pids.add(p.pid)
+            _start_icon_keeper()
             return
         except OSError:
             pass
     webbrowser.open(url)
+
+
+_icon_keeper = None
+APP_ID = "arjunkai.wormscore"
+
+
+def _relaunch_command():
+    """What a pinned taskbar button runs: the app itself, not Edge."""
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    return f'"{pythonw if pythonw.exists() else sys.executable}" -c "from wormscore.home import main; main()"'
+
+
+def _set_window_identity(hwnd, ico):
+    """Give an app window wormscore's own taskbar identity: its own app ID (so wormscore windows
+    group as one app instead of under Edge), the name, and the icon file. Without this the
+    taskbar draws the button from Edge's 32-pixel copy of the page icon, which looks blurry
+    on scaled displays. Uses the window's property store (System.AppUserModel.*)."""
+    import ctypes
+    import uuid
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [("data", ctypes.c_ubyte * 16)]
+
+    class PKEY(ctypes.Structure):
+        _fields_ = [("fmtid", GUID), ("pid", wintypes.DWORD)]
+
+    class PROPVARIANT(ctypes.Structure):
+        _fields_ = [("vt", ctypes.c_ushort), ("reserved", ctypes.c_ushort * 3),
+                    ("value", ctypes.c_void_p), ("pad", ctypes.c_void_p)]
+
+    def guid(s):
+        g = GUID()
+        ctypes.memmove(g.data, uuid.UUID(s).bytes_le, 16)
+        return g
+    store = ctypes.c_void_p()
+    if ctypes.windll.shell32.SHGetPropertyStoreForWindow(
+            wintypes.HWND(hwnd), ctypes.byref(guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")), ctypes.byref(store)):
+        return False
+    vtable = ctypes.cast(ctypes.cast(store, ctypes.POINTER(ctypes.c_void_p))[0], ctypes.POINTER(ctypes.c_void_p))
+    set_value = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.POINTER(PKEY),
+                                   ctypes.POINTER(PROPVARIANT))(vtable[6])         # IPropertyStore::SetValue
+    commit = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p)(vtable[7])
+    release = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(vtable[2])
+    fmtid = guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3")                             # System.AppUserModel
+    try:
+        for pid, text in ((5, APP_ID), (3, f"{ico},0"), (4, "wormscore"), (2, _relaunch_command())):
+            buf = ctypes.create_unicode_buffer(text)
+            value = PROPVARIANT(vt=31, value=ctypes.addressof(buf))                   # VT_LPWSTR
+            set_value(store, ctypes.byref(PKEY(fmtid, pid)), ctypes.byref(value))
+        commit(store)
+    finally:
+        release(store)
+    return True
+
+
+def _start_icon_keeper():
+    """Sharp icons for the app windows. Edge gives an app window at most a 32-pixel icon, which
+    the taskbar stretches. Each new window gets wormscore's own taskbar identity and icon file,
+    plus title-bar icons from wormscore.ico at the size the screen needs."""
+    global _icon_keeper
+    if sys.platform != "win32" or _icon_keeper is not None:
+        return
+    ico = STATIC / "wormscore.ico"
+    if not ico.is_file():
+        return
+
+    def keep():
+        import ctypes
+        from ctypes import wintypes
+        ctypes.windll.ole32.CoInitialize(None)
+        user32 = ctypes.windll.user32
+        user32.LoadImageW.restype = wintypes.HANDLE
+        user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
+                                      ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        handles, done = {}, set()
+
+        def icon(px):
+            if px not in handles:   # loaded once per size; Windows picks the best image in the .ico
+                handles[px] = user32.LoadImageW(None, str(ico), 1, px, px, 0x10)   # IMAGE_ICON, LR_LOADFROMFILE
+            return handles[px]
+
+        def each(hwnd, _):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value in _edge_pids and user32.IsWindowVisible(hwnd):
+                if hwnd not in done:
+                    try:
+                        if _set_window_identity(hwnd, ico):
+                            done.add(hwnd)
+                    except OSError:
+                        pass
+                dpi = user32.GetDpiForWindow(hwnd) or 96
+                user32.SendMessageW(hwnd, 0x80, 1, icon(user32.GetSystemMetricsForDpi(11, dpi)))  # ICON_BIG
+                user32.SendMessageW(hwnd, 0x80, 0, icon(user32.GetSystemMetricsForDpi(49, dpi)))  # ICON_SMALL
+            return True
+
+        def profile_pids():
+            """Edge processes using this app's own profile folder: Edge relaunches itself, and if an
+            earlier app window is still open it hands new windows to that process."""
+            profile = str(Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "wormscore" / "window")
+            ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+                  # the path is quoted on Edge's command line, so match the path alone
+                  "Where-Object { $_.CommandLine -like '*" + profile.replace("'", "''") + "*' } | "
+                  "ForEach-Object { $_.ProcessId }")
+            try:
+                out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                                     timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+                return {int(x) for x in out.split() if x.isdigit()}
+            except (OSError, subprocess.SubprocessError):
+                return set()
+
+        callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(each)
+        rounds = 0
+        while True:
+            if rounds % 10 == 0:        # at once, then every 30 s
+                _edge_pids.update(profile_pids())
+            try:
+                user32.EnumWindows(callback, 0)
+            except OSError:
+                pass
+            rounds += 1
+            time.sleep(3 if rounds > 1 else 1)
+
+    _icon_keeper = threading.Thread(target=keep, daemon=True)
+    _icon_keeper.start()
 
 
 _dialog_lock = threading.Lock()
