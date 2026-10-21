@@ -5,10 +5,18 @@ authors:
   - family-names: Bansal
     given-names: Arjun
 version: 0.6.1
-date-released: 2026-10-20
+date-released: 2026-10-21
+doi: 10.5281/zenodo.23520610
 license: MIT
 repository-code: "https://github.com/arjunkai/wormscore"
 url: "https://github.com/arjunkai/wormscore"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23520610
+    description: All versions (resolves to the latest)
+  - type: doi
+    value: 10.5281/zenodo.23520611
+    description: Version 0.6.1
 keywords:
   - C. elegans
   - neurons

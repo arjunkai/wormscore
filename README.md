@@ -1,5 +1,7 @@
 # wormscore
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23520610.svg)](https://doi.org/10.5281/zenodo.23520610)
+
 Blind scoring of fluorescent neurons in *C. elegans*, with measurement and genetics statistics.
 Built for scoring reporter neurons (normal / dim / missing) in confocal z-stacks. Nothing is tied
 to one neuron, marker or microscope: those are settings in each project's `config.json`, so other
@@ -126,8 +128,11 @@ Do not commit or upload data that belongs to someone else.
 
 ## License and citation
 
-MIT License (see [LICENSE](https://github.com/arjunkai/wormscore/blob/main/LICENSE)). If you use wormscore in research, please cite it: GitHub's
-"Cite this repository" button (from [CITATION.cff](https://github.com/arjunkai/wormscore/blob/main/CITATION.cff)) gives the reference.
+MIT License (see [LICENSE](https://github.com/arjunkai/wormscore/blob/main/LICENSE)). If you use wormscore in research, please cite the version you used.
+Each release has its own DOI on Zenodo; [doi:10.5281/zenodo.23520610](https://doi.org/10.5281/zenodo.23520610)
+lists all versions and resolves to the latest. GitHub's "Cite this repository" button (from
+[CITATION.cff](https://github.com/arjunkai/wormscore/blob/main/CITATION.cff)) gives the reference, and `log.md`
+in your project records which version ran each step.
 
 wormscore reads Leica files with [liffile](https://github.com/cgohlke/liffile) and Zeiss files with
 [czifile](https://github.com/cgohlke/czifile) (both BSD-3). The Windows app bundles these and other
