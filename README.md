@@ -52,6 +52,23 @@ The newest code from GitHub: `pip install git+https://github.com/arjunkai/wormsc
 This installs a `wormscore` command and `wormscore-launcher`, which opens the same app window (in your
 default browser on macOS and Linux).
 
+### Updates
+
+From 0.8.0 the downloaded app (Windows and Mac) checks for a new version when it starts. If there is
+one, a banner shows what is new with **Update and restart**, **Not now** and **Skip this version**.
+Update downloads the zip for your computer, checks it against the SHA-256 checksum GitHub lists for
+it, runs the new copy once to confirm its version, and swaps it in after the app closes. The previous
+version is kept: **Settings > Go back to ...** swaps it back. Projects, codes and scores are never
+touched. From the command line: `wormscore update`, `wormscore update --install`,
+`wormscore update --rollback`.
+
+If a project has a blind set built but is not unblinded yet, the banner warns that updating would
+put two wormscore versions in that project's Methods, and **Not now** becomes the default. Update
+before you build a blind set or after you unblind.
+
+Copies installed with pip are told to run `pip install -U wormscore` instead. Turn the check off in
+Settings (the gear at the top). Versions before 0.8.0 need one manual download.
+
 ## Try it in two minutes (simulated data)
 
 ```
@@ -124,6 +141,10 @@ The images are not part of this repository.
 See [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md) for every step in plain language, suitable for adapting into
 a Methods section, including the measurement definitions and their limits.
 
+## Roadmap
+
+Planned features are in [ROADMAP.md](https://github.com/arjunkai/wormscore/blob/main/ROADMAP.md).
+
 ## Development
 
 ```
@@ -141,6 +162,11 @@ Build the Windows app: `packaging\build_windows.bat`.
 
 This repository contains code only. `.gitignore` excludes image formats, keys, scores and outputs.
 Do not commit or upload data that belongs to someone else.
+
+wormscore never sends your images, projects or scores anywhere. The only network requests are the
+update check (one request to GitHub's latest-release page, sending nothing but the app's version in
+the User-Agent; off switch in Settings), an update you choose to install, and the real-image demo
+download.
 
 ## License and citation
 

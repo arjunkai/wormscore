@@ -12,9 +12,11 @@
 </head>
 <body>
 <header class="top">
-  <div class="brand"><img src="/static/icon.svg" alt="" width="22" height="22"><span>wormscore</span><span class="ver" id="ver"></span></div>
+  <div class="brand"><img src="/static/icon.svg" alt="" width="22" height="22"><span>wormscore</span><span class="ver" id="ver"></span>
+    <button class="upd-pill" id="updPill" hidden title="See what's new and update"></button></div>
   <div class="top-actions">
     <button class="ghost" id="guideBtn" title="Open the guide in your web browser">Guide</button>
+    <button class="ghost icon" id="settingsBtn" title="Settings and updates" aria-label="Settings and updates"></button>
     <button class="ghost icon" id="themeBtn" title="Switch light / dark" aria-label="Switch light or dark mode"></button>
   </div>
 </header>
@@ -40,6 +42,9 @@
     <div id="mChoices" class="m-choices"></div>
     <div class="m-foot"><button class="btn subtle" id="mCancel">Cancel</button></div>
   </div>
+</div>
+<div id="updModal" class="modal" hidden>
+  <div class="dialog upd-dialog" id="updBox" role="dialog" aria-modal="true" aria-labelledby="udTitle"></div>
 </div>
 <div id="toast" class="toast" hidden></div>
 

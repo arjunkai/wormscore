@@ -38,6 +38,11 @@ def main(argv=None):
     s.add_argument("project")
     s.add_argument("--i-have-finished-scoring", dest="finished", action="store_true")
     s.add_argument("--anyway", action="store_true", help="unblind below the planned minimum number of scores")
+    s = sub.add_parser("update", help="check GitHub for a newer version; --install or --rollback the downloaded app")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--install", action="store_true", help="download, check and install it when this command ends")
+    g.add_argument("--rollback", action="store_true", help="go back to the previous version kept by the last update")
+    s.add_argument("--anyway", action="store_true", help="install even though a project is between build and unblind")
 
     a = p.parse_args(argv)
     try:
@@ -73,7 +78,38 @@ def main(argv=None):
         elif a.cmd == "unblind":
             from .unblind import unblind
             unblind(a.project, finished=a.finished, anyway=a.anyway)
+        elif a.cmd == "update":
+            update_command(a)
     except FileNotFoundError as exc:
+        sys.exit(str(exc))
+
+
+def update_command(a):
+    from . import update as U
+    from .home import load_settings, project_status
+    try:
+        if a.rollback:
+            back = U.rollback(relaunch=False)
+            print(f"wormscore {back} is put back when this command ends.")
+            return
+        info = U.check(timeout=15)
+        if not U.is_newer(info["version"]):
+            print(f"wormscore {__version__} is the latest version.")
+            return
+        print(f"wormscore {info['version']} is available (you have {__version__}).")
+        kind = U.install_kind()
+        if kind == "pip":
+            print(f"This copy was installed with Python. Update it with:  {U.PIP_COMMAND}")
+            return
+        if not a.install:
+            print("Install it with:  wormscore update --install")
+            return
+        projects = U.unfinished_projects([project_status(p) for p in load_settings()["recent"]])
+        if projects and not a.anyway:
+            sys.exit(U.warning_text(projects, info["version"]) + " Add --anyway to update now.")
+        U.install(info, say=print, relaunch=False)
+        print("The new version replaces this copy when this command ends.")
+    except U.UpdateError as exc:
         sys.exit(str(exc))
 
 

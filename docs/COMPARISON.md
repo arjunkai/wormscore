@@ -102,8 +102,9 @@ evidence that people struggle with it, and what wormscore does.
   NeuroPAL and NeuroPAL ID.
 - **Single computer.** Scoring is local. Several scorers in different places are better served by a
   web-based tool such as [Schippers et al. 2024](https://doi.org/10.3390/jimaging10020033).
-- **Platforms.** The Windows app is tested; the Python package is tested on Windows and Linux in CI.
-  macOS is untested.
+- **Platforms.** The Windows app is tested by hand; the Python package is tested on Windows and Linux
+  in CI. The Mac app is built, tested and smoke-tested on an Apple silicon runner for each release,
+  but not tested by hand.
 - **Maturity.** Fiji, CellProfiler and QuPath have large user communities and years of fixes.
   wormscore does not.
 

@@ -79,6 +79,38 @@ a { color: inherit; }
 button:disabled { opacity: .45; cursor: not-allowed; }
 button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--run); outline-offset: 2px; }
 
+/* ---------------------------------------------------------------- update dialog */
+.upd-pill {
+  font: 600 12px/1 inherit; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent);
+}
+.upd-pill:hover { filter: brightness(1.1); }
+.upd-pill[hidden] { display: none; }
+.upd-dialog { width: min(520px, 100%); padding: 22px 24px 18px; }
+.ud-head { display: flex; gap: 14px; align-items: center; }
+.ud-head h3 { margin: 0; font-size: 18px; }
+.ud-ver { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.vtag { font-variant-numeric: tabular-nums; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.vtag.new { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.ud-label { margin: 18px 0 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ud-notes { max-height: 210px; overflow: auto; font-size: 13.5px; padding: 10px 14px; border-radius: var(--radius);
+  background: var(--bg); border: 1px solid var(--line); }
+.ud-notes p { margin: 4px 0; }
+.ud-notes ul { margin: 4px 0; padding-left: 18px; }
+.ud-notes li { margin: 3px 0; }
+.ud-msg { color: var(--muted); font-size: 13.5px; margin: 12px 0 0; }
+.ud-warn { margin-top: 14px; padding: 10px 14px; border-radius: var(--radius); font-size: 13px;
+  background: var(--warn-soft); border-left: 3px solid var(--warn); }
+.ud-warn b { display: block; margin-bottom: 2px; }
+.ud-agree { margin-top: 12px; color: var(--text); }
+.ud-foot { display: flex; gap: 8px; align-items: center; margin-top: 20px; }
+.ud-foot .grow { flex: 1; }
+.upd-dialog .bar { margin-top: 18px; }
+code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px; background: var(--raised);
+  padding: 1px 6px; border-radius: 4px; }
+.settings .check { color: var(--text); }
+.settings .fine { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+
 /* ---------------------------------------------------------------- layout */
 .layout { flex: 1; display: grid; grid-template-columns: 290px 1fr; min-height: 0; }
 .side {

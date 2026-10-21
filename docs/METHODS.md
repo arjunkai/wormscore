@@ -196,5 +196,8 @@ Results tables use counted, usable images only, with the animal as the unit (one
 - Calls are human judgements made on fixed display ranges; the software records but does not make them.
 - Filter size and background ring are common choices, not values from a published protocol; they are
   settings and are logged.
+- One version per project: `log.md` records the wormscore version at every step. Updating between
+  Build blind set and Unblind would put two versions in the Methods; the app warns before such an
+  update and defaults to Not now.
 - XML metadata is parsed with Python's standard library, which does not fetch external entities; only
   open files you trust.

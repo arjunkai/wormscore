@@ -24,6 +24,7 @@ const ICONS = {
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 };
 function icon(name, size = 16) {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -40,7 +41,8 @@ function icon(name, size = 16) {
   return s;
 }
 
-const st = { data: null, since: 0, log: [], showLog: false, finished: false, lastRunning: false, timer: null };
+const st = { data: null, since: 0, log: [], showLog: false, finished: false, lastRunning: false, timer: null,
+  updOpen: false, updAgree: false, updKey: "", resultShown: false, closing: false };
 
 async function api(path, body) {
   const res = await fetch(path, body === undefined ? {} : {
@@ -74,10 +76,12 @@ async function act(path, body) {
 
 // ---------------------------------------------------------------- modal
 
-function ask(title, body, choices) {
+function ask(title, body, choices, cancel = "Cancel") {
   return new Promise(resolve => {
     $("#mTitle").textContent = title;
-    $("#mBody").textContent = body;
+    if (body instanceof Node) $("#mBody").replaceChildren(body);
+    else $("#mBody").textContent = body;
+    $("#mCancel").textContent = cancel;
     const box = $("#mChoices");
     box.replaceChildren(...choices.map(c => h("button", {
       class: "choice" + (c.danger ? " danger" : ""), onclick: () => close(c.value),
@@ -236,9 +240,140 @@ function activity(job) {
     st.showLog ? h("pre", { class: "log", id: "log" }, st.log.join("\n")) : null);
 }
 
+// ---------------------------------------------------------------- updates
+
+// Release notes as a short list: "- " lines become bullets, other lines paragraphs.
+function notesList(text) {
+  const out = [];
+  let ul = null;
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+  if (/^what'?s new:?$/i.test(lines[0] || "")) lines.shift();     // the dialog already says it
+  for (const line of lines) {
+    if (/^[-*] /.test(line)) {
+      if (!ul) out.push(ul = h("ul", {}));
+      ul.append(h("li", {}, line.slice(2)));
+    } else {
+      ul = null;
+      out.push(h("p", {}, line));
+    }
+  }
+  return out;
+}
+
+// The update dialog: shown once when the app opens and a newer version exists, and again from
+// the pill next to the version number. Rebuilt only when what it shows changes, so a poll does
+// not reset the tick box or the scroll position.
+function renderUpdate(d) {
+  const u = d.update;
+  const busy = u.phase === "downloading" || u.phase === "restarting";
+  const open = busy || u.phase === "error" || (u.result && !u.result.ok) || ((u.show || st.updOpen) && u.newer);
+  const pill = $("#updPill");
+  pill.hidden = !(u.newer && !open && !busy);
+  pill.textContent = `${u.latest} available`;
+  if (u.result?.ok && !st.resultShown) {
+    st.resultShown = true;
+    toast(`wormscore is now ${d.version}.` + (u.previous ? ` Settings can go back to ${u.previous}.` : ""), "ok");
+    api("/api/update", { action: "dismiss" }).catch(() => {});
+  }
+  const key = JSON.stringify([open, u.phase, u.latest, u.warning, u.kind, u.can_install, u.message,
+    u.result, st.updAgree, busy && u.frac !== null ? Math.round(100 * u.frac) : null, st.closing]);
+  if (key === st.updKey) return;
+  st.updKey = key;
+  const m = $("#updModal");
+  m.hidden = !open;
+  if (!open) return;
+
+  const head = (title, sub) => h("div", { class: "ud-head" },
+    h("img", { src: "/static/icon.svg", width: 40, height: 40, alt: "" }),
+    h("div", {}, h("h3", { id: "udTitle" }, title), sub));
+  const versions = h("div", { class: "ud-ver" }, h("span", { class: "vtag" }, d.version), " \u2192 ",
+    h("span", { class: "vtag new" }, u.latest));
+  let kids;
+  if (busy) {
+    const pct = u.frac !== null && u.frac !== undefined ? Math.round(100 * u.frac) : null;
+    kids = [head(u.phase === "restarting" ? "Restarting wormscore" : `Updating to ${u.latest}`, versions),
+      h("div", { class: "bar" + (u.phase === "downloading" && pct === null ? " indet" : "") },
+        h("div", { style: `width:${u.phase === "restarting" ? 100 : pct ?? 0}%` })),
+      h("p", { class: "ud-msg" }, st.closing ? "You can close this window. The new version opens in its own window."
+        : u.message || "Starting the download...")];
+    if (u.phase === "restarting" && !st.closing) {
+      st.closing = true;
+      setTimeout(() => window.close(), 3500);
+    }
+  } else if (u.phase === "error" || (u.result && !u.result.ok)) {
+    kids = [head("The update did not finish", null), h("p", { class: "ud-msg" }, u.phase === "error" ? u.message : u.result.message),
+      h("div", { class: "ud-foot" }, h("span", { class: "grow" }),
+        h("button", { class: "primary", onclick: () => { st.updOpen = false; act("/api/update", { action: "dismiss" }); } }, "OK"))];
+  } else {
+    const warn = !!u.warning;
+    const later = () => { st.updOpen = false; st.updAgree = false; act("/api/update", { action: "later" }); };
+    const skip = () => { st.updOpen = false; act("/api/update", { action: "skip" }); };
+    let main;
+    if (u.can_install) {
+      main = h("button", { class: warn ? "btn" : "primary", disabled: warn && !st.updAgree,
+        onclick: () => act("/api/update", { action: "install", confirmed: warn }) }, warn ? "Update anyway" : "Update and restart");
+    } else if (u.kind === "pip") {
+      main = h("button", { class: "primary", onclick: () => copyText(u.pip_command) }, "Copy command");
+    } else {
+      main = h("button", { class: "primary", onclick: () => act("/api/update", { action: "releases" }) }, "Open download page");
+    }
+    kids = [head("Update available", versions),
+      u.notes ? h("div", { class: "ud-label" }, "What's new") : null,
+      u.notes ? h("div", { class: "ud-notes" }, notesList(u.notes)) : null,
+      u.kind === "pip" ? h("p", { class: "ud-msg" }, "This copy was installed with Python. To update, run ",
+        h("code", {}, u.pip_command), " in a terminal.") : null,
+      warn ? h("div", { class: "ud-warn" }, h("b", {}, "A project is in progress"), h("span", {}, u.warning)) : null,
+      warn && u.can_install ? h("label", { class: "check ud-agree" },
+        h("input", { type: "checkbox", checked: st.updAgree, onchange: e => { st.updAgree = e.target.checked; render(); } }),
+        "I understand the Methods would cite two versions") : null,
+      h("div", { class: "ud-foot" },
+        h("button", { class: "btn subtle", onclick: skip }, "Skip this version"),
+        h("span", { class: "grow" }),
+        h("button", { class: warn ? "primary" : "btn", onclick: later }, "Not now"),
+        main)];
+    m.onkeydown = e => { if (e.key === "Escape") later(); };
+  }
+  const box = $("#updBox");
+  box.replaceChildren(...kids.filter(Boolean));
+  (box.querySelector("button.primary:not(:disabled)") || box.querySelector("button"))?.focus();
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast("Copied. Paste it in a terminal.", "ok"); }
+  catch { toast(`Run this in a terminal: ${text}`, "ok"); }
+}
+
+async function openSettings() {
+  const u = st.data.update;
+  const status = u.checking ? "Checking..." : u.error ? u.error
+    : u.newer ? `wormscore ${u.latest} is available. You have ${st.data.version}.`
+    : u.latest ? `You have the latest version (${st.data.version}).` : "Not checked yet.";
+  const box = h("div", { class: "settings" },
+    h("label", { class: "check" },
+      h("input", { type: "checkbox", checked: u.enabled, onchange: e => act("/api/settings", { update_check: e.target.checked }) }),
+      "Check for updates when wormscore starts"),
+    h("p", { class: "fine" }, "The check asks GitHub for the latest release. Nothing about you or your projects is sent."),
+    h("p", { class: "fine" }, status),
+    u.kind === "pip" ? h("p", { class: "fine" }, "Installed with Python. Update with: ", h("code", {}, u.pip_command)) : null);
+  const choices = [{ value: "check", label: "Check now" }];
+  if (u.previous) choices.push({ value: "rollback", label: `Go back to ${u.previous}`, danger: true,
+    desc: `Closes wormscore, swaps the kept copy of ${u.previous} back in and reopens it. ${st.data.version} is kept in its place.` });
+  const pick = await ask("Settings", box, choices, "Close");
+  if (pick === "check") {
+    await act("/api/update", { action: "check" });
+    return openSettings();
+  }
+  if (pick === "rollback") {
+    const go = await ask(`Go back to ${u.previous}?`, "wormscore closes and reopens as the older version. Projects and scores are not changed.",
+      [{ value: true, label: `Go back to ${u.previous}` }]);
+    if (go) act("/api/update", { action: "rollback" });
+  }
+}
+
 function render() {
   const d = st.data;
   if (!d) return;
+  renderUpdate(d);
   document.documentElement.dataset.theme = d.theme;
   $("#themeBtn").replaceChildren(icon(d.theme === "dark" ? "sun" : "moon", 18));
   $("#themeBtn").title = d.theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
@@ -336,10 +471,14 @@ async function refresh(soon) {
     /* the app may be closing; the next poll tries again */
   }
   clearTimeout(st.timer);
-  st.timer = setTimeout(refresh, st.data?.job.running ? 700 : soon ? 1500 : 4000);
+  const fast = st.data?.job.running || st.data?.update.phase === "downloading" || st.data?.update.checking;
+  st.timer = setTimeout(refresh, fast ? 700 : soon ? 1500 : 4000);
 }
 
 $$("[data-act]").forEach(b => (b.onclick = () => sideAction(b.dataset.act)));
 $("#guideBtn").onclick = () => act("/api/guide", {});
+$("#updPill").onclick = () => { st.updOpen = true; st.updKey = ""; render(); };
+$("#settingsBtn").replaceChildren(icon("gear", 18));
+$("#settingsBtn").onclick = () => st.data && openSettings();
 $("#themeBtn").onclick = () => act("/api/theme", { theme: st.data?.theme === "dark" ? "light" : "dark" });
 refresh();

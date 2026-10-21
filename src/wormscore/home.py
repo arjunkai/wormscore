@@ -19,6 +19,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
+from . import update as U
 from .server import CODE, LOCAL_HOSTS, STATIC
 
 SETTINGS = Path.home() / ".wormscore.json"
@@ -42,7 +43,9 @@ def load_settings():
     if s.get("project") and s["project"] not in recent:
         recent.insert(0, s["project"])
     return {"project": s.get("project", ""), "recent": recent[:8],
-            "theme": s.get("theme") if s.get("theme") in ("dark", "light") else "dark"}
+            "theme": s.get("theme") if s.get("theme") in ("dark", "light") else "dark",
+            "update_check": s.get("update_check") is not False,
+            "skip_version": s.get("skip_version") if isinstance(s.get("skip_version"), str) else ""}
 
 
 def save_settings(s):
@@ -181,8 +184,11 @@ def open_window(url, size=(1200, 820)):
     if exe:
         profile = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "wormscore" / "window"
         try:
+            # Started from the home folder: a window started from the app folder would hold
+            # that folder open, and an update could not replace it.
             p = subprocess.Popen([str(exe), f"--app={url}", f"--window-size={size[0]},{size[1]}",
-                                  f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"])
+                                  f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"],
+                                 cwd=str(Path.home()))
             _edge_pids.add(p.pid)
             _start_icon_keeper()
             return
@@ -351,6 +357,56 @@ def pick_folder(title):
     return str(Path(result["path"])) if result.get("path") else None
 
 
+def open_in_browser(url, title_part):
+    """Open url in the default browser and bring that window to the front. Windows lets only
+    the program the user last clicked raise a window, so the browser on its own opens the
+    page behind the app window. Joining the input of the app window (which was just clicked)
+    lets this process raise the browser window whose title shows the page."""
+    webbrowser.open(url)
+    if sys.platform != "win32":
+        return
+
+    def raise_it():
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        found = []
+
+        def each(hwnd, _):
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if user32.IsWindowVisible(hwnd) and pid.value not in _edge_pids:
+                buf = ctypes.create_unicode_buffer(512)
+                user32.GetWindowTextW(hwnd, buf, 512)
+                if title_part in buf.value:
+                    found.append(hwnd)
+                    return False
+            return True
+        callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(each)
+        for _ in range(40):                  # the page title appears once it has loaded
+            time.sleep(0.25)
+            user32.EnumWindows(callback, 0)
+            if found:
+                break
+        if not found:
+            return
+        hwnd = wintypes.HWND(found[0])
+        fg_thread = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
+        me = ctypes.windll.kernel32.GetCurrentThreadId()
+        attached = fg_thread and fg_thread != me and user32.AttachThreadInput(me, fg_thread, True)
+        try:
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                user32.AttachThreadInput(me, fg_thread, False)
+    threading.Thread(target=raise_it, daemon=True).start()
+
+
 def open_path(p):
     """Open a folder or file with the system's default program."""
     if hasattr(os, "startfile"):
@@ -372,21 +428,133 @@ def dpi_aware():
 # ------------------------------------------------------------------ the app
 
 class HomeApp:
-    def __init__(self, open_windows=True, pick=pick_folder, opener=open_path):
+    def __init__(self, open_windows=True, pick=pick_folder, opener=open_path, check_updates=False):
         self.job = Job()
         self.scoring = None          # (project path, server, url)
         self.last_seen = time.time()
         self.open_windows = open_windows
         self.pick = pick
         self.opener = opener
+        self.exit_app = lambda: None   # set by main(): closes the app so an update can replace it
+        self.upd = {"info": None, "error": None, "checking": False, "dismissed": False,
+                    "phase": "", "frac": None, "message": "", "result": None}
+        if check_updates:
+            self.upd["result"] = U.last_result()
+            if load_settings()["update_check"]:
+                self.check_for_update()
+
+    # ---------------------------------------------------------------- updates
+
+    def check_for_update(self, wait=False):
+        """Ask GitHub for the latest release (no data about the user is sent)."""
+        def run():
+            try:
+                self.upd.update(info=U.check(), error=None)
+            except U.UpdateError as exc:
+                self.upd["error"] = str(exc)
+            finally:
+                self.upd["checking"] = False
+        self.upd["checking"] = True
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        if wait:
+            t.join(10)
+
+    def updating(self):
+        return self.upd["phase"] in ("downloading", "restarting")
+
+    def update_view(self, statuses):
+        s = load_settings()
+        u, info = self.upd, self.upd["info"]
+        kind = U.install_kind()
+        newer = bool(info and U.is_newer(info["version"]))
+        projects = U.unfinished_projects(statuses) if newer else []
+        return {"kind": kind, "enabled": s["update_check"], "checking": u["checking"], "error": u["error"],
+                "latest": info["version"] if info else None, "newer": newer,
+                "show": newer and not u["dismissed"] and s["skip_version"] != info["version"],
+                "notes": info["notes"] if newer else "", "page": info["page"] if info else U.RELEASES_PAGE,
+                "can_install": newer and kind in U.ASSETS and bool(info.get("asset")),
+                "pip_command": U.PIP_COMMAND, "warning": U.warning_text(projects, info["version"]) if newer else "",
+                "phase": u["phase"], "frac": u["frac"], "message": u["message"], "result": u["result"],
+                "previous": U.previous_version() if kind in U.ASSETS else None}
+
+    def update_blocked(self):
+        if self.job.running:
+            return "A step is still running. Update when it is done."
+        if self.scoring and time.time() - self.scoring[1].project.last_seen < 45:
+            return "Close the scoring window first, then update."
+        if self.updating():
+            return "An update is already under way."
+        return None
+
+    def update_action(self, body):
+        action = body.get("action")
+        if action == "later":
+            self.upd["dismissed"] = True
+        elif action == "skip":
+            if self.upd["info"]:
+                s = load_settings()
+                s["skip_version"] = self.upd["info"]["version"]
+                save_settings(s)
+        elif action == "check":
+            self.upd["dismissed"] = False
+            self.check_for_update(wait=True)
+        elif action == "dismiss":
+            self.upd["result"] = None
+            if self.upd["phase"] == "error":
+                self.upd.update(phase="", message="")
+        elif action == "releases":
+            open_in_browser(U.RELEASES_PAGE, "arjunkai/wormscore")
+        elif action in ("install", "rollback"):
+            blocked = self.update_blocked()
+            if blocked:
+                raise ValueError(blocked)
+            if action == "install":
+                info = self.upd["info"]
+                if not (info and U.is_newer(info["version"])):
+                    raise ValueError("No newer version found.")
+                s = load_settings()
+                if U.unfinished_projects([project_status(p) for p in s["recent"]]) and body.get("confirmed") is not True:
+                    raise ValueError("Confirm the update first: a project's Methods would cite two versions.")
+            elif not U.previous_version():
+                raise ValueError("There is no previous version to go back to.")
+            self.upd.update(phase="downloading" if action == "install" else "restarting", frac=None, message="")
+            threading.Thread(target=self._run_update, args=(action,), daemon=True).start()
+        else:
+            return None
+        return {"ok": True}
+
+    def _run_update(self, action):
+        def say(text):
+            self.upd["message"] = text
+
+        def progress(done, total):
+            self.upd["frac"] = done / total if total else None
+        try:
+            if action == "install":
+                U.install(self.upd["info"], say=say, progress=progress)
+            else:
+                back = U.rollback()
+                s = load_settings()
+                s["skip_version"] = __version__      # the older copy should not offer this one again
+                save_settings(s)
+                say(f"Going back to wormscore {back}.")
+        except (U.UpdateError, OSError) as exc:
+            self.upd.update(phase="error", message=str(exc))
+            return
+        self.upd["phase"] = "restarting"
+        time.sleep(2)            # lets the page show "Restarting" before the app closes
+        self.stop_scoring()
+        self.exit_app()
 
     def current(self):
         return load_settings()["project"]
 
     def state(self, since):
         s = load_settings()
-        return {"version": __version__, "theme": s["theme"],
-                "recent": [project_status(p) for p in s["recent"]],
+        recent = [project_status(p) for p in s["recent"]]
+        return {"version": __version__, "theme": s["theme"], "recent": recent,
+                "update": self.update_view(recent),
                 "project": project_status(s["project"]) if s["project"] else None,
                 "scoring_url": self.scoring[2] if self.scoring and self.scoring[0] == s["project"] else None,
                 "job": self.job.snapshot(since)}
@@ -468,11 +636,18 @@ class HomeApp:
             save_settings(s)
         elif route == "guide":
             # Opened in the system's default browser, not in the app window's Edge.
-            webbrowser.open(GUIDE_URL)
+            open_in_browser(GUIDE_URL, "arjunkai/wormscore")
         elif route == "theme":
             s = load_settings()
             s["theme"] = "light" if body.get("theme") == "light" else "dark"
             save_settings(s)
+        elif route == "settings":
+            s = load_settings()
+            if isinstance(body.get("update_check"), bool):
+                s["update_check"] = body["update_check"]
+            save_settings(s)
+        elif route == "update":
+            return self.update_action(body)
         elif route == "open-project":
             d = self.pick("Choose a project folder (one with a config.json)")
             if not d:
@@ -597,14 +772,15 @@ def main(argv=None):
         from .launcher import main as classic
         return classic()
     dpi_aware()
-    app = HomeApp()
+    app = HomeApp(check_updates=True)
     srv = make_home_server(app)
+    app.exit_app = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_address[1]}"
 
     def watchdog():
         while True:
             time.sleep(10)
-            if not app.job.running and app.quiet_for() > IDLE_EXIT_S:
+            if not app.job.running and not app.updating() and app.quiet_for() > IDLE_EXIT_S:
                 srv.shutdown()
                 return
     threading.Thread(target=watchdog, daemon=True).start()
