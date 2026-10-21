@@ -1,6 +1,7 @@
-"""Desktop launcher: a small window that runs each step without typing commands.
+"""Classic launcher: a small window that runs each step without typing commands.
 
-This is what the Windows download opens. It does the same thing as the command line.
+Kept as a fallback for the home screen (home.py): wormscore.exe --classic or
+wormscore-launcher --classic. It does the same thing as the command line.
 """
 import json
 import os
@@ -265,6 +266,8 @@ class Launcher(tk.Tk):
 
 
 def main():
+    from .home import dpi_aware
+    dpi_aware()
     Launcher().mainloop()
 
 

@@ -24,7 +24,9 @@ a `.companion.ome`). Channel identity (marker vs brightfield) is read from metad
 ## Install
 
 **Windows, no Python needed:** download `wormscore-windows.zip` from the Releases page, unzip it,
-and double-click `wormscore.exe`.
+and double-click `wormscore.exe`. It opens the wormscore app window: your projects on the left and the
+four steps (Scan data, Build blind set, Score, Unblind) as a guided list with progress and time left.
+The older launcher window is still there for one version: `wormscore.exe --classic`.
 
 **With Python 3.12 or newer:**
 
@@ -34,7 +36,8 @@ pip install wormscore
 
 The newest code from GitHub: `pip install git+https://github.com/arjunkai/wormscore.git`
 
-This installs a `wormscore` command and a `wormscore-launcher` window.
+This installs a `wormscore` command and `wormscore-launcher`, which opens the same app window (in your
+default browser on macOS and Linux).
 
 ## Try it in two minutes (simulated data)
 
@@ -47,9 +50,9 @@ wormscore app my_demo
 
 `demo` writes 20 simulated worm heads (controls with two normal cells; mutants with cells that are
 normal, dim or missing at random) and a `demo_truth.csv` you can check your calls against later.
-In the launcher window the same steps are buttons: **Demo... > 1. Scan data > 2. Build blind set > 3. Score**.
+In the app window, use **Try a demo...**, then the steps in order: **Scan data > Build blind set > Score**.
 
-**Real worms:** `wormscore demo my_demo --real` (or Yes in the launcher's Demo dialog) downloads four
+**Real worms:** `wormscore demo my_demo --real` (or **Real worm images** in the app's demo dialog) downloads four
 L1 heads with an endogenous GFP reporter, about 150 MB, from
 [Sun and Hobert 2021](https://doi.org/10.1038/s41586-021-04071-4)
 ([Zenodo 5602160](https://doi.org/10.5281/zenodo.5602160), CC BY 4.0). Each file is checked against its

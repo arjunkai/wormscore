@@ -72,10 +72,10 @@ def software_versions():
 
 # ------------------------------------------------------------------ inventory
 
-def inventory(project, log=print):
+def inventory(project, log=print, progress=None):
     project = Path(project)
     cfg = C.load(project)
-    manifest, images = R.scan(cfg, log=log)
+    manifest, images = R.scan(cfg, log=log, progress=progress)
     rows, by_pixels = [], {}
     for img in images:
         roles = img["channel_roles"]

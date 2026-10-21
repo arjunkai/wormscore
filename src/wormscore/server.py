@@ -9,6 +9,7 @@ import datetime as dt
 import json
 import re
 import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -68,6 +69,7 @@ class Project:
         self.blind = self.path / "blind"
         self.scoring = self.path / "scoring"
         self.lock = threading.Lock()
+        self.last_seen = time.time()   # the desktop app closes only after the page has gone quiet
         if not self.blind.is_dir():
             raise SystemExit(f"No blind/ folder in {self.path}. Run 'wormscore prepare' first.")
 
@@ -179,7 +181,10 @@ def make_handler(project):
         def do_GET(self):
             if not self.local_request():
                 return self.send_error(403)
+            project.last_seen = time.time()
             parts = [p for p in self.path.split("?")[0].split("/") if p]
+            if parts == ["api", "ping"]:
+                return self.send_json({"ok": True})
             if not parts:
                 return self.send_file(STATIC / "index.html", "text/html; charset=utf-8")
             if parts[0] == "static" and len(parts) == 2 and parts[1] in STATIC_FILES:
@@ -245,7 +250,9 @@ def make_handler(project):
 
 def make_server(project_path, port=8765):
     project = Project(project_path)
-    return ThreadingHTTPServer(("127.0.0.1", port), make_handler(project))
+    srv = ThreadingHTTPServer(("127.0.0.1", port), make_handler(project))
+    srv.project = project
+    return srv
 
 
 def serve(project_path, port=8765, open_browser=True, log=print):

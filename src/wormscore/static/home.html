@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wormscore</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/home.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="/static/icon.svg" alt="" width="22" height="22"><span>wormscore</span><span class="ver" id="ver"></span></div>
+  <div class="top-actions">
+    <a class="ghost" href="https://github.com/arjunkai/wormscore#readme" target="_blank" rel="noopener">Guide</a>
+    <button class="ghost icon" id="themeBtn" title="Switch light / dark" aria-label="Switch light or dark mode"></button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <div class="side-head">Projects</div>
+    <div id="recent" class="recent"></div>
+    <div class="side-actions">
+      <button class="btn" data-act="open-project">Open project...</button>
+      <button class="btn" data-act="new-project">New project...</button>
+      <button class="btn subtle" data-act="demo">Try a demo...</button>
+    </div>
+  </aside>
+
+  <main id="main" class="main"><p class="loading">Loading...</p></main>
+</div>
+
+<div id="modal" class="modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mTitle">
+    <h3 id="mTitle"></h3>
+    <div id="mBody" class="m-body"></div>
+    <div id="mChoices" class="m-choices"></div>
+    <div class="m-foot"><button class="btn subtle" id="mCancel">Cancel</button></div>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="/static/home.js"></script>
+</body>
+</html>

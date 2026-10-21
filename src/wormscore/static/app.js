@@ -553,3 +553,6 @@ window.addEventListener("beforeunload", e => {
   if (first) openWorm(first.code);
   else $("#codeTitle").textContent = "No images";
 })();
+
+// Tells the desktop app this page is still open, so it does not close while you score.
+setInterval(() => fetch("/api/ping").catch(() => {}), 20000);

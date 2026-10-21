@@ -337,22 +337,30 @@ def read(img, channel):
     return arr
 
 
-def scan(cfg, log=print):
-    """Walk every source folder. Returns (manifest rows for every file, image records)."""
+def scan(cfg, log=print, progress=None):
+    """Walk every source folder. Returns (manifest rows for every file, image records).
+    progress, if given, is called with (bytes checksummed so far, total bytes)."""
     manifest, images = [], []
     for src in cfg["sources"]:
+        if not Path(src["path"]).is_dir():
+            raise SystemExit(f"Source folder not found: {src['path']}\nFix 'path' for source "
+                             f"'{src.get('name', src['path'])}' in config.json.")
+    all_files = {src["path"]: sorted(p for p in Path(src["path"]).rglob("*") if p.is_file()) for src in cfg["sources"]}
+    total = sum(p.stat().st_size for files in all_files.values() for p in files) or 1
+    done = 0
+    for src in cfg["sources"]:
         root = Path(src["path"])
-        if not root.is_dir():
-            raise SystemExit(f"Source folder not found: {root}\nFix 'path' for source "
-                             f"'{src.get('name', root)}' in config.json.")
         original = Path(src.get("original_path") or src["path"])
-        files = sorted(p for p in root.rglob("*") if p.is_file())
+        files = all_files[src["path"]]
         log(f"Scanning {root} ({len(files)} files)")
         by_hash = {}
         rows = []
         for p in files:
             rel = str(p.relative_to(root))
             h = sha256(p)
+            done += p.stat().st_size
+            if progress:
+                progress(done, total)
             row = {"source": src.get("name", str(root)), "relative_path": rel, "local_path": str(p),
                    "original_path": str(original / rel), "size_mb": round(p.stat().st_size / 2**20, 2),
                    "sha256": h, "role": file_role(p), "note": ""}

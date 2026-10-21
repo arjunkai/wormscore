@@ -53,8 +53,8 @@ code-to-file key are written to `key/`, which the scoring app never reads. The s
 images, plane counts, pixel size and quality questions, but no genotype, file name, path or brightness
 number. Re-running `prepare` keeps the same codes; new codes are refused once any score is saved.
 
-Images imaged later can be added with `prepare --add-new-images` (or Yes in the launcher's build step
-once scoring has started). Only images not yet in the key are coded: their codes continue after the
+Images imaged later can be added with `prepare --add-new-images` (or **Add new images** in the app's
+build step once scoring has started). Only images not yet in the key are coded: their codes continue after the
 highest existing code, shuffled among themselves with a new seed (kept in `key/`). Existing codes,
 blind images, settings-group letters and display ranges are not changed, so images already scored look
 exactly the same; a new microscope gets its own ranges. Adding refuses to run if any coded image would be
