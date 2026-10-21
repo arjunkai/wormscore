@@ -52,6 +52,10 @@ Included images are shuffled with a random seed and numbered W0001, W0002, ... T
 code-to-file key are written to `key/`, which the scoring app never reads. The scoring page receives
 images, plane counts, pixel size and quality questions, but no genotype, file name, path or brightness
 number. Re-running `prepare` keeps the same codes; new codes are refused once any score is saved.
+Unsaved answers are kept per code in `scoring_drafts/` (the same fields as a score, no genotype or
+file name) and deleted when the score is saved; drafts are never read as scores and do not lock the
+codes. Each scoring window sends its project's ID with every request, so a window left open from
+another project cannot save into the one being scored.
 
 Images imaged later can be added with `prepare --add-new-images` (or **Add new images** in the app's
 build step once scoring has started). Only images not yet in the key are coded: their codes continue after the

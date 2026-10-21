@@ -115,3 +115,50 @@ def test_unblind_locks_and_traceability(app):
     text = (out / "methods_text.md").read_text(encoding="utf-8")
     assert "[name]" in text and "after 1 image had been scored" in text and "Fisher's exact" in text
     assert "—" not in text
+
+
+def test_unsaved_answers_are_kept_as_a_draft_until_saved(app):
+    """A crash or restart mid-image loses nothing: the page keeps a draft in the project."""
+    project, port = app
+    pid = json.loads(request(port, "GET", "/api/config")[1])["project_id"]
+    h = {"X-Wormscore-Project": pid}
+    values = {"usable": "yes", "n1_call": "dim", "flag_repeat": "count"}
+    assert request(port, "POST", "/api/worm/W0001/draft", {"values": values}, h)[0] == 200
+    draft = json.loads(request(port, "GET", "/api/worm/W0001", headers=h)[1])["draft"]
+    assert draft["values"] == values and draft["at"]
+    # drafts live outside scoring/, so they never count as scores or as "scoring started"
+    assert (project / "scoring_drafts" / "drafts.json").is_file() and not (project / "scoring").exists()
+    assert request(port, "POST", "/api/worm/W0001/draft", {"values": {"x": 5}}, h)[0] == 400
+    assert request(port, "POST", "/api/worm/W0002/draft", {"values": {"usable": "no"}}, h)[0] == 200
+    assert request(port, "POST", "/api/worm/W0002/draft", {"discard": True}, h)[0] == 200
+    assert json.loads(request(port, "GET", "/api/worm/W0002", headers=h)[1])["draft"] is None
+    score = {"usable": "no", "unusable_reason": "out of focus", "flag_answers": {}}
+    assert request(port, "POST", "/api/worm/W0001/score", score, h)[0] == 200
+    assert json.loads(request(port, "GET", "/api/worm/W0001", headers=h)[1])["draft"] is None
+
+
+def test_window_from_another_project_cannot_save(app):
+    project, port = app
+    other = {"X-Wormscore-Project": "0" * 16}
+    status, data = request(port, "POST", "/api/worm/W0001/score", {"usable": "no"}, other)
+    assert status == 409
+    assert request(port, "GET", "/api/worms", headers=other)[0] == 409
+    assert not (project / "scoring" / "scores.json").exists()
+
+
+def test_a_port_in_use_cannot_be_shared(fresh_project):
+    """Python's default would let a second server bind the same port on Windows."""
+    srv = make_server(fresh_project, port=0)
+    try:
+        with pytest.raises(OSError):
+            make_server(fresh_project, port=srv.server_address[1])
+    finally:
+        srv.server_close()
+
+
+def test_drafts_do_not_block_new_codes(fresh_project):
+    """Only saved scores lock the codes; an unsaved draft does not."""
+    from wormscore.pipeline import prepare
+    (fresh_project / "scoring_drafts").mkdir()
+    (fresh_project / "scoring_drafts" / "drafts.json").write_text("{}", encoding="utf-8")
+    prepare(fresh_project, reassign=True, log=lambda *a: None)

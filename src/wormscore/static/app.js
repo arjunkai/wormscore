@@ -39,12 +39,83 @@ const offCtx = off.getContext("2d", { willReadFrequently: true });
 
 // ---------------------------------------------------------------- loading
 
+const LOST = "lost connection to wormscore";
+
 async function api(path, body) {
-  const res = await fetch(path, body === undefined ? {} : {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
+  // Every request names this window's project: a window left open from another project is
+  // refused (409) instead of saving into the project now being scored on this port.
+  const headers = st.projectId ? { "X-Wormscore-Project": st.projectId } : {};
+  let res;
+  try {
+    res = await fetch(path, body === undefined ? { headers } : {
+      method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+  } catch {
+    setConnected(false);
+    throw new Error(LOST);
+  }
+  if (res.status === 409) {
+    otherProject();
+    throw new Error("this window belongs to another project");
+  }
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
+}
+
+// ---------------------------------------------------------------- connection
+
+// The page checks in every 20 s, and every 3 s once the connection is lost, so it reconnects
+// by itself as soon as wormscore runs again (same address). Unsaved answers stay in the form.
+function setConnected(ok) {
+  const was = st.connected;
+  st.connected = ok;
+  $("#conn").classList.toggle("hidden", ok);
+  if (ok && was === false && st.formDirty) {
+    saveDraft();
+    saveMessage("Connected again. Click Save to save this image.");
+  }
+}
+
+async function checkIn() {
+  let ok = true;
+  try { await api("/api/ping"); } catch { ok = false; }
+  if (ok) setConnected(true);
+  if (!st.otherProject) setTimeout(checkIn, ok ? 20000 : 3000);
+}
+
+function otherProject() {
+  st.otherProject = true;
+  $("#conn").textContent = "This scoring window belongs to another project. Close it, then click Continue scoring in the wormscore window.";
+  $("#conn").classList.remove("hidden");
+}
+
+// ---------------------------------------------------------------- drafts
+
+// Unsaved answers are kept by the app (scoring_drafts/ in the project) a moment after each
+// change, so a crash or restart loses nothing. A saved score replaces its draft.
+function formValues() {
+  const out = {};
+  for (const [k, v] of new FormData($("#scoreForm")).entries()) out[k] = String(v);
+  return out;
+}
+
+function saveDraft() {
+  clearTimeout(st.draftTimer);
+  if (!st.code || !st.formDirty) return;
+  const code = st.code, values = formValues();
+  api(`/api/worm/${code}/draft`, { values }).catch(() => {});
+}
+
+function applyDraft(draft) {
+  const f = $("#scoreForm");
+  for (const el of f.elements) {
+    if (!el.name || !(el.name in draft.values)) continue;
+    if (el.type === "radio" || el.type === "checkbox") el.checked = draft.values[el.name] === el.value;
+    else el.value = draft.values[el.name];
+  }
+  st.formDirty = true;
+  syncUsable();
+  saveMessage(`Restored answers you had not saved (${draft.at}). Check them, then click Save.`, true);
 }
 
 // Decode a PNG into its values. Image planes hold exact 16-bit values packed as
@@ -77,7 +148,7 @@ function select(name, placeholder, options) {
 
 function buildForm() {
   const sc = st.cfg.scoring;
-  document.title = `wormscore: ${st.cfg.project_name}`;
+  document.title = `Scoring: ${st.cfg.project_name} - wormscore`;   // the app finds its scoring windows by "Scoring"
   $("#projectName").textContent = st.cfg.project_name;
   $("#rules").replaceChildren(...sc.rules.map(r => h("li", {}, r)));
   $("#reasonSelect").append(...sc.unusable_reasons.map(r => h("option", {}, r)));
@@ -125,7 +196,13 @@ function renderList() {
 }
 
 async function openWorm(code) {
-  if ((st.formDirty || st.roisDirty) && !confirm("You have unsaved changes on this image. Leave anyway?")) return;
+  if (st.formDirty || st.roisDirty) {
+    if (!confirm("You have unsaved changes on this image. Leave anyway?")) return;
+    if (st.formDirty) {
+      clearTimeout(st.draftTimer);
+      api(`/api/worm/${st.code}/draft`, { discard: true }).catch(() => {});
+    }
+  }
   const r = await api(`/api/worm/${code}`);
   Object.assign(st, {
     code, meta: r.meta, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
@@ -143,6 +220,7 @@ async function openWorm(code) {
   syncButtons();
   fillForm();
   renderFlags();
+  if (r.draft) applyDraft(r.draft);
   renderSuggestions();
   renderRoiList();
   $("#roiMsg").textContent = "";
@@ -424,8 +502,10 @@ function syncUsable() {
 
 $("#scoreForm").addEventListener("input", e => {
   st.formDirty = true;
-  saveMessage("Unsaved changes");
+  saveMessage(st.connected === false ? `Unsaved changes (${LOST}; they stay in this window)` : "Unsaved changes");
   if (e.target.name === "usable") syncUsable();
+  clearTimeout(st.draftTimer);
+  st.draftTimer = setTimeout(saveDraft, 600);
 });
 
 $("#scoreForm").addEventListener("submit", async e => {
@@ -460,6 +540,7 @@ $("#scoreForm").addEventListener("submit", async e => {
   const body = { ...v, flag_answers, count_this_image: count, display_preset_when_saved: st.range };
   try {
     const r = await api(`/api/worm/${st.code}/score`, body);
+    clearTimeout(st.draftTimer);
     st.score = { ...body, saved: r.saved };
     st.formDirty = false;
     saveMessage(`Saved ${r.saved}`);
@@ -467,7 +548,9 @@ $("#scoreForm").addEventListener("submit", async e => {
     await loadList();
     if (v.usable === "yes") setTab("mark");    // nothing to outline on an unusable image
   } catch (err) {
-    saveMessage(`Not saved: ${err.message}`, true);
+    saveMessage(err.message === LOST
+      ? "Not saved: lost connection to wormscore. Your answers stay here; open wormscore again and click Save once this window reconnects."
+      : `Not saved: ${err.message}`, true);
   }
 });
 
@@ -547,6 +630,7 @@ window.addEventListener("beforeunload", e => {
 
 (async () => {
   st.cfg = await api("/api/config");
+  st.projectId = st.cfg.project_id;
   buildForm();
   await loadList();
   const first = st.worms.find(w => !w.scored) || st.worms[0];
@@ -554,5 +638,5 @@ window.addEventListener("beforeunload", e => {
   else $("#codeTitle").textContent = "No images";
 })();
 
-// Tells the desktop app this page is still open, so it does not close while you score.
-setInterval(() => fetch("/api/ping").catch(() => {}), 20000);
+// Tells the desktop app this page is still open, and reconnects after a lost connection.
+setTimeout(checkIn, 20000);

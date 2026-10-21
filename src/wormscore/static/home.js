@@ -44,7 +44,7 @@ function icon(name, size = 16) {
 const st = { data: null, since: 0, log: [], showLog: false, finished: false, lastRunning: false, timer: null,
   updOpen: false, updAgree: false, updKey: "", resultShown: false, closing: false, fails: 0 };
 
-const GONE = "wormscore has closed. Close this window and open wormscore again.";
+const GONE = "This window lost its connection to wormscore. Open wormscore again; your work is saved.";
 
 async function api(path, body) {
   let res;
@@ -302,12 +302,10 @@ function renderUpdate(d) {
     kids = [head(u.phase === "restarting" ? "Restarting wormscore" : `Updating to ${u.latest}`, versions),
       h("div", { class: "bar" + (u.phase === "downloading" && pct === null ? " indet" : "") },
         h("div", { style: `width:${u.phase === "restarting" ? 100 : pct ?? 0}%` })),
-      h("p", { class: "ud-msg" }, st.closing ? "You can close this window. The new version opens in its own window."
+      h("p", { class: "ud-msg" }, st.closing ? "wormscore is restarting. This window reconnects by itself in a few seconds."
         : u.message || "Starting the download...")];
-    if (u.phase === "restarting" && !st.closing) {
-      st.closing = true;
-      setTimeout(() => window.close(), 3500);
-    }
+    // The new version answers on the same address, and refresh() reloads this page when it does.
+    if (u.phase === "restarting") st.closing = true;
   } else if (u.phase === "error" || (u.result && !u.result.ok)) {
     kids = [head("The update did not finish", null), h("p", { class: "ud-msg" }, u.phase === "error" ? u.message : u.result.message),
       h("div", { class: "ud-foot" }, h("span", { class: "grow" }),
@@ -474,6 +472,8 @@ function showGone() {
 async function refresh(soon) {
   try {
     const d = await (await fetch(`/api/state?since=${st.since}`)).json();
+    // Another version answers on this address (after an update or a go back): load its page.
+    if (st.data && d.version !== st.data.version) return location.reload();
     st.fails = 0;
     $("#goneModal").hidden = true;
     if (d.job.next < st.since) { st.log = []; st.since = 0; }

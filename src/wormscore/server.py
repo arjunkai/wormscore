@@ -6,8 +6,11 @@ influence the calls while scoring.
 """
 import csv
 import datetime as dt
+import hashlib
 import json
 import re
+import socket
+import sys
 import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -26,6 +29,18 @@ STATIC_FILES = {"app.js": "text/javascript; charset=utf-8", "style.css": "text/c
                 "manifest.webmanifest": "application/manifest+json"}
 CODE = re.compile(r"^W\d{4,6}$")
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
+DRAFTS = "scoring_drafts"     # unsaved answers, kept outside scoring/ so they never count as scores
+
+
+class LocalServer(ThreadingHTTPServer):
+    """An HTTP server that owns its port alone. Python's default lets a second server bind a
+    port that is already in use on Windows, which would split requests between two servers."""
+    allow_reuse_address = False
+
+    def server_bind(self):
+        if sys.platform == "win32" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 ROI_FIELDS = ["code", "region", "source", "area_um2", "peak_raw", "peak_filtered", "mean_mip",
               "background_mip", "peak_minus_bg", "mean_mip_minus_bg", "best_z", "n_z",
               "best_z_at_stack_edge", "mean_best_plane", "background_best_plane", "mean_best_minus_bg",
@@ -72,6 +87,9 @@ class Project:
         self.scoring = self.path / "scoring"
         self.lock = threading.Lock()
         self.last_seen = time.time()   # the desktop app closes only after the page has gone quiet
+        # Sent back by the page with every request, so a scoring window left open from another
+        # project can never save into this one (both would use the same port).
+        self.id = hashlib.sha256(str(self.path.resolve()).lower().encode()).hexdigest()[:16]
         if not self.blind.is_dir():
             raise SystemExit(f"No blind/ folder in {self.path}. Run 'wormscore prepare' first.")
 
@@ -85,6 +103,27 @@ class Project:
         tmp.write_text(json.dumps(obj, indent=1), encoding="utf-8")
         tmp.replace(self.scoring / name)
 
+    def drafts(self):
+        try:
+            return json.loads((self.path / DRAFTS / "drafts.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def set_draft(self, code, values):
+        """Keep (values) or drop (None) the unsaved answers for one image."""
+        d = self.drafts()
+        if values is None:
+            if code not in d:
+                return
+            d.pop(code)
+        else:
+            d[code] = {"values": values, "at": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+        folder = self.path / DRAFTS
+        folder.mkdir(exist_ok=True)
+        tmp = folder / "drafts.json.tmp"
+        tmp.write_text(json.dumps(d, indent=1), encoding="utf-8")
+        tmp.replace(folder / "drafts.json")
+
     def meta(self, code):
         return json.loads((self.blind / code / "meta.json").read_text())
 
@@ -93,6 +132,7 @@ class Project:
         scores = self.load("scores.json", {})
         scores[code] = body
         self.save("scores.json", scores)
+        self.set_draft(code, None)
         fields = score_fields(self.cfg)
 
         def flat(c, s):
@@ -180,9 +220,19 @@ def make_handler(project):
             host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
             return host in LOCAL_HOSTS
 
+        def other_project(self):
+            """A page from another project's scoring window, left open on this port."""
+            sent = self.headers.get("X-Wormscore-Project")
+            if sent and sent != project.id:
+                self.send_json({"ok": False, "error": "other project"}, 409)
+                return True
+            return False
+
         def do_GET(self):
             if not self.local_request():
                 return self.send_error(403)
+            if self.other_project():
+                return
             project.last_seen = time.time()
             parts = [p for p in self.path.split("?")[0].split("/") if p]
             if parts == ["api", "ping"]:
@@ -200,7 +250,7 @@ def make_handler(project):
                     return self.send_file(p, "image/png")
             if parts == ["api", "config"]:
                 sc = project.cfg["scoring"]
-                return self.send_json({"project_name": project.cfg["project_name"],
+                return self.send_json({"project_name": project.cfg["project_name"], "project_id": project.id,
                                        "marker": project.cfg["marker"]["label"], "scoring": sc,
                                        "min_scored": project.cfg["unblinding"]["min_scored_worms"]})
             if parts == ["api", "worms"]:
@@ -218,7 +268,8 @@ def make_handler(project):
                     and (project.blind / parts[2]).is_dir():
                 code = parts[2]
                 return self.send_json({"meta": project.meta(code), "score": project.load("scores.json", {}).get(code),
-                                       "rois": project.load("rois.json", {}).get(code, [])})
+                                       "rois": project.load("rois.json", {}).get(code, []),
+                                       "draft": project.drafts().get(code)})
             self.send_error(404)
 
         def do_POST(self):
@@ -229,6 +280,9 @@ def make_handler(project):
             if not self.local_request() or self.headers.get("Content-Type", "").split(";")[0] != "application/json" \
                     or (origin and origin.split("://")[-1].rsplit(":", 1)[0] not in LOCAL_HOSTS):
                 return self.send_error(403)
+            if self.other_project():
+                return
+            project.last_seen = time.time()
             parts = [p for p in self.path.split("/") if p]
             if len(parts) != 4 or parts[:2] != ["api", "worm"] or not CODE.match(parts[2]) \
                     or not (project.blind / parts[2]).is_dir():
@@ -241,6 +295,17 @@ def make_handler(project):
             with project.lock:
                 if what == "score":
                     return self.send_json({"ok": True, "saved": project.save_score(code, body)})
+                if what == "draft":
+                    values = body.get("values")
+                    if body.get("discard") is True:
+                        project.set_draft(code, None)
+                    elif isinstance(values, dict) and len(values) <= 200 and all(
+                            isinstance(k, str) and isinstance(v, str) and len(k) <= 100 and len(v) <= 2000
+                            for k, v in values.items()):
+                        project.set_draft(code, values)
+                    else:
+                        return self.send_error(400)
+                    return self.send_json({"ok": True})
                 if what == "rois":
                     project.save_rois(code, body.get("rois", []))
                     # Only confirm the save; the numbers stay in the CSV, not on screen.
@@ -252,7 +317,7 @@ def make_handler(project):
 
 def make_server(project_path, port=8765):
     project = Project(project_path)
-    srv = ThreadingHTTPServer(("127.0.0.1", port), make_handler(project))
+    srv = LocalServer(("127.0.0.1", port), make_handler(project))
     srv.project = project
     return srv
 

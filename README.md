@@ -109,6 +109,9 @@ The images are not part of this repository.
    (scan first): existing codes stay the same and new images get codes after the last one.
 5. **Score:** `wormscore app my_project`. For each image: answer any yellow questions, score each
    neuron, save, then outline each cell body (or accept a suggestion) and save regions.
+   Answers you have not saved yet are kept as a draft (`scoring_drafts/`, never counted as scores),
+   so a crash or restart loses nothing: open the image again and click Save. If the connection to
+   wormscore is lost, the scoring window says so and reconnects by itself once wormscore runs again.
 6. **Unblind after scoring:** `wormscore unblind my_project --i-have-finished-scoring`. Writes
    `outputs/unblinded/merged.csv` (scores + numbers + key, one row per image), a summary, and results
    tables: `per_neuron.csv` (one row per animal and neuron, for plotting), `penetrance.csv` (animals with

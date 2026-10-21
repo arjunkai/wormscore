@@ -172,3 +172,22 @@ def test_remove_from_list_matches_any_path_spelling(desk):
     assert call(port, "POST", "/api/forget", {"path": shown})[0] == 200
     s = home.load_settings()
     assert s["recent"] == [] and s["project"] == ""
+
+
+def test_app_stays_open_while_its_window_exists(monkeypatch):
+    """A minimized window can stop checking in; the app must not close while the window is there."""
+    app = home.HomeApp(open_windows=False)
+    now = time.time()
+    app.last_seen = now - 3600                                   # page quiet for an hour
+    monkeypatch.setattr(home, "WINDOWS", {"tracking": True, "last": now - 5})
+    assert not home.should_close(app, now)                       # window still there
+    monkeypatch.setattr(home, "WINDOWS", {"tracking": True, "last": now - 60})
+    assert home.should_close(app, now)                           # window closed a minute ago
+    app.job.running = True
+    assert not home.should_close(app, now)                       # never during a step
+    app.job.running = False
+    monkeypatch.setattr(home, "WINDOWS", {"tracking": False, "last": 0.0})
+    app.last_seen = now - 600
+    assert not home.should_close(app, now)                       # no tracking: wait much longer
+    app.last_seen = now - 4000
+    assert home.should_close(app, now)

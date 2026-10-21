@@ -145,3 +145,12 @@ textarea { width: 100%; resize: vertical; }
   #panel { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line); }
 }
 .nowrap { white-space: nowrap; }
+
+/* lost connection notice */
+.conn {
+  position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 50;
+  max-width: min(720px, calc(100vw - 32px)); padding: 10px 16px; border-radius: 8px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--warn);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45); font-size: 13.5px;
+}
+.conn.hidden { display: none; }

@@ -14,13 +14,13 @@ import sys
 import threading
 import time
 import webbrowser
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from . import update as U
-from .server import CODE, LOCAL_HOSTS, STATIC
+from .server import CODE, LOCAL_HOSTS, STATIC, LocalServer
 
 SETTINGS = Path.home() / ".wormscore.json"
 HOME_FILES = {"home.js": "text/javascript; charset=utf-8", "home.css": "text/css; charset=utf-8",
@@ -28,7 +28,15 @@ HOME_FILES = {"home.js": "text/javascript; charset=utf-8", "home.css": "text/css
               "icon-192.png": "image/png", "icon-512.png": "image/png",
               "manifest.webmanifest": "application/manifest+json"}
 GUIDE_URL = "https://github.com/arjunkai/wormscore#readme"
-IDLE_EXIT_S = 180         # close the app this long after its windows have gone quiet
+IDLE_EXIT_S = 1800        # without window tracking: close this long after the page last checked in
+WINDOW_GONE_S = 45        # with window tracking: close this long after the last app window closed
+# Fixed ports: a window left open while wormscore was not running reconnects by itself the next
+# time it starts, because it is still looking at the same address. Another free port is used
+# when one of these is taken by a different program.
+HOME_PORT = 47311
+SCORE_PORT = 47312
+HOME_TITLE = "wormscore"         # the home window's title
+SCORE_TITLE = "Scoring"          # scoring windows' titles start with this
 PROGRESS_LINE = re.compile(r"\((\d+)/(\d+)\)\s*$")
 
 
@@ -185,6 +193,9 @@ def edge_path():
 
 
 _edge_pids = set()     # Edge processes this app started; only their windows get our icon
+# When an app window was last seen (Windows). The app closes when its windows are gone, not when
+# a page goes quiet: Edge pauses minimized and hidden windows, so a quiet page can still be open.
+WINDOWS = {"tracking": False, "last": 0.0}
 
 
 def open_window(url, size=(1200, 820)):
@@ -196,7 +207,10 @@ def open_window(url, size=(1200, 820)):
             # Started from the home folder: a window started from the app folder would hold
             # that folder open, and an update could not replace it.
             p = subprocess.Popen([str(exe), f"--app={url}", f"--window-size={size[0]},{size[1]}",
-                                  f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check"],
+                                  f"--user-data-dir={profile}", "--no-first-run", "--no-default-browser-check",
+                                  # keep the pages running when the window is minimized or covered
+                                  "--disable-background-timer-throttling", "--disable-renderer-backgrounding",
+                                  "--disable-backgrounding-occluded-windows"],
                                  cwd=str(Path.home()))
             _edge_pids.add(p.pid)
             _start_icon_keeper()
@@ -208,6 +222,83 @@ def open_window(url, size=(1200, 820)):
 
 _icon_keeper = None
 APP_ID = "arjunkai.wormscore"
+
+
+def profile_pids():
+    """Edge processes using this app's own profile folder: Edge relaunches itself, and if an
+    earlier app window is still open it hands new windows to that process."""
+    if sys.platform != "win32":
+        return set()
+    profile = str(Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "wormscore" / "window")
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
+          # the path is quoted on Edge's command line, so match the path alone
+          "Where-Object { $_.CommandLine -like '*" + profile.replace("'", "''") + "*' } | "
+          "ForEach-Object { $_.ProcessId }")
+    try:
+        out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
+                             timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
+        return {int(x) for x in out.split() if x.isdigit()}
+    except (OSError, subprocess.SubprocessError):
+        return set()
+
+
+def is_browser_window(hwnd):
+    """An Edge top-level window (not one of its helper windows, and not another program's)."""
+    import ctypes
+    buf = ctypes.create_unicode_buffer(64)
+    ctypes.windll.user32.GetClassNameW(hwnd, buf, 64)
+    return buf.value == "Chrome_WidgetWin_1"
+
+
+def find_app_windows(title, pids=None):
+    """Visible wormscore app windows: the home window (title exactly "wormscore") or scoring
+    windows (title starting with "Scoring"). Windows only."""
+    if sys.platform != "win32":
+        return []
+    import ctypes
+    from ctypes import wintypes
+    pids = pids if pids is not None else (_edge_pids | profile_pids())
+    if not pids:
+        return []
+    user32 = ctypes.windll.user32
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    found = []
+
+    def each(hwnd, _):
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value in pids and user32.IsWindowVisible(hwnd) and is_browser_window(hwnd):
+            buf = ctypes.create_unicode_buffer(256)
+            user32.GetWindowTextW(hwnd, buf, 256)
+            if buf.value == title or (title == SCORE_TITLE and buf.value.startswith(title)):
+                found.append(hwnd)
+        return True
+    user32.EnumWindows(ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(each), 0)
+    return found
+
+
+def raise_window(hwnd):
+    """Bring a window to the front. Windows lets only the program the user last clicked raise
+    a window; joining the input of the window in front borrows that right."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    hwnd = wintypes.HWND(hwnd)
+    fg_thread = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
+    me = ctypes.windll.kernel32.GetCurrentThreadId()
+    attached = fg_thread and fg_thread != me and user32.AttachThreadInput(me, fg_thread, True)
+    try:
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9)   # SW_RESTORE
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(me, fg_thread, False)
 
 
 def _relaunch_command():
@@ -292,7 +383,9 @@ def _start_icon_keeper():
         def each(hwnd, _):
             pid = wintypes.DWORD()
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            if pid.value in _edge_pids and user32.IsWindowVisible(hwnd):
+            if pid.value in _edge_pids and user32.IsWindowVisible(hwnd) and is_browser_window(hwnd):
+                if user32.GetWindowTextLengthW(hwnd) > 0:      # a page window, not a helper
+                    WINDOWS["last"] = time.time()
                 if hwnd not in done:
                     try:
                         if _set_window_identity(hwnd, ico):
@@ -304,26 +397,16 @@ def _start_icon_keeper():
                 user32.SendMessageW(hwnd, 0x80, 0, icon(user32.GetSystemMetricsForDpi(49, dpi)))  # ICON_SMALL
             return True
 
-        def profile_pids():
-            """Edge processes using this app's own profile folder: Edge relaunches itself, and if an
-            earlier app window is still open it hands new windows to that process."""
-            profile = str(Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "wormscore" / "window")
-            ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | "
-                  # the path is quoted on Edge's command line, so match the path alone
-                  "Where-Object { $_.CommandLine -like '*" + profile.replace("'", "''") + "*' } | "
-                  "ForEach-Object { $_.ProcessId }")
-            try:
-                out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True,
-                                     timeout=20, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)).stdout
-                return {int(x) for x in out.split() if x.isdigit()}
-            except (OSError, subprocess.SubprocessError):
-                return set()
-
         callback = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(each)
         rounds = 0
         while True:
             if rounds % 10 == 0:        # at once, then every 30 s
-                _edge_pids.update(profile_pids())
+                # Replaced, not added to: Windows reuses the IDs of closed processes, and another
+                # program's window must never count as a wormscore window.
+                live = profile_pids()
+                if live:
+                    global _edge_pids
+                    _edge_pids = live
             try:
                 user32.EnumWindows(callback, 0)
             except OSError:
@@ -332,6 +415,7 @@ def _start_icon_keeper():
             time.sleep(3 if rounds > 1 else 1)
 
     _icon_keeper = threading.Thread(target=keep, daemon=True)
+    WINDOWS["tracking"] = True
     _icon_keeper.start()
 
 
@@ -399,20 +483,8 @@ def open_in_browser(url, title_part):
             user32.EnumWindows(callback, 0)
             if found:
                 break
-        if not found:
-            return
-        hwnd = wintypes.HWND(found[0])
-        fg_thread = user32.GetWindowThreadProcessId(user32.GetForegroundWindow(), None)
-        me = ctypes.windll.kernel32.GetCurrentThreadId()
-        attached = fg_thread and fg_thread != me and user32.AttachThreadInput(me, fg_thread, True)
-        try:
-            if user32.IsIconic(hwnd):
-                user32.ShowWindow(hwnd, 9)   # SW_RESTORE
-            user32.BringWindowToTop(hwnd)
-            user32.SetForegroundWindow(hwnd)
-        finally:
-            if attached:
-                user32.AttachThreadInput(me, fg_thread, False)
+        if found:
+            raise_window(found[0])
     threading.Thread(target=raise_it, daemon=True).start()
 
 
@@ -448,9 +520,13 @@ class HomeApp:
         self.upd = {"info": None, "error": None, "checking": False, "dismissed": False,
                     "phase": "", "frac": None, "message": "", "result": None}
         if check_updates:
-            self.upd["result"] = U.last_result()
-            if load_settings()["update_check"]:
-                self.check_for_update()
+            self.start_updates()
+
+    def start_updates(self):
+        """Read the last update's result and check for a newer version (only the copy that runs)."""
+        self.upd["result"] = U.last_result()
+        if load_settings()["update_check"]:
+            self.check_for_update()
 
     # ---------------------------------------------------------------- updates
 
@@ -607,17 +683,36 @@ class HomeApp:
         p = str(self.need_project())
         if self.job.running:
             raise ValueError("A step is still running. Open scoring when it is done.")
+        started = time.time()
         if not (self.scoring and self.scoring[0] == p):
             self.stop_scoring()
             try:
-                srv = make_server(p, port=0)
+                try:
+                    srv = make_server(p, port=SCORE_PORT if self.open_windows else 0)
+                except OSError:        # the fixed port is taken by another program
+                    srv = make_server(p, port=0)
             except SystemExit as exc:
                 raise ValueError(str(exc))
             threading.Thread(target=srv.serve_forever, daemon=True).start()
             self.scoring = (p, srv, f"http://127.0.0.1:{srv.server_address[1]}")
         if self.open_windows:
-            open_window(self.scoring[2], (1500, 900))
+            self.show_scoring_window(started)
         return {"ok": True, "url": self.scoring[2]}
+
+    def show_scoring_window(self, started):
+        """Bring an open scoring window of this project forward instead of opening a second one.
+        A window left open while wormscore was not running checks in every few seconds; a
+        window of another project is refused by the server and never counts as checking in."""
+        project = self.scoring[1].project
+        windows = find_app_windows(SCORE_TITLE)
+        if windows:
+            end = started + 6
+            while time.time() < end and time.time() - project.last_seen > 25:
+                time.sleep(0.25)
+            if time.time() - project.last_seen <= 25:
+                raise_window(windows[0])
+                return
+        open_window(self.scoring[2], (1500, 900))
 
     def stop_scoring(self):
         if self.scoring:
@@ -772,8 +867,43 @@ def make_handler(app):
     return Handler
 
 
+def should_close(app, now=None):
+    """Close the app when its windows are gone. Never while a step or an update runs."""
+    now = time.time() if now is None else now
+    if app.job.running or app.updating():
+        return False
+    if WINDOWS["tracking"] and WINDOWS["last"]:
+        return now - WINDOWS["last"] > WINDOW_GONE_S and app.quiet_for() > WINDOW_GONE_S
+    return app.quiet_for() > IDLE_EXIT_S
+
+
 def make_home_server(app, port=0):
-    return ThreadingHTTPServer(("127.0.0.1", port), make_handler(app))
+    return LocalServer(("127.0.0.1", port), make_handler(app))
+
+
+def running_home(port):
+    """The version of a wormscore home screen already answering on this port, or None."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=3) as r:
+            return json.loads(r.read().decode("utf-8")).get("version")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def show_home_window(app, url, started):
+    """Open the home window, or bring forward one that is already open. A window left open while
+    wormscore was not running reconnects by itself (same address) within a few seconds."""
+    _start_icon_keeper()       # watches the windows (and sets their icons) even when none is opened here
+    windows = find_app_windows(HOME_TITLE)
+    if windows:
+        end = started + 8
+        while time.time() < end and app.last_seen <= started:
+            time.sleep(0.25)
+        if app.last_seen > started:
+            raise_window(windows[0])
+            return
+    open_window(url)
 
 
 def main(argv=None):
@@ -782,19 +912,32 @@ def main(argv=None):
         from .launcher import main as classic
         return classic()
     dpi_aware()
-    app = HomeApp(check_updates=True)
-    srv = make_home_server(app)
+    started = time.time()
+    app = HomeApp()
+    try:
+        srv = make_home_server(app, HOME_PORT)
+    except OSError:
+        if running_home(HOME_PORT):
+            # wormscore is already running: show its window instead of starting a second copy
+            windows = find_app_windows(HOME_TITLE)
+            if windows:
+                raise_window(windows[0])
+            else:
+                open_window(f"http://127.0.0.1:{HOME_PORT}")
+            return
+        srv = make_home_server(app)
+    app.start_updates()
     app.exit_app = lambda: threading.Thread(target=srv.shutdown, daemon=True).start()
     url = f"http://127.0.0.1:{srv.server_address[1]}"
 
     def watchdog():
         while True:
-            time.sleep(10)
-            if not app.job.running and not app.updating() and app.quiet_for() > IDLE_EXIT_S:
+            time.sleep(5)
+            if should_close(app):
                 srv.shutdown()
                 return
     threading.Thread(target=watchdog, daemon=True).start()
-    open_window(url)
+    threading.Thread(target=show_home_window, args=(app, url, started), daemon=True).start()
     try:
         srv.serve_forever()
     finally:
