@@ -60,7 +60,7 @@ The images are not part of this repository.
    makes the copies read-only.
 2. **Make a project:** `wormscore init C:\projects\my_project`, then edit `config.json`:
    point `sources` at your images, write genotype rules, and name your neurons. See
-   [`examples/config_example.json`](examples/config_example.json).
+   [`examples/config_example.json`](https://github.com/arjunkai/wormscore/blob/main/examples/config_example.json).
 3. **Scan:** `wormscore inventory my_project` lists every file (`outputs/manifest.csv`: raw image,
    duplicate, derived projection, reference, hidden system file) and every image with its metadata
    and channel identity (`outputs/inventory.csv`). Check the flags column.
@@ -83,7 +83,7 @@ The images are not part of this repository.
    (Product model by default) with a binomial test. Also optional: a secondary definition of "affected"
    (descriptive, within one microscope), planned comparisons, one-sided tests, labelled sources, and
    comparisons across microscopes for chosen measures (with warnings). All of these are recorded as an
-   analysis plan before scoring and locked once scoring starts. See [docs/METHODS.md](docs/METHODS.md#8-unblinding).
+   analysis plan before scoring and locked once scoring starts. See [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md#8-unblinding).
    `methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
    `blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
 
@@ -101,7 +101,7 @@ The images are not part of this repository.
 
 ## How it works
 
-See [docs/METHODS.md](docs/METHODS.md) for every step in plain language, suitable for adapting into
+See [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md) for every step in plain language, suitable for adapting into
 a Methods section, including the measurement definitions and their limits.
 
 ## Development
@@ -124,8 +124,8 @@ Do not commit or upload data that belongs to someone else.
 
 ## License and citation
 
-MIT License (see [LICENSE](LICENSE)). If you use wormscore in research, please cite it: GitHub's
-"Cite this repository" button (from [CITATION.cff](CITATION.cff)) gives the reference.
+MIT License (see [LICENSE](https://github.com/arjunkai/wormscore/blob/main/LICENSE)). If you use wormscore in research, please cite it: GitHub's
+"Cite this repository" button (from [CITATION.cff](https://github.com/arjunkai/wormscore/blob/main/CITATION.cff)) gives the reference.
 
 wormscore reads Leica files with [liffile](https://github.com/cgohlke/liffile) and Zeiss files with
 [czifile](https://github.com/cgohlke/czifile) (both BSD-3). The Windows app bundles these and other

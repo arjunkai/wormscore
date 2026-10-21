@@ -166,8 +166,11 @@ async function preloadPlanes(code) {
 function geometry() {
   const m = st.meta;
   const s = (m.pixel_um / m.display_um_per_px) * st.zoom;
+  // The frame is frame_px wide and shaped like the window, the same for every image.
+  const wrap = $("#canvasWrap");
+  const frameH = Math.round((m.frame_px * wrap.offsetHeight) / Math.max(wrap.offsetWidth, 1)) || m.frame_px;
   const fw = Math.max(m.frame_px * st.zoom, Math.ceil(m.width * s));
-  const fh = Math.max(m.frame_px * st.zoom, Math.ceil(m.height * s));
+  const fh = Math.max(frameH * st.zoom, Math.ceil(m.height * s));
   return { s, fw, fh, ox: (fw - m.width * s) / 2, oy: (fh - m.height * s) / 2 };
 }
 
@@ -178,9 +181,10 @@ function draw() {
   const g = (st.geom = geometry());
   cv.width = g.fw;
   cv.height = g.fh;
-  // At 1x the whole frame fits the window; at 2x and 3x the frame scrolls.
+  // At 1x the whole frame fills the window; 2x and 3x are that size doubled or tripled and scroll.
+  // The frame is the same for every image, so every image is shown at the same scale.
   const wrap = $("#canvasWrap");
-  const fit = st.zoom === 1 ? Math.min(wrap.clientWidth / g.fw, wrap.clientHeight / g.fh, 1) : 1;
+  const fit = Math.min((wrap.offsetWidth * st.zoom) / g.fw, (wrap.offsetHeight * st.zoom) / g.fh) * 0.995;
   cv.style.width = `${g.fw * fit}px`;
   cv.style.height = `${g.fh * fit}px`;
   ctx.fillStyle = "#000";
@@ -209,11 +213,16 @@ function draw() {
   ctx.imageSmoothingEnabled = st.zoom === 1;
   ctx.drawImage(off, g.ox, g.oy, m.width * g.s, m.height * g.s);
 
+  // Scale bar at the image's lower left corner, so it stays next to the worm.
   const len = (10 / m.display_um_per_px) * st.zoom;
+  const bx = g.ox + 10 * st.zoom, by = g.oy + m.height * g.s - 10 * st.zoom;
   ctx.fillStyle = "#fff";
-  ctx.fillRect(16, g.fh - 20, len, 3);
+  ctx.shadowColor = "#000";
+  ctx.shadowBlur = 3 * st.zoom;
+  ctx.fillRect(bx, by, len, 3 * st.zoom);
   ctx.font = `${14 * st.zoom}px system-ui`;
-  ctx.fillText("10 µm", 16, g.fh - 28);
+  ctx.fillText("10 µm", bx, by - 6 * st.zoom);
+  ctx.shadowBlur = 0;
 
   if (st.tab === "mark") {
     if ($("#sugToggle").checked) for (const c of m.candidates) drawCandidate(c);
@@ -494,7 +503,17 @@ function setZ(z) {
 
 $$("[data-view]").forEach(b => (b.onclick = () => setView(b.dataset.view)));
 $$("[data-range]").forEach(b => (b.onclick = () => { st.range = b.dataset.range; syncButtons(); draw(); }));
-$$("[data-zoom]").forEach(b => (b.onclick = () => { st.zoom = +b.dataset.zoom; syncButtons(); draw(); }));
+// Zooming keeps the point at the middle of the view in the middle.
+$$("[data-zoom]").forEach(b => (b.onclick = () => {
+  const wrap = $("#canvasWrap");
+  const cx = (wrap.scrollLeft + wrap.clientWidth / 2) / Math.max(wrap.scrollWidth, 1);
+  const cy = (wrap.scrollTop + wrap.clientHeight / 2) / Math.max(wrap.scrollHeight, 1);
+  st.zoom = +b.dataset.zoom;
+  syncButtons();
+  draw();
+  wrap.scrollLeft = cx * wrap.scrollWidth - wrap.clientWidth / 2;
+  wrap.scrollTop = cy * wrap.scrollHeight - wrap.clientHeight / 2;
+}));
 $$(".tabs button").forEach(b => (b.onclick = () => !b.disabled && setTab(b.dataset.tab)));
 $$("#toolSeg button").forEach(b => (b.onclick = () => {
   st.tool = b.dataset.tool;
