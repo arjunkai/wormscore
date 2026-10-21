@@ -4,14 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>wormscore</title>
+<link rel="icon" href="/static/icon-192.png" sizes="192x192" type="image/png">
 <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<link rel="manifest" href="/static/manifest.webmanifest">
 <link rel="stylesheet" href="/static/home.css">
 </head>
 <body>
 <header class="top">
   <div class="brand"><img src="/static/icon.svg" alt="" width="22" height="22"><span>wormscore</span><span class="ver" id="ver"></span></div>
   <div class="top-actions">
-    <a class="ghost" href="https://github.com/arjunkai/wormscore#readme" target="_blank" rel="noopener">Guide</a>
+    <button class="ghost" id="guideBtn" title="Open the guide in your web browser">Guide</button>
     <button class="ghost icon" id="themeBtn" title="Switch light / dark" aria-label="Switch light or dark mode"></button>
   </div>
 </header>

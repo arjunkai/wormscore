@@ -141,3 +141,16 @@ def test_new_project_writes_a_template_and_recent_list_is_kept(desk, tmp_path):
     assert recent[:2] == [str(desk["project"]), str(new)]
     call(port, "POST", "/api/forget", {"path": str(new)})
     assert [p["path"] for p in state(port)["recent"]] == [str(desk["project"])]
+
+
+def test_icons_and_manifest_are_served(desk):
+    port = desk["port"]
+    for path in ("/static/icon-192.png", "/static/icon-512.png", "/static/manifest.webmanifest"):
+        assert call(port, "GET", path)[0] == 200, path
+
+
+def test_guide_opens_in_the_default_browser(desk, monkeypatch):
+    opened = []
+    monkeypatch.setattr(home.webbrowser, "open", opened.append)
+    assert call(desk["port"], "POST", "/api/guide", {})[0] == 200
+    assert opened == [home.GUIDE_URL]

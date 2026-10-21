@@ -10,6 +10,7 @@ from metadata only. If the metadata does not settle it, the channel is UNRESOLVE
 import hashlib
 import re
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
 
@@ -347,7 +348,18 @@ def scan(cfg, log=print, progress=None):
                              f"'{src.get('name', src['path'])}' in config.json.")
     all_files = {src["path"]: sorted(p for p in Path(src["path"]).rglob("*") if p.is_file()) for src in cfg["sources"]}
     total = sum(p.stat().st_size for files in all_files.values() for p in files) or 1
-    done = 0
+    # Checksums run on a few threads at once (hashing releases Python's lock, and each thread
+    # holds only a 1 MB block), which roughly halves the time on large data. Results are
+    # looked up by path, so the order of rows does not depend on which thread finished first.
+    hashes, done = {}, 0
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(sha256, p): p for files in all_files.values() for p in files}
+        for fut in as_completed(futures):
+            p = futures[fut]
+            hashes[p] = fut.result()
+            done += p.stat().st_size
+            if progress:
+                progress(done, total)
     for src in cfg["sources"]:
         root = Path(src["path"])
         original = Path(src.get("original_path") or src["path"])
@@ -357,10 +369,7 @@ def scan(cfg, log=print, progress=None):
         rows = []
         for p in files:
             rel = str(p.relative_to(root))
-            h = sha256(p)
-            done += p.stat().st_size
-            if progress:
-                progress(done, total)
+            h = hashes[p]
             row = {"source": src.get("name", str(root)), "relative_path": rel, "local_path": str(p),
                    "original_path": str(original / rel), "size_mb": round(p.stat().st_size / 2**20, 2),
                    "sha256": h, "role": file_role(p), "note": ""}

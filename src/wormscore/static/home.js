@@ -340,5 +340,6 @@ async function refresh(soon) {
 }
 
 $$("[data-act]").forEach(b => (b.onclick = () => sideAction(b.dataset.act)));
+$("#guideBtn").onclick = () => act("/api/guide", {});
 $("#themeBtn").onclick = () => act("/api/theme", { theme: st.data?.theme === "dark" ? "light" : "dark" });
 refresh();

@@ -23,8 +23,11 @@ from .server import CODE, LOCAL_HOSTS, STATIC
 
 SETTINGS = Path.home() / ".wormscore.json"
 HOME_FILES = {"home.js": "text/javascript; charset=utf-8", "home.css": "text/css; charset=utf-8",
-              "icon.svg": "image/svg+xml"}
-IDLE_EXIT_S = 180          # close the app this long after its windows have gone quiet
+              "icon.svg": "image/svg+xml",
+              "icon-192.png": "image/png", "icon-512.png": "image/png",
+              "manifest.webmanifest": "application/manifest+json"}
+GUIDE_URL = "https://github.com/arjunkai/wormscore#readme"
+IDLE_EXIT_S = 180         # close the app this long after its windows have gone quiet
 PROGRESS_LINE = re.compile(r"\((\d+)/(\d+)\)\s*$")
 
 
@@ -329,6 +332,9 @@ class HomeApp:
             if s["project"] == body.get("path"):
                 s["project"] = s["recent"][0] if s["recent"] else ""
             save_settings(s)
+        elif route == "guide":
+            # Opened in the system's default browser, not in the app window's Edge.
+            webbrowser.open(GUIDE_URL)
         elif route == "theme":
             s = load_settings()
             s["theme"] = "light" if body.get("theme") == "light" else "dark"

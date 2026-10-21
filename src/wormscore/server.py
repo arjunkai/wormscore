@@ -21,7 +21,9 @@ from . import measure as M
 
 STATIC = Path(__file__).resolve().parent / "static"
 STATIC_FILES = {"app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8",
-                "icon.svg": "image/svg+xml"}
+                "icon.svg": "image/svg+xml",
+                "icon-192.png": "image/png", "icon-512.png": "image/png",
+                "manifest.webmanifest": "application/manifest+json"}
 CODE = re.compile(r"^W\d{4,6}$")
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
 ROI_FIELDS = ["code", "region", "source", "area_um2", "peak_raw", "peak_filtered", "mean_mip",

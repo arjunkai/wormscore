@@ -389,7 +389,10 @@ def prepare(project, reassign=False, add=False, log=print):
         if streaks:
             flags.append({"id": "streak", "text": f"Horizontal scan-line artifact near row {streaks[0]}. "
                           "Ignore the line when judging brightness."})
-        pending.append((s, d, mip, bf_disp, flags, cand_meta, others, raw.shape, sat))
+        # mip and brightfield are already saved as PNGs (16-bit packing is lossless), so only
+        # the paths are kept: holding every image in memory until the end ran out of RAM
+        # on projects with many large images.
+        pending.append((s, d, flags, cand_meta, others, raw.shape, sat))
 
         extra = {}
         if mc["other_channel_qc"]:
@@ -410,6 +413,8 @@ def prepare(project, reassign=False, add=False, log=print):
             **({"added_on": s["added_on"]} if add else {}), **extra,
         })
         log(f"{code} ({n}/{len(todo)})")
+        # Free this image's stacks before the next one is read, so two never sit in memory at once.
+        del raw, filt, mip, mip_f, cands, exclude, bf_disp
 
     # Fixed display ranges, one pair per microscope, computed over all included images.
     # When adding, microscopes already in the project keep their ranges, so images that
@@ -422,12 +427,14 @@ def prepare(project, reassign=False, add=False, log=print):
     for system, vals in stats.items():
         if system in ranges:
             continue
-        sat = next(p[8] for p in pending if p[0]["system"] == system)
+        sat = next(p[6] for p in pending if p[0]["system"] == system)
         lo = round(float(np.median([v[0] for v in vals])))
         hi = round(float(np.median([v[1] for v in vals])))
         ranges[system] = {"full": [0, sat], "enhanced": [lo, max(hi, lo + 1)]}
 
-    for s, d, mip, bf_disp, flags, cand_meta, others, shape, sat in pending:
+    for s, d, flags, cand_meta, others, shape, sat in pending:
+        mip = M.unpack16(np.array(Image.open(d / "mip.png")))
+        bf_disp = np.array(Image.open(d / "brightfield.png")) if (d / "brightfield.png").exists() else None
         r = ranges[s["system"]]
         for name in ("full", "enhanced"):
             g = M.window(mip, *r[name])

@@ -41,14 +41,15 @@ a = Analysis(
     excludes=["matplotlib", "pandas", "IPython", "pytest", "setuptools", "pkg_resources"],
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="wormscore", console=False)
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="wormscore", console=False,
+          icon=str(root / "packaging" / "wormscore.ico"))
 coll = COLLECT(exe, a.binaries, a.datas, name="wormscore")
 
 # macOS: also wrap the folder as wormscore.app, which is what Mac users double-click.
 if sys.platform == "darwin":
     import re
     version = re.search(r'__version__ = "([^"]+)"', (root / "src" / "wormscore" / "__init__.py").read_text()).group(1)
-    BUNDLE(coll, name="wormscore.app", icon=None, bundle_identifier="io.github.arjunkai.wormscore",
+    BUNDLE(coll, name="wormscore.app", icon=str(root / "packaging" / "icon-1024.png"), bundle_identifier="io.github.arjunkai.wormscore",
            info_plist={"CFBundleShortVersionString": version, "CFBundleVersion": version,
                        "NSHighResolutionCapable": True, "LSMinimumSystemVersion": "12.0"})
 
