@@ -27,8 +27,10 @@ and double-click `wormscore.exe`.
 **With Python 3.12 or newer:**
 
 ```
-pip install git+https://github.com/arjunkai/wormscore.git
+pip install wormscore
 ```
+
+The newest code from GitHub: `pip install git+https://github.com/arjunkai/wormscore.git`
 
 This installs a `wormscore` command and a `wormscore-launcher` window.
 
