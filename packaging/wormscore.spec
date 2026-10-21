@@ -19,14 +19,28 @@ def third_party_licenses(toc, out):
     dists = sorted({d for t in tops for d in owners.get(t, [])} - {"wormscore"})
     base = Path(sys.base_prefix)
     parts = [("Python", base / "LICENSE.txt")] + [(p.parent.name, p) for p in sorted((base / "tcl").glob("*/license.terms"))]
+    notes = []
     for name in dists:
         d = md.distribution(name)
+        found = False
         for f in d.files or []:
             if any(w in f.name.upper() for w in ("LICENSE", "LICENCE", "COPYING", "NOTICE")):
                 parts.append((f"{name} {d.version}", Path(d.locate_file(f))))
+                found = True
+        if not found:   # no license file shipped: name the license its metadata gives
+            meta = d.metadata
+            lic = meta.get("License-Expression") or meta.get("License") or "; ".join(
+                c.split("::")[-1].strip() for c in meta.get_all("Classifier") or [] if c.startswith("License"))
+            notes.append(f"{name} {d.version}: {lic or 'see the package'} ({meta.get('Home-page') or ''})")
+    if any(n.startswith("pywebview") for n in dists):
+        notes.append("Microsoft.Web.WebView2.Core.dll, Microsoft.Web.WebView2.WinForms.dll (inside pywebview): "
+                     "Copyright (C) Microsoft Corporation, redistributed under the Microsoft WebView2 SDK license, "
+                     "https://www.nuget.org/packages/Microsoft.Web.WebView2")
     with open(out, "w", encoding="utf-8") as fh:
         fh.write("wormscore is MIT licensed (see LICENSE). It bundles the software below, "
                  "each under its own license.\n")
+        if notes:
+            fh.write(f"\n{'=' * 78}\nPackages without a license file\n{'=' * 78}\n\n" + "\n".join(notes) + "\n")
         for name, path in parts:
             if path.is_file():
                 fh.write(f"\n{'=' * 78}\n{name}: {path.name}\n{'=' * 78}\n\n")

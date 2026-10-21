@@ -35,7 +35,9 @@ blind-scoring project.
 
 ## Recently shipped
 
-- 0.8.0: in-app updates (the app offers new versions and can go back to the previous one).
+- 0.9.0: the Windows app has its own windows (one taskbar button, no lost connections).
+- 0.8.x: in-app updates (the app offers new versions and can go back to the previous one), drafts of
+  unsaved scoring answers, reconnecting windows.
 - 0.7.x: the app window, a faster and lighter Build blind set, the macOS app.
 - 0.5.0 to 0.6.x: an analysis plan locked before scoring, cross-microscope rules, test direction,
   source labels, a real-image demo.

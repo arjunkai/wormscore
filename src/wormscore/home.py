@@ -209,10 +209,21 @@ def edge_path():
 # When an app window was last seen (Windows). The app closes when its windows are gone, not when
 # a page goes quiet: Edge pauses minimized and hidden windows, so a quiet page can still be open.
 WINDOWS = {"tracking": False, "last": 0.0}
+DESKTOP = None   # wormscore's own windows (desktop.py), when this computer can show them
+# Right after a window is opened the watch looks 10 times a second: until it gives the window
+# wormscore's taskbar ID, the taskbar shows it as a separate button.
+WATCH_FAST = {"until": 0.0}
+WATCH_WAKE = threading.Event()    # set when a window is opened, so the watch looks at once
+
+
+def watch_new_window():
+    WATCH_FAST["until"] = time.time() + 8
+    WATCH_WAKE.set()
 
 
 def open_window(url, size=(1200, 820)):
     """Open url in its own app window (no tabs or address bar); fall back to the default browser."""
+    watch_new_window()
     exe = edge_path()
     if exe:
         profile = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "wormscore" / "window"
@@ -253,6 +264,10 @@ def app_window_kind(hwnd):
     title = buf.value
     kind = "home" if title == HOME_TITLE else "scoring" if (
         title.startswith(SCORE_TITLE + ":") and title.endswith(" - wormscore")) else None
+    # Before its page has loaded, Edge titles a new app window with its address.
+    if kind is None and title.startswith("127.0.0.1:"):
+        port = title.split(":", 1)[1].split("/", 1)[0]
+        kind = "home" if port == str(HOME_PORT) else "scoring" if port == str(SCORE_PORT) else None
     if kind is None:
         return None
     cls = ctypes.create_unicode_buffer(64)
@@ -414,7 +429,8 @@ def _start_icon_keeper():
             except OSError:
                 pass
             rounds += 1
-            time.sleep(3 if rounds > 1 else 1)
+            WATCH_WAKE.wait(0.1 if time.time() < WATCH_FAST["until"] else 3)
+            WATCH_WAKE.clear()
 
     _icon_keeper = threading.Thread(target=keep, daemon=True)
     WINDOWS["tracking"] = True
@@ -520,6 +536,7 @@ class HomeApp:
         self.opener = opener
         self.exit_app = lambda: None   # set by main(): closes the app so an update can replace it
         self.can_start = False         # set by main(): a wormscore://start link starts this app
+        self.home_url = ""
         self.upd = {"info": None, "error": None, "checking": False, "dismissed": False,
                     "phase": "", "frac": None, "message": "", "result": None}
         if check_updates:
@@ -642,6 +659,7 @@ class HomeApp:
         s = load_settings()
         recent = [project_status(p) for p in s["recent"]]
         return {"version": __version__, "theme": s["theme"], "recent": recent, "can_start": self.can_start,
+                "own_window": DESKTOP is not None,
                 "update": self.update_view(recent),
                 "project": project_status(s["project"]) if s["project"] else None,
                 "scoring_url": self.scoring[2] if self.scoring and self.scoring[0] == s["project"] else None,
@@ -687,7 +705,8 @@ class HomeApp:
         if self.job.running:
             raise ValueError("A step is still running. Open scoring when it is done.")
         started = time.time()
-        if not (self.scoring and self.scoring[0] == p):
+        same = bool(self.scoring and self.scoring[0] == p)
+        if not same:
             self.stop_scoring()
             try:
                 try:
@@ -700,14 +719,19 @@ class HomeApp:
             threading.Thread(target=srv.serve_forever, daemon=True).start()
             self.scoring = (p, srv, f"http://127.0.0.1:{srv.server_address[1]}")
         if self.open_windows:
-            self.show_scoring_window(started)
+            self.show_scoring_window(started, new_server=not same)
         return {"ok": True, "url": self.scoring[2]}
 
-    def show_scoring_window(self, started):
+    def show_scoring_window(self, started, new_server=False):
         """Bring an open scoring window of this project forward instead of opening a second one.
         A window left open while wormscore was not running checks in every few seconds; a
         window of another project is refused by the server and never counts as checking in."""
         project = self.scoring[1].project
+        if DESKTOP:
+            # the app's own scoring window: reloaded when its server is new (another project)
+            DESKTOP.open("scoring", self.scoring[2], f"Scoring: {project.cfg['project_name']} - wormscore",
+                         (1500, 900), reload=new_server)
+            return
         windows = find_app_windows(SCORE_TITLE)
         if windows:
             end = started + 6
@@ -750,6 +774,10 @@ class HomeApp:
             s = load_settings()
             s["theme"] = "light" if body.get("theme") == "light" else "dark"
             save_settings(s)
+        elif route == "show":
+            if not DESKTOP:
+                return None
+            DESKTOP.open("home", self.home_url, HOME_TITLE, (1200, 820))
         elif route == "settings":
             s = load_settings()
             if isinstance(body.get("update_check"), bool):
@@ -1030,6 +1058,25 @@ def show_home_window(app, url, started):
     open_window(url)
 
 
+def ask_running_copy_to_show():
+    """A second start: ask the running wormscore to bring its home window forward. Lets that
+    copy take the foreground (only the program the user just started may give that right)."""
+    import urllib.request
+    if sys.platform == "win32":
+        try:
+            ctypes_windll = __import__("ctypes").windll
+            ctypes_windll.user32.AllowSetForegroundWindow(-1)    # ASFW_ANY
+        except (AttributeError, OSError):
+            pass
+    req = urllib.request.Request(f"http://127.0.0.1:{HOME_PORT}/api/show", data=b"{}", method="POST",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.status == 200
+    except OSError:
+        return False
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if link_launch(argv):
@@ -1037,6 +1084,8 @@ def main(argv=None):
     if "--classic" in argv:
         from .launcher import main as classic
         return classic()
+    from . import desktop
+    desktop.set_app_id()       # before any window: every window then lands on the pinned button
     dpi_aware()
     started = time.time()
     app = HomeApp()
@@ -1046,6 +1095,8 @@ def main(argv=None):
         if running_home(HOME_PORT):
             # wormscore is already running: show its window instead of starting a second copy
             log_event("already running: showing its window")
+            if ask_running_copy_to_show():
+                return
             windows = find_app_windows(HOME_TITLE)
             if windows:
                 raise_window(windows[0])
@@ -1056,13 +1107,53 @@ def main(argv=None):
     app.start_updates()
     app.can_start = register_launch_link()
     fix_shortcuts()
+    url = app.home_url = f"http://127.0.0.1:{srv.server_address[1]}"
+    use_desktop = "--edge-window" not in argv and desktop.available()
+    if use_desktop:
+        # marks the page as shown in wormscore's own window; a leftover Edge window (from an
+        # update from 0.8) loads it without the mark and says the app moved to its own window
+        app.home_url = url + "/?window=own"
+    log_event(f"started on port {srv.server_address[1]}"
+              f" ({'own windows' if use_desktop else 'Edge or browser window'})")
+    if use_desktop:
+        try:
+            return run_desktop(app, srv, url, desktop)
+        except Exception as exc:     # WebView2 failed to start: the Edge window still works
+            log_event(f"own windows failed, using an Edge window: {type(exc).__name__}: {exc}")
+            global DESKTOP
+            DESKTOP = None
+    run_edge_window(app, srv, url, started)
 
+
+def run_desktop(app, srv, url, desktop):
+    """wormscore's own windows: the app ends when its last window closes."""
+    global DESKTOP
+    DESKTOP = desktop.Desktop(app, log=log_event)
+
+    def exit_app():
+        log_event("closing for an update or go back")
+        DESKTOP.close_all()
+    app.exit_app = exit_app
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    DESKTOP.open("home", app.home_url, HOME_TITLE, (1200, 820))
+    try:
+        DESKTOP.run(U.data_dir())
+        log_event("last window closed")
+    except BaseException as exc:
+        log_event(f"stopped by an error: {type(exc).__name__}: {exc}")
+        raise
+    finally:
+        app.stop_scoring()
+        srv.shutdown()
+        srv.server_close()
+
+
+def run_edge_window(app, srv, url, started):
+    """Edge app windows (or the default browser): the app watches for its windows to close."""
     def exit_app():
         log_event("closing for an update or go back")
         threading.Thread(target=srv.shutdown, daemon=True).start()
     app.exit_app = exit_app
-    url = f"http://127.0.0.1:{srv.server_address[1]}"
-    log_event(f"started on port {srv.server_address[1]}")
 
     def watchdog():
         tick = time.time()

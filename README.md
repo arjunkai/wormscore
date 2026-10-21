@@ -32,7 +32,7 @@ a `.companion.ome`). Channel identity (marker vs brightfield) is read from metad
 ## Install
 
 **Windows, no Python needed:** click **Download for Windows** above (or get `wormscore-windows.zip`
-from the [Releases page](https://github.com/arjunkai/wormscore/releases)), unzip it, and double-click `wormscore.exe`. It opens the wormscore app window: your projects on the left and the
+from the [Releases page](https://github.com/arjunkai/wormscore/releases)), unzip it, and double-click `wormscore.exe`. It opens in its own window (drawn by WebView2, the web engine built into Windows 10 and 11, so it behaves like any other app: one taskbar button, and it closes when you close its window). Your projects are on the left and the
 four steps (Scan data, Build blind set, Score, Unblind) as a guided list with progress and time left.
 The older launcher window is still there for one version: `wormscore.exe --classic`.
 

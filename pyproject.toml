@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wormscore"
-version = "0.8.3"
+version = "0.9.0"
 description = "Blind scoring of fluorescent neurons in C. elegans confocal stacks, with measurement and genetics statistics."
 keywords = ["C. elegans", "worm", "neuron", "blind scoring", "fluorescence", "microscopy", "confocal", "penetrance"]
 readme = "README.md"
@@ -28,6 +28,8 @@ dependencies = [
   "czifile>=2026.10.14",
   "tifffile>=2024.1",
   "imagecodecs>=2024.1",
+  # the app's own windows on Windows (WebView2); elsewhere the app uses the browser
+  "pywebview>=6.2.1; sys_platform == 'win32'",
 ]
 
 [project.urls]

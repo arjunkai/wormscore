@@ -467,6 +467,14 @@ async function startStep(body) {
 // first, retrying every 2 s and at once when the computer wakes or the window gets focus; only
 // if the program stays away does the window explain what happened, with a button to start it.
 const GONE_AFTER_MS = 8000;
+const OWN_WINDOW = new URLSearchParams(location.search).get("window") === "own";
+
+function leftOverWindow() {
+  clearTimeout(st.timer);
+  $("#reconn").hidden = true;
+  $("#goneModal").hidden = true;
+  $("#movedModal").hidden = false;
+}
 
 function connectionLost() {
   if (st.closing) return;              // an update is restarting the app; its dialog says so
@@ -494,6 +502,8 @@ async function refresh(soon) {
     const d = await (await fetch(`/api/state?since=${st.since}`)).json();
     // Another version answers on this address (after an update or a go back): load its page.
     if (st.data && d.version !== st.data.version) return location.reload();
+    // wormscore now shows its pages in its own window; this one is left over from before.
+    if (d.own_window && !OWN_WINDOW) return leftOverWindow();
     connectionBack();
     if (d.job.next < st.since) { st.log = []; st.since = 0; }
     st.log.push(...d.job.lines);
