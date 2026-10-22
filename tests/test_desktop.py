@@ -7,6 +7,7 @@ from wormscore import desktop, home
 class Events:
     def __init__(self):
         self.closing, self.closed = Hook(), Hook()
+        self.resized, self.maximized, self.restored = Hook(), Hook(), Hook()
 
 
 class Hook(list):
@@ -14,13 +15,13 @@ class Hook(list):
         self.append(fn)
         return self
 
-    def fire(self):
-        return [fn() for fn in self]
+    def fire(self, *args):
+        return [fn(*args) for fn in self]
 
 
 class FakeWindow:
-    def __init__(self, title, url):
-        self.title, self.url, self.events = title, url, Events()
+    def __init__(self, title, url, **kw):
+        self.title, self.url, self.events, self.kw = title, url, Events(), kw
         self.loaded, self.shown = [], 0
 
     def load_url(self, url):
@@ -46,7 +47,7 @@ class FakeWebview:
         self.created = []
 
     def create_window(self, title, url, **kw):
-        w = FakeWindow(title, url)
+        w = FakeWindow(title, url, **kw)
         self.created.append(w)
         return w
 
@@ -95,3 +96,19 @@ def test_home_route_show_needs_own_windows(monkeypatch):
     monkeypatch.setattr(home, "DESKTOP", type("D", (), {"open": lambda self, *a, **k: opened.append(a)})())
     app.home_url = "http://127.0.0.1:47311"
     assert app.post("show", {}) == {"ok": True} and opened[0][0] == "home"
+
+
+def test_windows_open_maximized_then_as_they_were_left():
+    app = home.HomeApp(open_windows=False)
+    saved = {}
+    d = desktop.Desktop(app, webview=FakeWebview(), ask=lambda w, t: True, sizes=lambda: dict(saved),
+                        remember=lambda kind, size: saved.__setitem__(kind, size))
+    w = d.open("home", "http://127.0.0.1:1", "wormscore", (1200, 820))
+    assert w.kw["maximized"] is True                     # first time: full screen
+    w.events.restored.fire()                             # the user un-maximizes and resizes
+    w.events.resized.fire(1400, 900)
+    w.destroy()
+    assert saved["home"] == {"w": 1400, "h": 900, "max": False}
+    w2 = d.open("home", "http://127.0.0.1:1", "wormscore", (1200, 820))
+    assert (w2.kw["width"], w2.kw["height"], w2.kw["maximized"]) == (1400, 900, False)
+    assert home.window_sizes({"home": {"w": 5, "h": 900, "max": False}, "x": {}}) == {}

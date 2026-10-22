@@ -125,6 +125,14 @@ function cardStatus(p) {
 
 // ---------------------------------------------------------------- render
 
+// The X only takes a project off this list; people reasonably fear it deletes the folder.
+async function forgetProject(name, path) {
+  const go = await ask(`Remove "${name}" from the list?`,
+    `Only the list in wormscore changes. The folder and every file in it (images, codes, scores) stay on your computer:\n${path}\n\nYou can add it back any time with Open project.`,
+    [{ value: true, label: "Remove from the list", desc: "Nothing is deleted." }]);
+  if (go) act("/api/forget", { path });
+}
+
 function renderSide(d) {
   const cur = d.project?.path;
   const list = d.recent.map(p => {
@@ -137,7 +145,7 @@ function renderSide(d) {
         h("span", { class: "st" }, cardStatus(p))),
       h("button", {
         class: "x", title: "Remove from this list (the folder itself is not changed)",
-        "aria-label": `Remove ${name} from the list`, onclick: () => act("/api/forget", { path: p.path }),
+        "aria-label": `Remove ${name} from the list`, onclick: () => forgetProject(name, p.path),
       }, icon("close", 14)));
   });
   $("#recent").replaceChildren(...(list.length ? list : [h("div", { class: "empty-side" }, "No projects yet.")]));

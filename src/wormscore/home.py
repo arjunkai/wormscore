@@ -76,7 +76,25 @@ def load_settings():
     return {"project": project, "recent": recent[:8],
             "theme": s.get("theme") if s.get("theme") in ("dark", "light") else "dark",
             "update_check": s.get("update_check") is not False,
-            "skip_version": s.get("skip_version") if isinstance(s.get("skip_version"), str) else ""}
+            "skip_version": s.get("skip_version") if isinstance(s.get("skip_version"), str) else "",
+            "windows": window_sizes(s.get("windows"))}
+
+
+def window_sizes(raw):
+    """How each window was left: {"home"/"scoring": {"w", "h", "max"}}, invalid entries dropped."""
+    out = {}
+    if isinstance(raw, dict):
+        for kind, v in raw.items():
+            if kind in ("home", "scoring") and isinstance(v, dict) and isinstance(v.get("max"), bool) \
+                    and all(isinstance(v.get(k), int) and 400 <= v[k] <= 10000 for k in ("w", "h")):
+                out[kind] = {"w": v["w"], "h": v["h"], "max": v["max"]}
+    return out
+
+
+def remember_window(kind, size):
+    s = load_settings()
+    s["windows"][kind] = size
+    save_settings(s)
 
 
 def save_settings(s):
@@ -1128,7 +1146,8 @@ def main(argv=None):
 def run_desktop(app, srv, url, desktop):
     """wormscore's own windows: the app ends when its last window closes."""
     global DESKTOP
-    DESKTOP = desktop.Desktop(app, log=log_event)
+    DESKTOP = desktop.Desktop(app, log=log_event, sizes=lambda: load_settings()["windows"],
+                              remember=remember_window)
 
     def exit_app():
         log_event("closing for an update or go back")

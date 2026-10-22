@@ -67,11 +67,15 @@ def ask_yes_no(window, text):
 class Desktop:
     """The app's windows: one home window and at most one scoring window."""
 
-    def __init__(self, app, log=lambda text: None, webview=None, ask=None):
+    def __init__(self, app, log=lambda text: None, webview=None, ask=None, sizes=dict,
+                 remember=lambda kind, size: None):
         if webview is None:
             import webview
         self.webview = webview
         self.ask = ask or ask_yes_no
+        self.sizes = sizes            # how each window was left last time
+        self.remember = remember
+        self.state = {}               # this session: kind -> {"w", "h", "max"}
         self.app = app
         self.log = log
         self.lock = threading.Lock()
@@ -94,9 +98,16 @@ class Desktop:
                     w.set_title(title)
                 self.front(w)
                 return w
-            w = self.webview.create_window(title, url, width=size[0], height=size[1], min_size=(720, 520),
-                                           background_color="#121417", text_select=True)
+            # The first time a window opens maximized; after that, as it was left (size and
+            # maximized; not the position, which could be on a screen that is no longer there).
+            last = self.sizes().get(kind) or {"w": size[0], "h": size[1], "max": True}
+            w = self.webview.create_window(title, url, width=last["w"], height=last["h"], maximized=last["max"],
+                                           min_size=(720, 520), background_color="#121417", text_select=True)
             self.windows[kind], self.urls[kind] = w, url
+            self.state[kind] = dict(last)
+        w.events.resized += lambda width, height: self.on_resized(kind, width, height)
+        w.events.maximized += lambda: self.state[kind].update(max=True)
+        w.events.restored += lambda: self.state[kind].update(max=False)
         w.events.closing += lambda: self.on_closing(kind)
         w.events.closed += lambda: self.on_closed(kind)
         return w
@@ -132,10 +143,23 @@ class Desktop:
                 "have to be run again.\n\nClose anyway?")
         return self.ask(self.windows.get(kind), text)
 
+    def on_resized(self, kind, width, height):
+        """Keep the normal (not maximized or minimized) size, which a maximized window returns to."""
+        w = self.windows.get(kind)
+        try:
+            normal = w is not None and int(w.native.WindowState) == 0          # FormWindowState.Normal
+        except Exception:
+            normal = not self.state.get(kind, {}).get("max", False)
+        if normal and width >= 400 and height >= 400:
+            self.state[kind].update(w=int(width), h=int(height))
+
     def on_closed(self, kind):
         with self.lock:
             self.windows.pop(kind, None)
             self.urls.pop(kind, None)
+            last = self.state.pop(kind, None)
+        if last:
+            self.remember(kind, last)
         if kind == "scoring":
             self.app.stop_scoring()
         self.log(f"{kind} window closed")
