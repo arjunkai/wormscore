@@ -16,11 +16,7 @@ import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import numpy as np
-from PIL import Image, ImageDraw
-
 from . import config as C
-from . import measure as M
 
 STATIC = Path(__file__).resolve().parent / "static"
 STATIC_FILES = {"app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8",
@@ -66,7 +62,18 @@ def safe_cell(v):
     return v
 
 
+def heavy_imports():
+    """numpy, Pillow and the measurement code (which loads scipy) are needed only to measure
+    regions. Loading them here, not when this file is imported, keeps them out of the app
+    window's start (home.py imports this file); the window loads them in the background."""
+    import numpy
+    from PIL import Image, ImageDraw
+    from . import measure
+    return numpy, Image, ImageDraw, measure
+
+
 def roi_mask(roi, h, w, cands):
+    np, Image, ImageDraw, _ = heavy_imports()
     if roi["type"] == "candidate":
         return cands[f"arr_{roi['rank'] - 1}"]
     im = Image.new("L", (w, h), 0)
@@ -152,6 +159,7 @@ class Project:
         return body["saved"]
 
     def measure_rois(self, code, rois):
+        np, Image, _, M = heavy_imports()
         meta = self.meta(code)
         d = self.blind / code
         raw = np.stack([M.unpack16(np.array(Image.open(d / "planes" / f"z{z:02d}.png"))) for z in range(meta["n_z"])])

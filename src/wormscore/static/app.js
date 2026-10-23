@@ -30,6 +30,7 @@ const st = {
   cfg: null, colors: {}, worms: [], code: null, meta: null, score: null, rois: [], roisDirty: false, formDirty: false,
   view: "mip", z: 0, range: "enhanced", bf: false, zoom: 1, tab: "score", tool: "ellipse", label: null,
   mip: null, bfVals: null, planes: [], drawing: null, geom: null,
+  next: null,   // the next image's projection and brightfield, decoded ahead: { code, mip, bfVals }
 };
 
 const cv = $("#cv");
@@ -231,11 +232,9 @@ async function openWorm(code) {
     code, meta: r.meta, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
     view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), drawing: null,
   });
-  const { width: w, height: hgt } = st.meta;
-  [st.mip, st.bfVals] = await Promise.all([
-    loadValues(`/img/${code}/mip.png`, w, hgt),
-    st.meta.has_brightfield ? loadValues(`/img/${code}/brightfield.png`, w, hgt, false) : null,
-  ]);
+  const ahead = st.next && st.next.code === code ? await st.next.ready : null;
+  st.next = null;
+  [st.mip, st.bfVals] = ahead || await loadImages(code, st.meta);
   $("#bfToggle").disabled = !st.meta.has_brightfield;
   $("#bfToggle").parentElement.title = st.meta.has_brightfield ? "" : "No brightfield channel was recorded for this image";
   $("#codeTitle").textContent = code;
@@ -250,7 +249,26 @@ async function openWorm(code) {
   setTab(st.score ? st.tab : "score");
   renderList();
   draw();
+  loadNext(code);
   preloadPlanes(code);
+}
+
+function loadImages(code, meta) {
+  const { width: w, height: hgt } = meta;
+  return Promise.all([
+    loadValues(`/img/${code}/mip.png`, w, hgt),
+    meta.has_brightfield ? loadValues(`/img/${code}/brightfield.png`, w, hgt, false) : null,
+  ]);
+}
+
+// Decode the next image in the list while this one is being scored, so moving on is instant.
+// Only pixels are kept ahead; its answers and regions are always fetched fresh when it opens.
+function loadNext(code) {
+  const i = st.worms.findIndex(w => w.code === code);
+  const next = st.worms[i + 1];
+  if (!next) return;
+  const ready = api(`/api/worm/${next.code}`).then(r => loadImages(next.code, r.meta)).catch(() => null);
+  st.next = { code: next.code, ready };
 }
 
 async function preloadPlanes(code) {

@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from . import update as U
-from .server import CODE, LOCAL_HOSTS, STATIC, LocalServer
+from .server import CODE, LOCAL_HOSTS, STATIC, LocalServer, heavy_imports
 
 SETTINGS = Path.home() / ".wormscore.json"
 HOME_FILES = {"home.js": "text/javascript; charset=utf-8", "home.css": "text/css; charset=utf-8",
@@ -1133,6 +1133,11 @@ def main(argv=None):
         app.home_url = url + "/?window=own"
     log_event(f"started on port {srv.server_address[1]}"
               f" ({'own windows' if use_desktop else 'Edge or browser window'})")
+    # numpy, scipy and Pillow load a few seconds after start, off the main thread: the window
+    # opens without waiting for them, and the first region saved later does not wait either.
+    preload = threading.Timer(3, heavy_imports)
+    preload.daemon = True
+    preload.start()
     if use_desktop:
         try:
             return run_desktop(app, srv, url, desktop)
