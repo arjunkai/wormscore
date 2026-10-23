@@ -40,15 +40,15 @@
         <button data-zoom="1" class="on">1x</button><button data-zoom="2">2x</button><button data-zoom="3">3x</button>
       </div>
     </div>
-    <div id="canvasWrap"><canvas id="cv"></canvas></div>
+    <div id="canvasWrap"><canvas id="cv" role="img" aria-label="Image"></canvas></div>
     <div class="hint">Keys: left/right = plane, P = projection/planes, E = range, B = brightfield, N = next image</div>
   </section>
 
   <aside id="panel">
     <div class="code" id="codeTitle">-</div>
-    <div class="tabs">
-      <button data-tab="score" class="on">1. Score</button>
-      <button data-tab="mark" id="markTab">2. Mark cells</button>
+    <div class="tabs" role="tablist" aria-label="Steps for this image">
+      <button data-tab="score" class="on" role="tab" aria-selected="true">1. Score</button>
+      <button data-tab="mark" id="markTab" role="tab" aria-selected="false">2. Mark cells</button>
     </div>
 
     <form id="scoreForm" class="tab" data-tab="score" autocomplete="off">

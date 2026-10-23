@@ -84,7 +84,14 @@ async function act(path, body) {
 
 // ---------------------------------------------------------------- modal
 
+// Puts focus back on a control after the page was redrawn (controls carry a data-k name).
+function refocus(k, fallback) {
+  const el = k ? document.querySelector(`[data-k="${CSS.escape(k)}"]`) : null;
+  (el || (fallback?.isConnected ? fallback : null))?.focus();
+}
+
 function ask(title, body, choices, cancel = "Cancel") {
+  const opener = document.activeElement, openerKey = opener?.dataset?.k;
   return new Promise(resolve => {
     $("#mTitle").textContent = title;
     if (body instanceof Node) $("#mBody").replaceChildren(body);
@@ -95,7 +102,12 @@ function ask(title, body, choices, cancel = "Cancel") {
       class: "choice" + (c.danger ? " danger" : ""), onclick: () => close(c.value),
     }, h("b", {}, c.label), c.desc ? h("span", {}, c.desc) : null)));
     const m = $("#modal");
-    const close = v => { m.hidden = true; document.removeEventListener("keydown", esc); resolve(v); };
+    const close = v => {
+      m.hidden = true;
+      document.removeEventListener("keydown", esc);
+      refocus(openerKey, opener);
+      resolve(v);
+    };
     const esc = e => { if (e.key === "Escape") close(null); };
     $("#mCancel").onclick = () => close(null);
     document.addEventListener("keydown", esc);
@@ -138,13 +150,13 @@ function renderSide(d) {
   const list = d.recent.map(p => {
     const name = p.name || p.path.split(/[\\/]/).pop();
     return h("div", { class: "card-p" + (p.path === cur ? " cur" : "") },
-      h("button", { class: "pick", "aria-current": p.path === cur ? "true" : null,
+      h("button", { class: "pick", "data-k": `pick:${p.path}`, "aria-current": p.path === cur ? "true" : null,
         onclick: () => p.path !== cur && act("/api/select", { path: p.path }) },
         h("span", { class: "nm" }, name),
         h("span", { class: "pth", title: p.path }, p.path),
         h("span", { class: "st" }, cardStatus(p))),
       h("button", {
-        class: "x", title: "Remove from this list (the folder itself is not changed)",
+        class: "x", "data-k": `x:${p.path}`, title: "Remove from this list (the folder itself is not changed)",
         "aria-label": `Remove ${name} from the list`, onclick: () => forgetProject(name, p.path),
       }, icon("close", 14)));
   });
@@ -152,7 +164,7 @@ function renderSide(d) {
 }
 
 function welcome() {
-  const tile = (act_, title, text) => h("div", { class: "tile", role: "button", tabindex: "0",
+  const tile = (act_, title, text) => h("div", { class: "tile", role: "button", tabindex: "0", "data-k": `tile:${act_}`,
     onclick: () => sideAction(act_), onkeydown: e => e.key === "Enter" && sideAction(act_) },
     h("b", {}, title), h("span", {}, text));
   return h("div", { class: "welcome" },
@@ -201,32 +213,32 @@ function renderMain(d) {
   const steps = h("ol", { class: "steps" },
     stepCard(1, s1, "Scan data", "List every file and image and identify channels from metadata.",
       scanned ? `${plural(p.scanned, "raw image")} found. Scan again if you added files.` : null,
-      [h("button", { class: s1 === "next" ? "primary" : "btn", disabled: busy || !ok, onclick: scan },
+      [h("button", { class: s1 === "next" ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok, onclick: scan },
         scanned ? "Scan again" : "Scan data")]),
     stepCard(2, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan in log.md.",
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
-      [h("button", { class: s2 === "next" ? "primary" : "btn", disabled: busy || !ok || !scanned, onclick: build },
+      [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
         !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")]),
     stepCard(3, s3, "Score", "Score each coded image in the scoring window. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
-      [h("button", { class: s3 === "next" ? "primary" : "btn", disabled: busy || !built, onclick: score },
+      [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },
         p.scored ? "Continue scoring" : "Start scoring")],
       built && p.coded && !building ? h("div", { class: "mini" }, h("div", { style: `width:${Math.min(100, 100 * p.scored / p.coded)}%` })) : null),
     stepCard(4, s4, "Unblind", "Reveal which genotype each code was, then write the results tables and a draft Methods text. Do this only when scoring is finished.",
       p.unblinded ? "Results are in the outputs\\unblinded folder." : null,
       [h("label", { class: "check" },
-        h("input", { type: "checkbox", checked: st.finished, onchange: e => { st.finished = e.target.checked; render(); } }),
+        h("input", { type: "checkbox", "data-k": "finished", checked: st.finished, onchange: e => { st.finished = e.target.checked; render(); } }),
         "I have finished scoring"),
-       h("button", { class: s4 === "next" && st.finished ? "primary" : "btn", disabled: busy || !built || !p.scored || !st.finished,
+       h("button", { class: s4 === "next" && st.finished ? "primary" : "btn", "data-k": "step4", disabled: busy || !built || !p.scored || !st.finished,
          onclick: unblind }, p.unblinded ? "Unblind again" : "Unblind"),
-       p.unblinded ? h("button", { class: "btn", onclick: () => act("/api/open", { what: "results" }) }, "Open results") : null]));
+       p.unblinded ? h("button", { class: "btn", "data-k": "results", onclick: () => act("/api/open", { what: "results" }) }, "Open results") : null]));
 
   main.replaceChildren(h("div", { class: "wrap" },
     h("div", { class: "p-head" },
       h("div", {}, h("h2", {}, p.name || "Project"), h("div", { class: "p-path" }, p.path)),
       h("div", { class: "p-tools" },
-        h("button", { class: "btn", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"),
-        h("button", { class: "btn", disabled: !p.has_config, onclick: () => act("/api/open", { what: "config" }) }, "Edit config.json"))),
+        h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"),
+        h("button", { class: "btn", "data-k": "config", disabled: !p.has_config, onclick: () => act("/api/open", { what: "config" }) }, "Edit config.json"))),
     !p.has_config ? h("div", { class: "banner" }, "This folder has no config.json. Open another project or make a new one.") : null,
     p.config_error ? h("div", { class: "banner" }, "config.json needs a fix before the next step:\n" + p.config_error) : null,
     busy && !runningHere ? h("div", { class: "banner" }, `"${job.title}" is running for another project.`) : null,
@@ -251,7 +263,7 @@ function activity(job) {
       h("span", { class: "a-meta" }, meta)),
     h("div", { class: "bar" + (job.running && pct === null ? " indet" : "") }, h("div", { style: `width:${width}%` })),
     h("div", { class: "a-last", title: last }, last),
-    h("button", { class: "btn subtle log-toggle", onclick: () => { st.showLog = !st.showLog; render(); } },
+    h("button", { class: "btn subtle log-toggle", "data-k": "log", onclick: () => { st.showLog = !st.showLog; render(); } },
       st.showLog ? "Hide log" : "Show log"),
     st.showLog ? h("pre", { class: "log", id: "log" }, st.log.join("\n")) : null);
 }
@@ -392,8 +404,15 @@ function render() {
   $("#themeBtn").replaceChildren(icon(d.theme === "dark" ? "sun" : "moon", 18));
   $("#themeBtn").title = d.theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   $("#ver").textContent = d.version;
+  // The state is polled every few seconds. Rebuilding the page each time would throw keyboard
+  // focus back to the top and make screen readers read it again, so only redraw on a change.
+  const key = JSON.stringify([d.recent, d.project, d.job, st.finished, st.showLog, st.log.length]);
+  if (key === st.pageKey) return;
+  st.pageKey = key;
+  const focused = document.activeElement;
   renderSide(d);
   renderMain(d);
+  if (focused && !focused.isConnected) refocus(focused.dataset?.k);
 }
 
 // ---------------------------------------------------------------- actions
@@ -532,6 +551,18 @@ async function refresh(soon) {
 for (const ev of ["focus", "online"]) window.addEventListener(ev, () => refresh(true));
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(true); });
 $("#goneStart").onclick = () => { location.href = "wormscore://start"; };
+
+// Tab and Shift+Tab stay inside an open dialog.
+document.addEventListener("keydown", e => {
+  if (e.key !== "Tab") return;
+  const m = $$(".modal").reverse().find(x => !x.hidden);
+  if (!m) return;
+  const els = [...m.querySelectorAll("button, input, a[href], [tabindex]")].filter(x => !x.disabled && x.offsetParent !== null);
+  const i = els.indexOf(document.activeElement);
+  if (!els.length) e.preventDefault();
+  else if (e.shiftKey && i <= 0) { els.at(-1).focus(); e.preventDefault(); }
+  else if (!e.shiftKey && (i === -1 || i === els.length - 1)) { els[0].focus(); e.preventDefault(); }
+});
 
 $$("[data-act]").forEach(b => (b.onclick = () => sideAction(b.dataset.act)));
 $("#guideBtn").onclick = () => act("/api/guide", {});

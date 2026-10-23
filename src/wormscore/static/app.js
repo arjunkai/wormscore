@@ -196,7 +196,8 @@ function buildForm() {
   st.label = labels[0];
   $("#labelSeg").replaceChildren(...labels.map((l, i) =>
     h("button", { type: "button", "data-label": l, class: `${i === 0 ? "on " : ""}${l === "background" ? "lbg" : `l${i + 1}`}`,
-      onclick: e => { st.label = l; $$("#labelSeg button").forEach(x => x.classList.toggle("on", x === e.currentTarget)); } },
+      "aria-pressed": String(i === 0),
+      onclick: e => { st.label = l; $$("#labelSeg button").forEach(x => setOn(x, x === e.currentTarget)); } },
     l === "background" ? "Background" : l)));
 }
 
@@ -209,8 +210,11 @@ function renderList() {
   const nav = $("#list");
   nav.replaceChildren(...st.worms.map(w => {
     const dot = w.scored && w.has_roi ? "done" : w.scored ? "scored" : "";
-    return h("button", { class: w.code === st.code ? "cur" : "", onclick: () => openWorm(w.code) },
-      h("span", { class: `dot ${dot}` }), w.code,
+    const said = { done: "scored, cells marked", scored: "scored", "": "not scored" }[dot];
+    return h("button", { class: w.code === st.code ? "cur" : "", "aria-current": w.code === st.code ? "true" : null,
+      "aria-label": `${w.code}, ${said}` + (w.unanswered_flags ? `, ${w.unanswered_flags} questions to confirm` : ""),
+      title: said, onclick: () => openWorm(w.code) },
+      h("span", { class: `dot ${dot}`, "aria-hidden": "true" }), w.code,
       w.unanswered_flags ? h("span", { class: "flagmark", title: "questions to confirm" }, `${w.unanswered_flags}?`) : null);
   }));
   const n = st.worms.filter(w => w.scored).length;
@@ -227,17 +231,24 @@ async function openWorm(code) {
       api(`/api/worm/${st.code}/draft`, { discard: true }).catch(() => {});
     }
   }
+  // Clicking codes quickly starts several loads; only the latest may fill the page.
+  const seq = (st.openSeq = (st.openSeq || 0) + 1);
   const r = await api(`/api/worm/${code}`);
+  if (seq !== st.openSeq) return;
   Object.assign(st, {
     code, meta: r.meta, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
     view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), drawing: null,
+    mip: null, bfVals: null,
   });
   const ahead = st.next && st.next.code === code ? await st.next.ready : null;
   st.next = null;
-  [st.mip, st.bfVals] = ahead || await loadImages(code, st.meta);
+  const pixels = ahead || await loadImages(code, st.meta);
+  if (seq !== st.openSeq) return;
+  [st.mip, st.bfVals] = pixels;
   $("#bfToggle").disabled = !st.meta.has_brightfield;
   $("#bfToggle").parentElement.title = st.meta.has_brightfield ? "" : "No brightfield channel was recorded for this image";
   $("#codeTitle").textContent = code;
+  cv.setAttribute("aria-label", `Image ${code}`);
   $("#zSlider").max = st.meta.n_z - 1;
   syncButtons();
   fillForm();
@@ -311,24 +322,30 @@ function draw() {
   if (!vals) {
     ctx.fillStyle = "#888";
     ctx.font = `${14 * st.zoom}px system-ui`;
-    ctx.fillText("loading plane...", 16, 28);
+    ctx.fillText("loading...", 16, 28);
     return;
   }
   // Fixed display range: the same numbers for every image from this microscope.
   const [lo, hi] = st.range === "full" ? m.full_range : m.enhanced_range;
-  off.width = m.width; off.height = m.height;
-  const im = offCtx.createImageData(m.width, m.height);
-  const d = im.data;
   const showBf = st.bf && st.bfVals;
-  for (let i = 0; i < vals.length; i++) {
-    const gv = Math.min(255, Math.max(0, ((vals[i] - lo) / (hi - lo)) * 255));
-    const base = showBf ? st.bfVals[i] * 0.5 : 0;
-    d[i * 4] = base;
-    d[i * 4 + 1] = Math.min(255, base + gv);
-    d[i * 4 + 2] = base;
-    d[i * 4 + 3] = 255;
+  // The image itself is recomputed only when what is shown changes, not while a region is
+  // being drawn (a large image has over a million pixels).
+  const drawn = st.drawn;
+  if (!drawn || drawn.vals !== vals || drawn.bf !== showBf || drawn.lo !== lo || drawn.hi !== hi) {
+    off.width = m.width; off.height = m.height;
+    const im = offCtx.createImageData(m.width, m.height);
+    const d = im.data;
+    for (let i = 0; i < vals.length; i++) {
+      const gv = Math.min(255, Math.max(0, ((vals[i] - lo) / (hi - lo)) * 255));
+      const base = showBf ? st.bfVals[i] * 0.5 : 0;
+      d[i * 4] = base;
+      d[i * 4 + 1] = Math.min(255, base + gv);
+      d[i * 4 + 2] = base;
+      d[i * 4 + 3] = 255;
+    }
+    offCtx.putImageData(im, 0, 0);
+    st.drawn = { vals, bf: showBf, lo, hi };
   }
-  offCtx.putImageData(im, 0, 0);
   ctx.imageSmoothingEnabled = st.zoom === 1;
   ctx.drawImage(off, g.ox, g.oy, m.width * g.s, m.height * g.s);
 
@@ -599,17 +616,26 @@ $("#scoreForm").addEventListener("submit", async e => {
 
 function setTab(t) {
   st.tab = t;
-  $$(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t));
+  $$(".tabs button").forEach(b => {
+    b.classList.toggle("on", b.dataset.tab === t);
+    b.setAttribute("aria-selected", String(b.dataset.tab === t));
+  });
   $$(".tab").forEach(el => el.classList.toggle("hidden", el.dataset.tab !== t));
   cv.style.cursor = t === "mark" ? "crosshair" : "default";
   st.drawing = null;
   draw();
 }
 
+// Toggle buttons show their state with a class and tell screen readers with aria-pressed.
+function setOn(b, on) {
+  b.classList.toggle("on", on);
+  b.setAttribute("aria-pressed", String(on));
+}
+
 function syncButtons() {
-  $$("[data-view]").forEach(b => b.classList.toggle("on", b.dataset.view === st.view));
-  $$("[data-range]").forEach(b => b.classList.toggle("on", b.dataset.range === st.range));
-  $$("[data-zoom]").forEach(b => b.classList.toggle("on", +b.dataset.zoom === st.zoom));
+  $$("[data-view]").forEach(b => setOn(b, b.dataset.view === st.view));
+  $$("[data-range]").forEach(b => setOn(b, b.dataset.range === st.range));
+  $$("[data-zoom]").forEach(b => setOn(b, +b.dataset.zoom === st.zoom));
   $("#zSlider").disabled = st.view !== "plane";
   $("#zSlider").value = st.z;
   $("#zText").textContent = st.meta ? (st.view === "plane" ? `${st.z + 1} / ${st.meta.n_z}` : `all ${st.meta.n_z}`) : "-";
@@ -642,7 +668,7 @@ $$(".tabs button").forEach(b => (b.onclick = () => !b.disabled && setTab(b.datas
 $$("#toolSeg button").forEach(b => (b.onclick = () => {
   st.tool = b.dataset.tool;
   st.drawing = null;
-  $$("#toolSeg button").forEach(x => x.classList.toggle("on", x === b));
+  $$("#toolSeg button").forEach(x => setOn(x, x === b));
   draw();
 }));
 $("#zSlider").oninput = e => setZ(+e.target.value);
@@ -650,9 +676,15 @@ $("#bfToggle").onchange = e => { st.bf = e.target.checked; draw(); };
 $("#sugToggle").onchange = draw;
 
 document.addEventListener("keydown", e => {
-  if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName) && e.target.type !== "range") return;
-  if (!st.meta) return;
+  if (!st.meta || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
+  const t = e.target;
+  // Text boxes and lists keep every key. Radio buttons and check boxes keep the arrow keys
+  // (they move between answers) but pass on the letter shortcuts.
+  if (t.tagName === "TEXTAREA" || t.tagName === "SELECT") return;
+  if (t.tagName === "INPUT" && t.type !== "range") {
+    if (!["radio", "checkbox"].includes(t.type) || k.startsWith("arrow")) return;
+  }
   if (k === "arrowright" || k === "arrowup") { setZ(st.view === "plane" ? st.z + 1 : st.z); e.preventDefault(); }
   else if (k === "arrowleft" || k === "arrowdown") { setZ(st.view === "plane" ? st.z - 1 : st.z); e.preventDefault(); }
   else if (k === "p") setView(st.view === "mip" ? "plane" : "mip");
