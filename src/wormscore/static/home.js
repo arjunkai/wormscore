@@ -112,7 +112,8 @@ function ask(title, body, choices, cancel = "Cancel") {
     $("#mCancel").onclick = () => close(null);
     document.addEventListener("keydown", esc);
     m.hidden = false;
-    box.querySelector("button")?.focus();
+    // A choice that cannot be undone never gets the focus: one Enter press must not pick it.
+    (choices.some(c => c.danger) ? $("#mCancel") : box.querySelector("button"))?.focus();
   });
 }
 

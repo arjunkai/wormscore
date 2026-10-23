@@ -33,13 +33,15 @@
   --accent-soft: rgba(26, 118, 70, .12);
   --warn: #9a600b;
   --warn-soft: rgba(154, 96, 11, .12);
-  --danger: #c93c3c;
+  --danger: #b83232;
   --run: #2b6fc4;
   --run-soft: rgba(43, 111, 196, .12);
   --shadow: 0 10px 30px rgba(20, 30, 40, .15);
 }
 
 * { box-sizing: border-box; }
+/* hidden always wins, also over button classes that set display */
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg); color: var(--text);
@@ -235,7 +237,9 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 12.5px; bac
   background: var(--raised); border: 1px solid var(--line);
 }
 .choice:hover { border-color: var(--accent); }
-.choice.danger:hover { border-color: var(--warn); }
+.choice.danger { border-color: var(--danger); }
+.choice.danger b { color: var(--danger); }
+.choice.danger:hover { border-color: var(--danger); background: var(--hover); }
 .choice b { display: block; }
 .choice span { color: var(--muted); font-size: 12.5px; }
 .m-foot { display: flex; justify-content: flex-end; margin-top: 14px; }

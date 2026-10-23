@@ -22,9 +22,11 @@ const BG_COLOR = "#b8bec7";
 const FLAG_QUESTIONS = {
   repeat: { q: "Count this image for this animal?", options: ["count", "do not count"] },
   edge: { q: "Is the whole cell inside the stack?", options: ["yes", "no", "can't tell"] },
-  saturation: { q: "Seen?", options: ["noted"] },
-  streak: { q: "Seen?", options: ["noted"] },
+  saturation: { q: "Before saving:", options: ["noted"] },
+  streak: { q: "Before saving:", options: ["noted"] },
 };
+// What an answer says on screen, where that differs from the value saved with the score.
+const ANSWER_TEXT = { noted: "I have read this" };
 
 const st = {
   cfg: null, colors: {}, worms: [], code: null, meta: null, score: null, rois: [], roisDirty: false, formDirty: false,
@@ -218,9 +220,10 @@ function renderList() {
       w.unanswered_flags ? h("span", { class: "flagmark", title: "questions to confirm" }, `${w.unanswered_flags}?`) : null);
   }));
   const n = st.worms.filter(w => w.scored).length;
+  const marked = st.worms.filter(w => w.scored && w.has_roi).length;
   $("#progFill").style.width = `${(100 * n) / Math.max(st.worms.length, 1)}%`;
-  $("#progText").textContent = `${n} / ${st.worms.length} scored` +
-    (n < st.cfg.min_scored ? ` (${st.cfg.min_scored} needed before comparing to numbers)` : "");
+  $("#progText").textContent = `${n} / ${st.worms.length} scored, ${marked} with cells marked` +
+    (n < st.cfg.min_scored ? ` (at least ${st.cfg.min_scored} before unblinding)` : "");
 }
 
 async function openWorm(code) {
@@ -322,7 +325,7 @@ function draw() {
   if (!vals) {
     ctx.fillStyle = "#888";
     ctx.font = `${14 * st.zoom}px system-ui`;
-    ctx.fillText("loading...", 16, 28);
+    ctx.fillText("Loading...", 16, 28);
     return;
   }
   // Fixed display range: the same numbers for every image from this microscope.
@@ -523,10 +526,10 @@ $("#saveRois").onclick = async () => {
 function renderFlags() {
   const answers = (st.score && st.score.flag_answers) || {};
   $("#flags").replaceChildren(...st.meta.flags.map(f => {
-    const q = FLAG_QUESTIONS[f.id] || { q: "Seen?", options: ["noted"] };
+    const q = FLAG_QUESTIONS[f.id] || { q: "Before saving:", options: ["noted"] };
     return h("div", { class: "flag" }, h("p", {}, f.text), h("div", { class: "q" }, q.q),
       q.options.map(o => h("label", {},
-        h("input", { type: "radio", name: `flag_${f.id}`, value: o, checked: answers[f.id] === o }), ` ${o}`)));
+        h("input", { type: "radio", name: `flag_${f.id}`, value: o, checked: answers[f.id] === o }), ` ${ANSWER_TEXT[o] || o}`)));
   }));
 }
 
@@ -545,7 +548,7 @@ function fillForm() {
     else el.value = s[el.name];
   }
   saveMessage(st.score ? `Saved ${st.score.saved}` : "");
-  $("#markTab").disabled = !st.score;
+  markAvailable(!!st.score);
   syncUsable();
 }
 
@@ -558,7 +561,15 @@ function syncUsable() {
   $("#neurons").classList.toggle("hidden", usable === "no");
 }
 
+// Sections still missing an answer when Save was pressed are outlined until they are answered.
+function markMissing(places) {
+  $$("#scoreForm .missing").forEach(el => { el.classList.remove("missing"); el.removeAttribute("aria-invalid"); });
+  for (const el of places) { el.classList.add("missing"); el.setAttribute("aria-invalid", "true"); }
+}
+
 $("#scoreForm").addEventListener("input", e => {
+  const sec = e.target.closest(".missing");
+  if (sec) { sec.classList.remove("missing"); sec.removeAttribute("aria-invalid"); }
   st.formDirty = true;
   saveMessage(st.connected === false ? `Unsaved changes (${LOST}; they stay in this window)` : "Unsaved changes");
   if (e.target.name === "usable") syncUsable();
@@ -580,17 +591,25 @@ $("#scoreForm").addEventListener("submit", async e => {
     if (a) flag_answers[f.id] = a;
   }
   const n = st.cfg.scoring.neurons.length;
-  const problems = [];
-  if (Object.keys(flag_answers).length < st.meta.flags.length) problems.push("answer the questions at the top");
-  if (!v.usable) problems.push("say whether the image is usable");
-  if (v.usable === "no" && !v.unusable_reason) problems.push("pick a reason it is not usable");
+  const f = e.target;
+  const box = name => f.querySelector(`[name="${name}"]`)?.closest("fieldset, .flag");
+  const problems = [], places = [];
+  const need = (text, ...where) => { problems.push(text); places.push(...where.filter(Boolean)); };
+  const unanswered = st.meta.flags.filter(fl => !flag_answers[fl.id]);
+  if (unanswered.length) need("answer the questions at the top", ...unanswered.map(fl => box(`flag_${fl.id}`)));
+  if (!v.usable) need("say whether the image is usable", box("usable"));
+  if (v.usable === "no" && !v.unusable_reason) need("pick a reason it is not usable", box("usable"));
   if (v.usable === "yes") {
-    if (!v.cells_seen) problems.push("count the cell bodies");
-    if ([...Array(n)].some((_, i) => !v[`n${i + 1}_call`])) problems.push(`score all ${n} neurons`);
-    if (!v.confidence) problems.push("pick a confidence");
+    if (!v.cells_seen) need("count the cell bodies", box("cells_seen"));
+    const open = [...Array(n)].map((_, i) => i + 1).filter(i => !v[`n${i}_call`]);
+    if (open.length) need(`score all ${n} neurons`, ...open.map(i => box(`n${i}_call`)));
+    if (!v.confidence) need("pick a confidence", box("confidence"));
   }
+  markMissing(places);
   if (problems.length) {
+    st.saveAndNext = false;
     saveMessage(`Before saving: ${problems.join("; ")}.`, true);
+    places[0]?.querySelector("input, select")?.focus();
     return;
   }
   const count = "repeat" in flag_answers ? (flag_answers.repeat === "count" ? "yes" : "no")
@@ -602,10 +621,18 @@ $("#scoreForm").addEventListener("submit", async e => {
     st.score = { ...body, saved: r.saved };
     st.formDirty = false;
     saveMessage(`Saved ${r.saved}`);
-    $("#markTab").disabled = false;
+    markAvailable(true);
     await loadList();
+    if (st.saveAndNext) {
+      st.saveAndNext = false;
+      const i = st.worms.findIndex(w => w.code === st.code);
+      const next = [...st.worms.slice(i + 1), ...st.worms.slice(0, i)].find(w => !w.scored);
+      if (next) return openWorm(next.code);
+      return saveMessage(`Saved ${r.saved}. Every image is scored.`);
+    }
     if (v.usable === "yes") setTab("mark");    // nothing to outline on an unusable image
   } catch (err) {
+    st.saveAndNext = false;
     saveMessage(err.message === LOST
       ? "Not saved: lost connection to wormscore. Your answers stay here; open wormscore again and click Save once this window reconnects."
       : `Not saved: ${err.message}`, true);
@@ -664,7 +691,16 @@ $$("[data-zoom]").forEach(b => (b.onclick = () => {
   wrap.scrollLeft = cx * wrap.scrollWidth - wrap.clientWidth / 2;
   wrap.scrollTop = cy * wrap.scrollHeight - wrap.clientHeight / 2;
 }));
-$$(".tabs button").forEach(b => (b.onclick = () => !b.disabled && setTab(b.dataset.tab)));
+$$(".tabs button").forEach(b => (b.onclick = () => {
+  if (b.getAttribute("aria-disabled") === "true") return saveMessage("Save the score first, then mark cells.", true);
+  setTab(b.dataset.tab);
+}));
+
+function markAvailable(on) {
+  const b = $("#markTab");
+  b.setAttribute("aria-disabled", String(!on));
+  b.title = on ? "" : "Save the score first";
+}
 $$("#toolSeg button").forEach(b => (b.onclick = () => {
   st.tool = b.dataset.tool;
   st.drawing = null;
@@ -676,6 +712,13 @@ $("#bfToggle").onchange = e => { st.bf = e.target.checked; draw(); };
 $("#sugToggle").onchange = draw;
 
 document.addEventListener("keydown", e => {
+  // Ctrl+Enter (Cmd+Enter on a Mac) saves the score and opens the next unscored image, from anywhere.
+  if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && st.meta && st.tab === "score") {
+    e.preventDefault();
+    st.saveAndNext = true;
+    $("#scoreForm").requestSubmit();
+    return;
+  }
   if (!st.meta || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.toLowerCase();
   const t = e.target;

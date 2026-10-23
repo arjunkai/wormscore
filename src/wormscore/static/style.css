@@ -13,6 +13,7 @@
   --l3: #c58cff;
   --l4: #ffb347;
   --lbg: #b8bec7;
+  --focus: #5aa9ff;        /* the same focus ring as the home screen */
   --radius: 6px;
 }
 * { box-sizing: border-box; }
@@ -20,11 +21,12 @@ html, body { margin: 0; height: 100%; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   display: flex;
   flex-direction: column;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
+input[type="radio"], input[type="checkbox"], input[type="range"] { accent-color: var(--accent); }
 
 header {
   display: flex;
@@ -58,9 +60,13 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 }
 #list button:hover { background: var(--raised); }
 #list button.cur { background: var(--raised); outline: 1px solid var(--accent); }
-.dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--muted); flex: none; }
-.dot.scored { background: var(--accent); border-color: var(--accent); }
-.dot.done { background: var(--accent); border-color: var(--text); }
+/* not scored: empty ring; scored: filled dot; scored and cells marked: filled dot with a tick */
+.dot { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--muted); flex: none; position: relative; }
+.dot.scored, .dot.done { background: var(--accent); border-color: var(--accent); }
+.dot.done::after {
+  content: ""; position: absolute; left: 2.5px; top: 0.5px; width: 3px; height: 6px;
+  border: solid var(--accent-ink); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg);
+}
 .flagmark { margin-left: auto; color: var(--warn); font-size: 12px; }
 
 #viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -93,10 +99,11 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
   border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
 .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
-.tabs button:disabled { opacity: .4; cursor: not-allowed; }
+.tabs button:disabled, .tabs button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 .hidden { display: none !important; }
 
 fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 10px; padding: 8px 10px 10px; }
+fieldset.missing, .flag.missing { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
 legend { color: var(--muted); padding: 0 4px; font-size: 12px; }
 fieldset label { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; line-height: 1.9; cursor: pointer; white-space: nowrap; }
 fieldset select { display: block; width: 100%; margin-top: 10px; }
@@ -138,7 +145,8 @@ textarea { width: 100%; resize: vertical; }
 .item .btns { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .item button { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius); padding: 2px 8px; cursor: pointer; }
 
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 @media (max-width: 1100px) {
   main { grid-template-columns: 110px 1fr; }
