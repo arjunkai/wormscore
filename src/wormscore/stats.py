@@ -8,6 +8,7 @@ same microscope, because calls made on different microscopes are not interchange
 import math
 from collections import Counter, defaultdict
 from itertools import combinations
+from statistics import median
 
 from scipy.stats import binomtest, fisher_exact
 
@@ -235,3 +236,99 @@ def interaction_tests(pen, ia, alternative="two-sided"):
             **({"microscopes_single_a": a["microscopes"], "microscopes_single_b": b["microscopes"],
                 "microscopes_double": d["microscopes"], "warning": cross_warning(a, b, d)} if "microscopes" in d else {})})
     return tests
+
+
+# ------------------------------------------------------------- scorer consistency (hidden repeats)
+
+def kappa(pairs, categories, weighted=False):
+    """Cohen's kappa for (first, second) pairs of answers. weighted: linear weights for ordered
+    categories (one step apart counts as partial agreement). '' if undefined (no pairs, or every
+    answer the same, so chance agreement is already complete)."""
+    pairs = [(a, b) for a, b in pairs if a in categories and b in categories]
+    n, k = len(pairs), len(categories)
+    if not n:
+        return ""
+    idx = {c: i for i, c in enumerate(categories)}
+    w = (lambda i, j: 1 - abs(i - j) / (k - 1)) if weighted and k > 2 else (lambda i, j: float(i == j))
+    po = sum(w(idx[a], idx[b]) for a, b in pairs) / n
+    ca, cb = Counter(a for a, _ in pairs), Counter(b for _, b in pairs)
+    pe = sum(ca[x] * cb[y] * w(idx[x], idx[y]) for x in categories for y in categories) / n ** 2
+    return round((po - pe) / (1 - pe), 3) if pe < 1 else ""
+
+
+def agreement_row(measure, pairs, categories, weighted=False):
+    pairs = [(a, b) for a, b in pairs if a in categories and b in categories]
+    same = sum(a == b for a, b in pairs)
+    return {"measure": measure, "pairs": len(pairs), "same_answer": same,
+            "percent_agreement": round(100 * same / len(pairs), 1) if pairs else "",
+            "kappa": kappa(pairs, categories, weighted),
+            "kappa_type": "linear-weighted" if weighted and len(categories) > 2 else "unweighted"}
+
+
+def matched_neurons(a, b, cfg):
+    """Neuron numbers in b matching neurons 1..n of a: by the recorded side when both images name
+    every neuron's side with no side twice, otherwise by number."""
+    n = len(cfg["scoring"]["neurons"])
+    sides = lambda r: [r.get(f"score_n{i}_side", "") for i in range(1, n + 1)]
+    sa, sb = sides(a), sides(b)
+    if cfg["scoring"]["sides"] and all(sa) and all(sb) and len(set(sa)) == n and set(sa) == set(sb):
+        return [sb.index(x) + 1 for x in sa]
+    return list(range(1, n + 1))
+
+
+def reliability(pairs, cfg):
+    """Agreement between each hidden repeat and its original, both scored by the same person.
+    pairs: (original row, repeat row) from merged.csv, both scored."""
+    sc, un = cfg["scoring"], cfg["unblinding"]
+    n = len(sc["neurons"])
+    rows = [agreement_row("usable", [(a.get("score_usable"), b.get("score_usable")) for a, b in pairs],
+                          ["yes", "no"])]
+    both = [(a, b) for a, b in pairs if a.get("score_usable") == "yes" and b.get("score_usable") == "yes"]
+
+    def affected(r, defect):
+        calls = neuron_calls(r, cfg)
+        return "" if not all(calls) else ("yes" if any(c in defect for c in calls) else "no")
+    rows.append(agreement_row("animal affected (primary)",
+                              [(affected(a, sc["defect_calls"]), affected(b, sc["defect_calls"])) for a, b in both],
+                              ["no", "yes"]))
+    if un["secondary_defect_calls"]:
+        d = un["secondary_defect_calls"]
+        rows.append(agreement_row("animal affected (secondary)",
+                                  [(affected(a, d), affected(b, d)) for a, b in both], ["no", "yes"]))
+    calls = []
+    for a, b in both:
+        for i, j in zip(range(1, n + 1), matched_neurons(a, b, cfg)):
+            calls.append((a.get(f"score_n{i}_call", ""), b.get(f"score_n{j}_call", "")))
+    rows.append(agreement_row("neuron call", calls, sc["calls"], weighted=True))
+    rows.append(agreement_row("cells seen", [(a.get("score_cells_seen"), b.get("score_cells_seen")) for a, b in both],
+                              sc["count_question"]["options"], weighted=True))
+    for oc in un["question_outcomes"]:
+        state = lambda r: animal_state([neuron_state(r, i, oc) for i in range(1, n + 1)], oc.get("unclear", "exclude_neuron"))
+        rows.append(agreement_row(oc["name"], [(state(a), state(b)) for a, b in both], ["normal", "defect"]))
+    return rows
+
+
+# ------------------------------------------------------------- measured check of dim calls
+
+def dim_check(rows, cfg):
+    """Each counted neuron with a measured region: signal / noise = background-subtracted mean in
+    the sharpest plane / robust SD of the background ring. Per settings group and call: how many
+    are below the cutoff set before scoring. Calls are the scorer's and are never changed."""
+    k = cfg["unblinding"]["dim_cutoff_sd"]
+    groups = defaultdict(list)
+    for r in rows:
+        for i in range(1, len(cfg["scoring"]["neurons"]) + 1):
+            mean, sd = r.get(f"n{i}_roi_mean_best_minus_bg", ""), r.get(f"n{i}_roi_background_sd_best_plane", "")
+            try:
+                snr = float(mean) / float(sd)
+            except (TypeError, ValueError, ZeroDivisionError):
+                continue
+            if snr == snr:      # not nan
+                groups[(r["settings_group"], r["system"], r.get(f"score_n{i}_call", ""))].append(snr)
+    out = []
+    for (grp, system, call), v in sorted(groups.items()):
+        out.append({"settings_group": grp, "system": system, "call": call, "neurons_measured": len(v),
+                    "below_cutoff": sum(x < k for x in v), "cutoff_sd": k,
+                    "signal_to_noise_median": round(median(v), 2),
+                    "signal_to_noise_min": round(min(v), 2), "signal_to_noise_max": round(max(v), 2)})
+    return out

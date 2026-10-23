@@ -91,7 +91,7 @@ def unblind(project, finished=False, anyway=False, log=print):
         auto[r["code"]][r.get("candidate", "")] = r
 
     roi_cols = ("source", "area_um2", "peak_filtered", "mean_mip_minus_bg", "mean_best_minus_bg",
-                "integrated_best_minus_bg", "stack_sum_minus_bg", "best_z_at_stack_edge", "saturated_px_mip")
+                "integrated_best_minus_bg", "stack_sum_minus_bg", "best_z_at_stack_edge", "saturated_px_mip")         + (("background_sd_best_plane",) if C.dim_cutoff(cfg) else ())
     rows = []
     for code, k in sorted(key.items()):
         s = scores.get(code, {})
@@ -105,7 +105,9 @@ def unblind(project, finished=False, anyway=False, log=print):
     out = project / "outputs" / "unblinded"
     write_csv(out / "merged.csv", rows)
 
-    counted = [r for r in rows if r.get("score_count_this_image") == "yes" and r.get("score_usable") == "yes"]
+    # Hidden repeats are only for the consistency check; they never count as animals.
+    originals = [r for r in rows if not r.get("repeat_of")]
+    counted = [r for r in originals if r.get("score_count_this_image") == "yes" and r.get("score_usable") == "yes"]
     lines = [f"Scored {len(scores)} of {len(rows)} images."]
     unscored = [r["code"] for r in rows if not r.get("score_saved")]
     if unscored:
@@ -269,6 +271,31 @@ def unblind(project, finished=False, anyway=False, log=print):
                 inote = ("none (need all three genotypes with assessed animals "
                          + ("in the data" if pooled else "on the same microscope") + ")")
                 lines.append("  " + inote)
+    by_code = {r["code"]: r for r in rows}
+    pairs = [(by_code[r["repeat_of"]], r) for r in rows if r.get("repeat_of")]
+    rel = []
+    if pairs:
+        scored = [(a, b) for a, b in pairs if a.get("score_saved") and b.get("score_saved")]
+        rel = stats.reliability(scored, cfg)
+        lines.append("")
+        lines.append(f"Scorer consistency: {len(pairs)} hidden repeats, {len(scored)} scored with their original "
+                     "(outputs/unblinded/reliability.csv; repeats are not counted in any other table):")
+        for x in rel:
+            lines.append(f"  {x['measure']}: {x['same_answer']}/{x['pairs']} same ({x['percent_agreement']}%), "
+                         f"kappa {x['kappa'] if x['kappa'] != '' else 'undefined'} ({x['kappa_type']})")
+    dims = []
+    if C.dim_cutoff(cfg):
+        dims = stats.dim_check(counted, cfg)
+        lines.append("")
+        lines.append(f"Measured check of the calls (outputs/unblinded/dim_check.csv): signal / noise of each drawn "
+                     f"region, cutoff {C.dim_cutoff(cfg)} set before scoring; compare only within a settings group. "
+                     "Calls are the scorer's and were not changed:")
+        for x in dims:
+            lines.append(f"  group {x['settings_group']} {x['call'] or '(no call)'}: {x['below_cutoff']} of "
+                         f"{x['neurons_measured']} below the cutoff; signal/noise median {x['signal_to_noise_median']} "
+                         f"[{x['signal_to_noise_min']}-{x['signal_to_noise_max']}]")
+        if not dims:
+            lines.append("  none (no drawn regions with a measured background)")
     if status.startswith("NO"):
         lines.append("")
         lines.append("WARNING: the analysis plan was not recorded in log.md before scoring began.")
@@ -286,12 +313,17 @@ def unblind(project, finished=False, anyway=False, log=print):
                   outcome_tests or [{"note": stop_note if not run else "no comparison possible"}])
     if ia:
         write_csv(out / "interaction_test.csv", itests or [{"note": inote}])
+    if pairs:
+        write_csv(out / "reliability.csv", rel)
+    if C.dim_cutoff(cfg):
+        write_csv(out / "dim_check.csv", dims or [{"note": "no drawn regions with a measured background"}])
     excluded = [r for r in opt(project / "outputs" / "excluded.csv") if r.get("local_path")]
+    key_orig = [r for r in key.values() if not r.get("repeat_of")]
     (out / "methods_text.md").write_text(methods.statement(
-        project, cfg, len(key), len(excluded), history, len(scores), tests,
+        project, cfg, len(key_orig), len(excluded), history, len(scores), tests,
         outcome_tests=outcome_tests, interaction_tests=itests,
-        added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key.values()) if d).items()),
-        key_rows=list(key.values()), excluded_rows=excluded),
+        added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key_orig) if d).items()),
+        key_rows=key_orig, excluded_rows=excluded, reliability=rel, n_repeats=len(pairs), dim_rows=dims),
         encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [

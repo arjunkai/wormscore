@@ -110,10 +110,41 @@ def images_table(key_rows, excluded_rows, notes):
     return rows
 
 
+def reliability_sentences(cfg, n_repeats, reliability):
+    if not n_repeats:
+        return [], []
+    blind = (f"To measure scoring consistency, {n_repeats} included image{'s were' if n_repeats != 1 else ' was'} "
+             "shown a second time under a new code, mixed among the others "
+             f"({round(100 * C.repeat_fraction(cfg))}% of each genotype's images, at least one, chosen at random); "
+             "these repeats were not counted in any result. ")
+    parts = [f"{r['measure']} {r['same_answer']}/{r['pairs']} ({r['percent_agreement']}%"
+             + (f", {'weighted ' if r['kappa_type'] != 'unweighted' else ''}kappa {r['kappa']}" if r["kappa"] != "" else "")
+             + ")" for r in reliability if r["pairs"]]
+    stat = [("Agreement between each repeat and its original (same scorer), as percent agreement and Cohen's "
+             "kappa (linear weights for ordered answers): " + "; ".join(parts) + ". With this few pairs, kappa "
+             "is imprecise.") if parts else "[No repeat was scored together with its original.]"]
+    return [blind], stat
+
+
+def dim_sentence(cfg, dim_rows):
+    k = C.dim_cutoff(cfg)
+    if not k:
+        return []
+    below = sum(r["below_cutoff"] for r in dim_rows if r["call"] in cfg["scoring"]["calls"][:-1])
+    n = sum(r["neurons_measured"] for r in dim_rows if r["call"] in cfg["scoring"]["calls"][:-1])
+    return [f"Before scoring, a measured cutoff was recorded: a drawn region was above background if its "
+            f"background-subtracted mean in the sharpest plane was at least {k} times the background noise "
+            "(1.4826 times the median absolute deviation of the ring in that plane). Calls were made by eye and "
+            f"not changed; afterwards, {below} of {n} measured neurons called "
+            f"{_or(cfg['scoring']['calls'][:-1])} fell below the cutoff (dim_check.csv, by settings group)."]
+
+
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
-              interaction_tests=(), added=(), key_rows=(), excluded_rows=()):
+              interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
+              dim_rows=()):
     """added: (date, number of images) for each batch added to an existing key.
-    key_rows, excluded_rows: for the table of images per genotype and microscope."""
+    key_rows, excluded_rows: for the table of images per genotype and microscope.
+    reliability, n_repeats: agreement of hidden repeats. dim_rows: the measured check of calls."""
     b = cfg["blinding"]
     who = lambda k, default: b.get(k) or default
     mc, sc = cfg["measurement"], cfg["scoring"]
@@ -126,6 +157,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         str(b.get("imager_knew_genotype", "")).lower(),
         "[State whether the person who imaged the animals knew their genotype.]")
     ref = cfg["unblinding"]["reference_genotype"]
+    rel_blind, rel_stat = reliability_sentences(cfg, n_repeats, reliability)
     lines = [
         "# Methods text (draft; check every statement before use)",
         "",
@@ -139,6 +171,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "files and genotypes was kept in a separate folder that the scoring software does not read. "
         + "".join(f"{n} image{'s' if n != 1 else ''} added on {d} received new codes after the existing ones, "
                   "shuffled among themselves, without changing any existing code. " for d, n in added)
+        + "".join(rel_blind)
         + f"{who('scored_by', '[name]')} scored the coded images {span}, seeing no file names, genotypes or "
         "brightness measurements, with every image from the same microscope shown at the same fixed "
         f"brightness range. Each neuron was called {calls}; "
@@ -152,13 +185,15 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         f"{mc['background_ring_gap_um']} um outside the region and {mc['background_ring_width_um']} um wide, "
         "excluding other regions. Reported values are the background-subtracted mean in the sharpest plane "
         "and the background-subtracted sum over all planes; saturated pixels were counted. Brightness was "
-        "compared only between images taken on the same microscope with the same settings.",
+        "compared only between images taken on the same microscope with the same settings."
+        + "".join(" " + x for x in dim_sentence(cfg, dim_rows)),
         "",
         "**Statistics.** "
         "Each animal was one image and the unit of analysis. Penetrance was the share of animals with at "
         "least one affected neuron. "
         + " ".join(definition_sentences(cfg) + [fisher_sentence(cfg, tests)]
-                   + outcome_sentences(cfg, outcome_tests) + interaction_sentence(cfg, interaction_tests))
+                   + outcome_sentences(cfg, outcome_tests) + interaction_sentence(cfg, interaction_tests)
+                   + rel_stat)
         + (" The analysis plan (definitions, comparisons, test direction, cross-microscope measures and "
            "interaction model) was recorded in the project log before scoring began."
            if C.analysis_plan(cfg) and all(t.get("set_before_scoring") == "yes"

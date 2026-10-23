@@ -184,8 +184,9 @@ class Project:
         meas = self.load("roi_measurements.json", {})
         meas[code] = self.measure_rois(code, rois) if rois else []
         self.save("roi_measurements.json", meas)
+        fields = ROI_FIELDS + (["background_sd_best_plane"] if C.dim_cutoff(self.cfg) else [])
         with open(self.scoring / "roi_measurements.csv", "w", newline="", encoding="utf-8") as fh:
-            w = csv.DictWriter(fh, fieldnames=ROI_FIELDS, extrasaction="ignore")
+            w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
             w.writeheader()
             for c in sorted(meas):
                 w.writerows(meas[c])

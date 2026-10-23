@@ -67,6 +67,18 @@ text reports each added batch. Limit: the scorer can tell which images arrived l
 all one genotype, blinding is weaker for it, so mix genotypes in each batch where possible, or add all
 images before scoring starts.
 
+**Hidden repeats** (optional, `reliability.repeat_fraction`, off by default). When coding, this share
+of each genotype's images (at least one per genotype) is chosen at random and coded a second time, mixed
+in with the rest. Each repeat is placed at least 15% of the set away from its original in code order (the
+order of the scoring list). Only images that are counted by default and have no other image of the same
+field are chosen, so a repeat shows no "same stage position" note or different default; its blind files
+are byte-identical copies of the original's apart from the code in `meta.json`. Which codes are repeats is
+recorded only in the key (`repeat_of`); the log gives only their number. Display ranges are computed from
+originals only. Re-running `prepare` keeps the same repeats; adding images adds none. Repeats are never
+counted in any result; at unblinding, `reliability.csv` compares each scored repeat with its original
+(see section 8). Limit: someone who opens `blind/` and compares files can find the repeats, as they can
+find any other information there; score only through the app.
+
 ## 5. Images shown
 
 For each image the marker channel is saved plane by plane and as a maximum-intensity projection
@@ -99,6 +111,7 @@ one-pixel scan streak cannot become a peak. For each region:
 | stack_sum_minus_bg | sum over every plane and every region pixel of (pixel - that plane's own ring background): a background-subtracted sum projection. Unlike the maximum projection it keeps the light from all planes. It grows with the number of planes covering the cell and with the z-step, so compare it only between stacks of the same shape; the unblinded summary warns when a settings group mixes shapes |
 | saturated_px_mip | pixels at the detector maximum (peak is then an underestimate) |
 | best_z_at_stack_edge | sharpest plane is the first or last (cell may be cut off) |
+| background_sd_best_plane | only when `unblinding.dim_cutoff_sd` is set: background noise, the robust SD (1.4826 x median absolute deviation) of the ring pixels in the sharpest plane |
 
 Regions come from the scorer (drawn circle or outline, or an accepted suggestion). Suggestions are
 found automatically: the filtered projection is smoothed with a Gaussian (1.5 um), local maxima at
@@ -179,9 +192,24 @@ Results tables use counted, usable images only, with the animal as the unit (one
     supports it (significant after correction and in that direction).
   - Source `note`: a label such as "collected by others" on a source in `sources`; tables list the
     sources of each group with an asterisk and the summary explains it.
+  - `dim_cutoff_sd` (k): a measured line, set before scoring, for checking calls afterwards. A measured
+    neuron (drawn region or accepted suggestion) is below the cutoff when its background-subtracted mean
+    in the sharpest plane is less than k times `background_sd_best_plane`. `dim_check.csv` lists, per
+    settings group and call, how many measured neurons fall below the cutoff and the range of signal /
+    noise. A "normal" or "dim" call below the cutoff is a cell that could not be told from background
+    by this measure; review it, but calls are never changed by numbers. Neurons called missing have no
+    region and are not in this table. Compare only within a settings group. Part of the analysis plan.
+- **Scorer consistency** (when the project has hidden repeats): `reliability.csv` gives, over the pairs
+  where both the repeat and its original were scored, percent agreement and Cohen's kappa for: usable or
+  not; animal affected (primary, and secondary if set); each neuron's call (linear-weighted kappa over the
+  ordered calls); cells seen (linear-weighted); and each `question_outcomes` measure. Neurons are matched
+  by the recorded side when both images name each neuron's side, otherwise by number. Kappa is undefined
+  when every answer is the same. With few pairs, kappa is imprecise; kappa below 0.60 is usually
+  considered inadequate ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)). The same scorer seeing an
+  image twice measures consistency, not agreement between people.
 - **Analysis plan lock.** When any of the settings above, `question_outcomes` or `interaction` is set,
   `prepare` writes the whole analysis plan (both definitions of affected, comparisons, direction,
-  cross-microscope measures, interaction model) to `log.md`. Unblinding compares the current settings with
+  cross-microscope measures, interaction model, dim cutoff) to `log.md`. Unblinding compares the current settings with
   the last plan recorded before the first score was saved. If they differ, no test is run and every test
   file says why; descriptive tables are still written. If no plan was recorded before scoring, tests run
   but are marked `set_before_scoring = NO`.

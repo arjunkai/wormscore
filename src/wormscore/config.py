@@ -112,11 +112,20 @@ DEFAULTS = {
     #   tests; Bonferroni counts only these.
     # These settings and the interaction test form the analysis plan: prepare records it in
     # log.md, and unblinding runs no test if it changed after the first score was saved.
+    # dim_cutoff_sd (optional): a measured line for checking calls at unblinding. A drawn region is
+    #   "above the cutoff" if its background-subtracted mean in the sharpest plane is at least this
+    #   many times the background noise (robust SD of the ring). Calls are never changed by it.
+    #   Part of the analysis plan; 0 = off.
     # cross_microscope_reason and methods_notes (optional) only add text to methods_text.md.
     "unblinding": {"min_scored_worms": 30, "reference_genotype": "", "question_outcomes": [],
                    "interaction": {}, "secondary_defect_calls": [], "test_secondary": False,
                    "allow_cross_microscope": [], "alternative": "two-sided", "comparisons": [],
-                   "cross_microscope_reason": "", "methods_notes": []},
+                   "dim_cutoff_sd": 0, "cross_microscope_reason": "", "methods_notes": []},
+
+    # Hidden repeats: this share of each genotype's images (at least one) is shown a second time
+    # under a new code, mixed in with the rest, to measure how consistently one person scores.
+    # Repeats are never counted in results; unblinding compares them with their originals. 0 = off.
+    "reliability": {"repeat_fraction": 0.0},
 
     # Used only for the Methods text written at unblinding. Left empty, it says [name].
     # imager_knew_genotype: "yes", "no" or "" (unknown).
@@ -184,9 +193,19 @@ def analysis_plan(cfg):
     un = cfg["unblinding"]
     plan = {k: un[k] for k in PLAN_KEYS} | {"interaction": interaction(cfg),
                                             "defect_calls": cfg["scoring"]["defect_calls"]}
+    if un["dim_cutoff_sd"]:      # only when set, so plans recorded before it existed still match
+        plan["dim_cutoff_sd"] = un["dim_cutoff_sd"]
     used = un["secondary_defect_calls"] or un["allow_cross_microscope"] or un["comparisons"] \
-        or un["alternative"] != "two-sided" or un["interaction"] or un["question_outcomes"]
+        or un["alternative"] != "two-sided" or un["interaction"] or un["question_outcomes"] or un["dim_cutoff_sd"]
     return plan if used else {}
+
+
+def dim_cutoff(cfg):
+    return cfg["unblinding"]["dim_cutoff_sd"] or 0
+
+
+def repeat_fraction(cfg):
+    return cfg["reliability"]["repeat_fraction"] or 0
 
 
 def check(cfg):
@@ -236,6 +255,12 @@ def check(cfg):
         raise SystemExit(f"alternative must be one of {', '.join(ALTERNATIVES)}.")
     if any(not isinstance(c, (list, tuple)) or len(c) != 2 for c in un["comparisons"]):
         raise SystemExit("comparisons: each entry must be a pair [genotype_a, genotype_b].")
+    k = un["dim_cutoff_sd"]
+    if isinstance(k, bool) or not isinstance(k, (int, float)) or k < 0:
+        raise SystemExit("dim_cutoff_sd must be a number of 0 or more (0 = off).")
+    f = cfg["reliability"]["repeat_fraction"]
+    if isinstance(f, bool) or not isinstance(f, (int, float)) or not 0 <= f <= 0.5:
+        raise SystemExit("reliability.repeat_fraction must be between 0 and 0.5 (0 = off).")
     if un["alternative"] != "two-sided" and not un["comparisons"]:
         raise SystemExit("A one-sided alternative needs 'comparisons', so each test has a direction "
                          "(genotype_a vs genotype_b).")

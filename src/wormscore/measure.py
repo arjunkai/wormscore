@@ -116,6 +116,15 @@ def measure_region(raw, filt, mask, exclude, px_um, sat, cfg):
     mean_mip = float(mip_raw[mask].mean())
     mean_best = float(best[mask].mean())
     peak_f = float(mip_f[mask].max())
+    extra = {}
+    if cfg["unblinding"]["dim_cutoff_sd"]:
+        # Background noise for the dim cutoff: robust SD (1.4826 x median absolute deviation)
+        # of the ring in the sharpest plane, so a stray bright pixel in the ring barely moves it.
+        # Only measured when a cutoff is set, so other projects' tables keep their columns.
+        ring_best = best[ring]
+        extra["background_sd_best_plane"] = (
+            round(1.4826 * float(np.median(np.abs(ring_best - np.median(ring_best)))), 2)
+            if ring.any() else float("nan"))
     return {
         "area_um2": round(float(mask.sum()) * px_um ** 2, 2),
         "peak_raw": int(mip_raw[mask].max()),
@@ -134,7 +143,7 @@ def measure_region(raw, filt, mask, exclude, px_um, sat, cfg):
         "stack_sum_minus_bg": round(stack_sum, 1),
         "saturated_px_mip": int((mip_raw[mask] >= sat).sum()),
         "ring_px": int(ring.sum()),
-    }
+    } | extra
 
 
 def streak_rows(mip_raw, sat, cfg):

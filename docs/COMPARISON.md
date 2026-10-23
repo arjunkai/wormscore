@@ -74,10 +74,10 @@ evidence that people struggle with it, and what wormscore does.
   also what [Jost & Waters 2019](https://doi.org/10.1083/jcb.201812109) recommend: select regions on "a
   fluorescence channel or transmitted light image from which content of the experimental image cannot
   be deduced". wormscore shows one fluorescent marker plus brightfield.
-- **No reliability statistics yet.** Blind Analysis Tools can make replicate copies and Blinder re-shows
-  a chosen share of images to check consistency (sources above). wormscore has neither hidden repeats nor a
-  second-scorer mode, and computes no kappa. Kappa below 0.60 is considered inadequate
-  ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)).
+- **No second-scorer mode yet.** Since 0.10.0 wormscore can hide repeat images and reports one scorer's
+  consistency (percent agreement and Cohen's kappa) at unblinding, as Blind Analysis Tools (replicate
+  copies) and Blinder (re-shown images) do. Agreement between two scorers is not supported yet. Kappa
+  below 0.60 is considered inadequate ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)).
 - **Max projections in some measures.** `mean_mip` and `peak_filtered` use the maximum-intensity
   projection, which "shouldn't be used for intensity quantification" according to
   [Culley et al., "Made to measure" (preprint)](https://arxiv.org/abs/2302.01657) (also

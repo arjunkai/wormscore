@@ -9,13 +9,8 @@ reports exactly as before.
 
 ## Planned
 
-- **Scorer consistency.** Hidden repeat images (the same image shown again under a new code), a
-  second-scorer mode, and agreement statistics: percent agreement and Cohen's kappa (weighted for
-  ordered calls such as normal / dim / missing).
-- **A clearer "dim".** An optional panel of reference images the scorer can compare against, a
-  dim cutoff based on the local background noise and recorded before scoring, and a report at
-  unblinding that compares each dim / normal call with the measured brightness. Calls stay with the
-  scorer; numbers never decide them.
+- **Second scorer.** A second person scores the same blind set; agreement between scorers.
+- **Reference images for "dim".** An optional panel of reference images the scorer can compare against.
 - **Second identity channel.** Find the cell on one marker and judge the reporter on another, as
   recommended for unbiased selection. Presets for common fluorescent proteins beyond GFP (for
   example mNeonGreen, YFP, mCherry, TagRFP, mScarlet, mKate2, BFP), matched by emission band.
@@ -35,6 +30,8 @@ blind-scoring project.
 
 ## Recently shipped
 
+- 0.10.0: hidden repeat images and a scorer-consistency report (percent agreement, Cohen's kappa); a
+  measured background cutoff, recorded before scoring, for checking calls afterwards.
 - 0.9.0: the Windows app has its own windows (one taskbar button, no lost connections).
 - 0.8.x: in-app updates (the app offers new versions and can go back to the previous one), drafts of
   unsaved scoring answers, reconnecting windows.

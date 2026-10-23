@@ -206,10 +206,54 @@ def same_field_groups(images, tol_um):
     return groups
 
 
-def assign_codes(project, images, reassign, add=False):
+REPEAT_GAP = 0.15     # a hidden repeat is at least this share of the set away from its original
+
+
+def pick_repeats(images, fraction, rng):
+    """Images to show a second time: the given share of each genotype's images (at least one),
+    drawn from images that are counted by default and have no other image of the same field,
+    so a repeat carries no flag or default that would tell it apart."""
+    sizes = Counter(s["field_group"] for s in images)
+    by_geno = {}
+    for s in images:
+        by_geno.setdefault(s["genotype"], []).append(s)
+    picked = []
+    for geno in sorted(by_geno):
+        members = by_geno[geno]
+        ok = sorted((s for s in members if s["counted_by_default"] and sizes[s["field_group"]] == 1),
+                    key=lambda s: (s["local_path"], s["location_in_file"]))
+        picked += rng.sample(ok, min(len(ok), max(1, round(fraction * len(members)))))
+    return picked
+
+
+def spaced_order(images, repeats, rng):
+    """Shuffled images with each repeat inserted at a random place at least REPEAT_GAP of the
+    set away from its original (and from every earlier repeat's original)."""
+    order = list(images)
+    rng.shuffle(order)
+    gap = max(2, round(REPEAT_GAP * (len(images) + len(repeats))))
+
+    def spaced(seq):
+        pos = {id(s): i for i, s in enumerate(seq)}
+        return all(abs(pos[id(r)] - pos[id(r["_orig"])]) >= gap for r in repeats if id(r) in pos)
+    for r in repeats:
+        for _ in range(2000):
+            at = rng.randrange(len(order) + 1)
+            trial = order[:at] + [r] + order[at:]
+            if spaced(trial):
+                order = trial
+                break
+        else:
+            raise SystemExit("Could not place the hidden repeats far enough from their originals. "
+                             "Lower reliability.repeat_fraction.")
+    return order, gap
+
+
+def assign_codes(project, images, reassign, add=False, cfg=None):
     """Random codes. An existing key is reused so codes never change while scoring.
     add: images not yet in the key get new codes after the highest existing one, shuffled
-    among themselves with a new seed; existing codes are kept. Returns the images to render."""
+    among themselves with a new seed; existing codes are kept. Returns the images to render,
+    with hidden repeats (records with "_orig", the image they repeat) after the images."""
     key_dir = project / "key"
     key_dir.mkdir(exist_ok=True)
     key_path = key_dir / "key.csv"
@@ -217,7 +261,9 @@ def assign_codes(project, images, reassign, add=False):
     if add:
         if not key_path.exists():
             raise SystemExit("There is no existing key to add images to. Run prepare without --add-new-images.")
-        old = {(r["local_path"], r["location_in_file"]): r["code"] for r in read_csv(key_path)}
+        all_codes = [r["code"] for r in read_csv(key_path)]
+        old = {(r["local_path"], r["location_in_file"]): r["code"] for r in read_csv(key_path)
+               if not r.get("repeat_of")}
         dropped = set(old) - {ident(s) for s in images}
         if dropped:
             raise SystemExit(f"{len(dropped)} image(s) in the existing key no longer pass the inclusion rules or "
@@ -231,15 +277,15 @@ def assign_codes(project, images, reassign, add=False):
         stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         (key_dir / f"seed_added_{stamp}.txt").write_text(f"{seed}\n")
         random.Random(seed).shuffle(new)
-        codes = list(old.values())
-        prefix, width = codes[0][0], len(codes[0]) - 1
-        start = max(int(c[1:]) for c in codes) + 1
+        prefix, width = all_codes[0][0], len(all_codes[0]) - 1
+        start = max(int(c[1:]) for c in all_codes) + 1
         for n, s in enumerate(new, start=start):
             s["code"] = f"{prefix}{n:0{width}d}"
             s["added_on"] = stamp
         return new
     if key_path.exists() and not reassign:
-        old = {(r["local_path"], r["location_in_file"]): r["code"] for r in read_csv(key_path)}
+        rows = read_csv(key_path)
+        old = {(r["local_path"], r["location_in_file"]): r["code"] for r in rows if not r.get("repeat_of")}
         if set(old) != {ident(s) for s in images}:
             raise SystemExit("The included images differ from the existing key, so codes would change.\n"
                              "If nothing has been scored yet, run prepare again with --reassign-codes.\n"
@@ -247,7 +293,11 @@ def assign_codes(project, images, reassign, add=False):
                              "(existing codes are kept).")
         for s in images:
             s["code"] = old[ident(s)]
-        return list(images)
+        # Hidden repeats already in the key keep their codes, whatever the setting says now.
+        by_code = {s["code"]: s for s in images}
+        repeats = [{**by_code[r["repeat_of"]], "code": r["code"], "_orig": by_code[r["repeat_of"]]}
+                   for r in rows if r.get("repeat_of")]
+        return list(images) + repeats
     scoring = project / "scoring"
     if reassign and scoring.exists() and any(scoring.iterdir()):
         raise SystemExit("scoring/ already has saved scores. Refusing to reassign codes.")
@@ -259,12 +309,21 @@ def assign_codes(project, images, reassign, add=False):
                 (key_dir / f).rename(old_dir / f)
     seed = secrets.randbits(32)
     (key_dir / "seed.txt").write_text(f"{seed}\n")
-    order = list(range(len(images)))
-    random.Random(seed).shuffle(order)
-    width = max(4, len(str(len(images))))
-    for n, k in enumerate(order, start=1):
-        images[k]["code"] = f"W{n:0{width}d}"
-    return list(images)
+    fraction = C.repeat_fraction(cfg) if cfg else 0
+    if not fraction:
+        order = list(range(len(images)))
+        random.Random(seed).shuffle(order)
+        width = max(4, len(str(len(images))))
+        for n, k in enumerate(order, start=1):
+            images[k]["code"] = f"W{n:0{width}d}"
+        return list(images)
+    rng = random.Random(seed)
+    repeats = [{**s, "_orig": s} for s in pick_repeats(images, fraction, rng)]
+    order, _ = spaced_order(images, repeats, rng)
+    width = max(4, len(str(len(order))))
+    for n, s in enumerate(order, start=1):
+        s["code"] = f"W{n:0{width}d}"
+    return list(images) + repeats
 
 
 INTERACTION_LOG = "Interaction test set before scoring: "     # written by wormscore 0.3 to 0.4
@@ -322,7 +381,9 @@ def prepare(project, reassign=False, add=False, log=print):
         if c not in letters:
             i = len(letters)
             letters[c] = chr(ord("A") + i) if i < 26 else f"G{i}"
-    todo = assign_codes(project, images, reassign, add)
+    todo = assign_codes(project, images, reassign, add, cfg)
+    repeats = [s for s in todo if "_orig" in s]
+    todo = [s for s in todo if "_orig" not in s]
     by_field = {}
     for s in images:
         by_field.setdefault(s["field_group"], []).append(s["code"])
@@ -449,6 +510,19 @@ def prepare(project, reassign=False, add=False, log=print):
                 "counted_by_default": s["counted_by_default"]}
         (d / "meta.json").write_text(json.dumps(meta, indent=1))
 
+    # Hidden repeats: the original's files under the repeat's code. Originals were picked so
+    # that their meta.json holds nothing but the code that a repeat would need to change.
+    # Their automatic measurements are not copied, so outputs/ shows no pair of identical rows.
+    key_by_code = {r["code"]: r for r in key_rows}
+    for s in sorted(repeats, key=lambda s: s["code"]):
+        orig = s["_orig"]["code"]
+        shutil.copytree(blind / orig, blind / s["code"])
+        meta = json.loads((blind / orig / "meta.json").read_text())
+        (blind / s["code"] / "meta.json").write_text(json.dumps({**meta, "code": s["code"]}, indent=1))
+        key_rows.append({**key_by_code[orig], "code": s["code"], "repeat_of": orig})
+    if repeats:
+        key_rows.sort(key=lambda r: r["code"])
+
     out = project / "outputs"
     if add:
         key_rows = read_csv(project / "key" / "key.csv") + key_rows
@@ -476,13 +550,19 @@ def prepare(project, reassign=False, add=False, log=print):
         return ranges
     n_counted = sum(s["counted_by_default"] for s in images)
     per_system = dict(Counter(s["system"] for s in images))
+    hidden = [f"Hidden repeats for scorer consistency: {len(repeats)} images shown a second time under new "
+              f"codes (repeat_fraction {C.repeat_fraction(cfg)} of each genotype, at least one; each at least "
+              f"{max(2, round(REPEAT_GAP * (len(images) + len(repeats))))} codes from its original). Which codes "
+              "are repeats is recorded only in the key; repeats are never counted in results."] if repeats else []
     append_log(project, "prepare", [
         f"Software: {json.dumps(software_versions())}",
         f"Included images: {len(images)} {per_system} ({n_counted} counted by default, "
         f"{len(images) - n_counted} repeats of the same field). Excluded: {len(excluded)} (outputs/excluded.csv).",
+        *hidden,
         "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
         f"Settings groups: {len(letters)} (key/settings_groups.csv).",
         f"Display ranges: {json.dumps(ranges)}",
     ] + interaction_log_lines(cfg), cfg)
-    log(f"{len(images)} images in blind/ {per_system}; {len(excluded)} excluded.")
+    log(f"{len(images)} images in blind/ {per_system}" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
+        + f"; {len(excluded)} excluded.")
     return ranges
