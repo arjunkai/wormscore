@@ -1,7 +1,9 @@
 """Find images in source folders, read their metadata, and read their pixels.
 
 Supported raw formats: Leica .lif (one image per series), Zeiss .czi (one per scene),
-OME-TIFF (one per series; metadata in the file or in a .companion.ome next to it).
+OME-TIFF (one per series; metadata in the file or in a .companion.ome next to it), Nikon .nd2
+(one per stage position), Olympus FluoView .oib and .oif (one per file), and, only for sources
+that turn it on, ImageJ hyperstack TIFF (channel order stated in config.json).
 
 Every image becomes a dict with the same fields: where it came from, what it is, how
 it was taken, and which channel is the marker or brightfield. Channel identity comes
@@ -16,6 +18,7 @@ from pathlib import Path
 
 import czifile
 import numpy as np
+import oiffile
 import tifffile
 from liffile import LifFile
 
@@ -34,11 +37,17 @@ def sha256(path):
     return h.hexdigest()
 
 
+OIF_PART = "part of an Olympus .oif image (read with its .oif file)"
+NOT_USED = "other image (no microscope metadata; not used)"
+
+
 def file_role(path):
     name, low = path.name, path.name.lower()
     if name.startswith("._") or name in (".DS_Store", "desktop.ini", "Thumbs.db"):
         return "system hidden file (not data)"
-    if low.endswith(".lif") or low.endswith(".czi"):
+    if any(part.lower().endswith(".oif.files") for part in path.parts[:-1]):
+        return OIF_PART
+    if low.endswith((".lif", ".czi", ".nd2", ".oib", ".oif")):
         return "raw image"
     if low.endswith(".ome.tif") or low.endswith(".ome.tiff"):
         return "derived (made later from a raw image)" if DERIVED.search(name) else "raw image"
@@ -47,7 +56,7 @@ def file_role(path):
     if path.suffix.lower() in OTHER_IMAGE:
         if DERIVED.search(name):
             return "derived (made later from a raw image)"
-        return "other image (no microscope metadata; not used)"
+        return NOT_USED
     if low.endswith((".lof", ".xlef", ".xlif", ".lock")):
         return "Leica LAS X project file (not read; export to .lif)"
     return "reference (not an image)"
@@ -68,13 +77,16 @@ def marker_from_leica(ch, lut, cfg):
     return "OTHER"
 
 
-def marker_from_named(name, fluor, excitation, transmitted, cfg):
+def marker_from_named(name, fluor, excitation, transmitted, cfg, emission=None):
+    """emission (nm) is used only if the marker settings give an emission_nm range."""
     m = cfg["marker"]
     if transmitted or any(name.upper().startswith(p.upper()) for p in cfg["brightfield_channel_names"]):
         return "BF"
+    em = m.get("emission_nm")
     if (fluor and fluor in m["dye_names"]) \
             or any(name.upper().startswith(p.upper()) for p in m["channel_name_prefixes"]) \
-            or (excitation and int(float(excitation)) in m["excitation_nm"]):
+            or (excitation and int(float(excitation)) in m["excitation_nm"]) \
+            or (emission and em and em[0] <= float(emission) <= em[1]):
         return "MARKER"
     return "OTHER"
 
@@ -290,12 +302,180 @@ def ome_images(path, cfg):
     return out
 
 
-def images_in(path, cfg):
+# ------------------------------------------------------------------ Nikon ND2
+
+def _nd2():
+    """The Nikon reader is loaded only when an .nd2 file is scanned (it is large)."""
+    try:
+        import nd2
+    except ImportError:
+        raise RuntimeError('Nikon .nd2 support is not installed. Run: pip install "wormscore[nd2]"') from None
+    return nd2
+
+
+def nikon_images(path, cfg):
+    with _nd2().ND2File(str(path)) as f:
+        sizes = dict(f.sizes)
+        if f.is_rgb:
+            return []          # a colour camera picture, not a fluorescence stack
+        chans = f.metadata.channels
+        vox = f.voxel_size()
+        text = f.text_info
+        bits = f.attributes.bitsPerComponentSignificant
+        positions = []
+        for p in range(sizes.get("P", 1)):
+            first = next((i for i, ix in enumerate(f.loop_indices) if ix.get("P", 0) == p), 0)
+            positions.append(f.frame_metadata(first).channels[0].position.stagePositionUm)
+    names = [c.channel.name or "" for c in chans]
+    roles = [marker_from_named(c.channel.name or "", None, c.channel.excitationLambdaNm,
+                               "brightfield" in c.microscope.modalityFlags, cfg, c.channel.emissionLambdaNm)
+             for c in chans]
+    mic = chans[0].microscope
+    objective = (mic.objectiveName or "").strip()
+    if mic.objectiveMagnification and not re.search(r"\d+x", objective):
+        objective = f"{mic.objectiveMagnification:g}x {objective}".strip()
+    capturing = (text.get("capturing") or "").replace("\r\n", "\n")
+    camera = capturing.split("\n", 1)[0].strip()
+    camera_settings = [f"{k.lower()} {v.strip()}" for k, v in re.findall(r"(Exposure|Gain|Multiplier):\s*([^\n]+)", capturing)]
+    dims = "".join(sizes)
+    out = []
+    for p, stage in enumerate(positions):
+        out.append({
+            "format": "Nikon ND2", "system": f"Nikon {camera}".strip(),
+            "location_in_file": "whole file" if len(positions) == 1 else f"position {p}",
+            "objective": objective,
+            "n_z": sizes.get("Z", 1), "n_t": sizes.get("T", 1), "width": sizes["X"], "height": sizes["Y"],
+            "pixel_um": round(vox.x, 4), "z_step_um": round(vox.z, 3) if "Z" in sizes else 0.0,
+            "bits": bits, "channel_roles": prefer_named_dye(roles, [None] * len(roles), cfg), "channel_names": names,
+            "settings": "; ".join(camera_settings), "zoom": f"{mic.zoomMagnification:g}" if mic.zoomMagnification else "",
+            "acquired": " ".join((text.get("date") or "").split()),
+            "stage_x": stage.x, "stage_y": stage.y, "flags": [], "_reader": ("nd2", str(path), p, dims),
+        })
+    return out
+
+
+# ------------------------------------------------------------------ Olympus FluoView OIB / OIF
+
+def _olympus_number(v):
+    """FluoView writes numbers with a decimal comma and a trailing '.0', for example '0,207.0' for
+    0.207 (pixel size in um) or '1,35.0' for an NA of 1.35."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    m = re.fullmatch(r"\s*(-?\d+),(\d+)(?:\.0+)?\s*", str(v))
+    return float(f"{m.group(1)}.{m.group(2)}") if m else float(v)
+
+
+def _olympus_plane_info(f):
+    """Objective lines from the first plane's property file (.pty)."""
+    fs = f.filesystem
+    pty = next((n for n in sorted(fs.files()) if n.lower().endswith(".pty") and "thumb" not in n.lower()), None)
+    if pty is None:
+        return {}
+    raw = fs.open_file(pty).read()
+    textual = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("latin-1")
+    return dict(re.findall(r'^\s*([^=\r\n]+?)=\s*"?([^"\r\n]*)"?\s*$', textual, re.M))
+
+
+def olympus_images(path, cfg):
+    with oiffile.OifFile(str(path)) as f:
+        axes, shape, md = f.axes, f.shape, f.mainfile
+        plane = _olympus_plane_info(f)
+    size = dict(zip(axes, shape))
+    acq = md.get("Acquisition Parameters Common", {})
+    chans = [md[f"Channel {i} Parameters"] for i in range(1, size.get("C", 1) + 1) if f"Channel {i} Parameters" in md]
+    names = [f"{c.get('CH Name', '')} {c.get('DyeName', '')}".strip() for c in chans]
+    roles = [marker_from_named(str(c.get("DyeName", "")), c.get("DyeName"), c.get("ExcitationWavelength"),
+                               "trans" in str(c.get("LightType", "")).lower() or str(c.get("CH Name", "")).upper().startswith("TD"),
+                               cfg, c.get("EmissionWavelength")) for c in chans]
+    roles = prefer_named_dye(roles, [c.get("DyeName") for c in chans], cfg)
+    if len(chans) != size.get("C", 1):
+        roles = ["UNRESOLVED"] * size.get("C", 1)
+    mi = pick(roles, "MARKER")
+    ref = md.get("Reference Image Parameter", {})
+    zaxis = next((a for k, a in md.items() if k.startswith("Axis ") and a.get("AxisCode") == "Z"), {})
+    z_step = 0.0
+    if size.get("Z", 1) > 1 and zaxis.get("Interval"):
+        z_step = abs(_olympus_number(zaxis["Interval"])) / (1000 if zaxis.get("PixUnit") == "nm" else 1)
+    mag, na = plane.get("Magnification"), plane.get("ObjectiveLens NAValue")
+    lens = " ".join(plane.get("ObjectiveLens Name", "").split())
+    objective = (f"{_olympus_number(mag):g}x" + (f"/{_olympus_number(na):g}" if na else "") + (f" ({lens})" if lens else "")) \
+        if mag else lens
+    lasers = [(acq.get(f"LaserWavelength{i:02d}"), acq.get(f"LaserTransmissivity{i:02d}"))
+              for i in range(1, int(acq.get("Number of use Laser", 0) or 0) + 1)]
+    settings = "; ".join(x for x in [
+        f"PMT {chans[mi].get('AnalogPMTVoltage')} V" if mi is not None and chans[mi].get("AnalogPMTVoltage") else "",
+        ";".join(f"{w}nm@{_olympus_number(t):g}%" for w, t in lasers if w and t is not None),
+        f"{acq.get('IntegrationType')} {acq.get('IntegrationCount')}" if acq.get("IntegrationType") not in (None, "None") else ""] if x)
+    system = md.get("Version Info", {}).get("SystemName", "") or acq.get("Acquisition Device", "")
+    return [{
+        "format": "Olympus FluoView", "system": f"Olympus {system}".strip(),
+        "location_in_file": "whole file", "objective": objective,
+        "n_z": size.get("Z", 1), "n_t": size.get("T", 1), "width": size["X"], "height": size["Y"],
+        "pixel_um": round(_olympus_number(ref.get("WidthConvertValue", 0)), 4), "z_step_um": round(z_step, 3),
+        "bits": int(ref.get("ValidBitCounts") or 16), "channel_roles": roles, "channel_names": names,
+        "settings": settings, "zoom": "", "acquired": str(acq.get("ImageCaputreDate", "")),
+        "stage_x": None, "stage_y": None, "flags": [], "_reader": ("oif", str(path), 0, axes),
+    }]
+
+
+# ------------------------------------------------------------------ ImageJ hyperstack TIFF
+
+IMAGEJ_ROLES = {"marker": "MARKER", "brightfield": "BF", "other": "OTHER"}
+
+
+def is_imagej_stack(path):
+    try:
+        with tifffile.TiffFile(str(path)) as f:
+            return bool(f.is_imagej) and "S" not in f.series[0].axes
+    except Exception:
+        return False
+
+
+def imagej_images(path, cfg, setting):
+    """ImageJ files carry no dye or laser metadata, so the source in config.json states the channel
+    order ("imagej_tiff": {"channels": ["marker", "brightfield"]}); it is copied into log.md."""
+    with tifffile.TiffFile(str(path)) as f:
+        s = f.series[0]
+        axes, shape, ij = s.axes, s.shape, f.imagej_metadata or {}
+        page = s.pages[0]
+        res = page.tags.get("XResolution")
+        bits = page.bitspersample
+    size = dict(zip(axes, shape))
+    n_c = size.get("C", 1)
+    wanted = [IMAGEJ_ROLES[c] for c in setting["channels"]]
+    flags = []
+    if len(wanted) != n_c:
+        flags.append(f"config.json lists {len(wanted)} channels, the file has {n_c}")
+        wanted = ["UNRESOLVED"] * n_c
+    pixel_um = 0.0
+    if res and str(ij.get("unit", "")).lower() in ("micron", "um", "\u00b5m", "microns"):
+        num, den = res.value
+        pixel_um = round(den / num, 4) if num else 0.0
+    if not pixel_um:
+        flags.append("pixel size unknown (no calibration in micrometres)")
+    return [{
+        "format": "ImageJ TIFF", "system": setting.get("system") or "ImageJ TIFF (instrument not named)",
+        "location_in_file": "whole file", "objective": setting.get("objective", ""),
+        "n_z": size.get("Z", 1), "n_t": size.get("T", 1), "width": size["X"], "height": size["Y"],
+        "pixel_um": pixel_um, "z_step_um": round(float(ij.get("spacing", 0) or 0), 3) if "Z" in size else 0.0,
+        "bits": bits, "channel_roles": wanted, "channel_names": list(setting["channels"])[:n_c] if not flags else [""] * n_c,
+        "settings": "", "zoom": "", "acquired": "",
+        "stage_x": None, "stage_y": None, "flags": flags, "_reader": ("ij", str(path), 0, axes),
+    }]
+
+
+def images_in(path, cfg, source=None):
     low = path.name.lower()
     if low.endswith(".lif"):
         return leica_images(path, cfg)
     if low.endswith(".czi"):
         return zeiss_images(path, cfg)
+    if low.endswith(".nd2"):
+        return nikon_images(path, cfg)
+    if low.endswith((".oib", ".oif")):
+        return olympus_images(path, cfg)
+    if source and source.get("imagej_tiff") and not low.endswith((".ome.tif", ".ome.tiff")):
+        return imagej_images(path, cfg, source["imagej_tiff"])
     return ome_images(path, cfg)
 
 
@@ -319,6 +499,19 @@ def _raw(img):
         with czifile.CziFile(path) as f:
             scene = f.scenes[i]
             arr, dims = scene.asarray(), "".join(scene.dims)
+    elif kind == "nd2":
+        dims = img["_reader"][3]
+        with _nd2().ND2File(path) as f:
+            if "P" in dims:          # one stage position, read on its own
+                arr = np.asarray(f.to_dask()[(slice(None),) * dims.index("P") + (i,)])
+                dims = dims.replace("P", "")
+            else:
+                arr = f.asarray()
+    elif kind == "oif":
+        with oiffile.OifFile(path) as f:
+            arr, dims = f.asarray(), f.axes
+    elif kind == "ij":
+        arr, dims = tifffile.imread(path, series=0), img["_reader"][3]
     else:
         arr, dims = tifffile.imread(path, series=i), img["_reader"][3]
     return arr, dims
@@ -374,6 +567,10 @@ def scan(cfg, log=print, progress=None):
                    "original_path": str(original / rel), "size_mb": round(p.stat().st_size / 2**20, 2),
                    "sha256": h, "role": file_role(p), "note": ""}
             rows.append(row)
+            # ImageJ TIFF has no microscope metadata: used only if this source turns it on
+            if row["role"] == NOT_USED and src.get("imagej_tiff") and p.suffix.lower() in (".tif", ".tiff") \
+                    and is_imagej_stack(p):
+                row["role"] = "raw image"
             if row["role"] == "raw image":
                 by_hash.setdefault(h, []).append(row)
         prefs = cfg["duplicate_preference"]
@@ -391,14 +588,14 @@ def scan(cfg, log=print, progress=None):
                 continue
             p = Path(row["local_path"])
             try:
-                found = images_in(p, cfg)
+                found = images_in(p, cfg, src)
             except Exception as exc:
                 row["role"] = "unreadable image"
                 row["note"] = str(exc)[:200]
                 log(f"  could not read {row['relative_path']}: {exc}")
                 continue
             if not found:
-                row["role"] = "other image (no microscope metadata; not used)"
+                row["role"] = NOT_USED
                 continue
             for img in found:
                 img.update({"source": row["source"], "file": p.name, "relative_path": row["relative_path"],

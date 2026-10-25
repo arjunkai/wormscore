@@ -14,7 +14,7 @@ reports exactly as before.
 - **Second identity channel.** Find the cell on one marker and judge the reporter on another, as
   recommended for unbiased selection. Presets for common fluorescent proteins beyond GFP (for
   example mNeonGreen, YFP, mCherry, TagRFP, mScarlet, mKate2, BFP), matched by emission band.
-- **More file formats.** Nikon `.nd2`, Olympus `.oib` / `.oif` / `.oir`, and ImageJ hyperstack TIFF.
+- **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
 - **Interim report.** Totals for the images scored so far, with no codes shown, recorded in the
   log as an interim look.
 - **Imaging-session tools.** Optional flat-field or reference-slide correction per imaging session,
@@ -28,6 +28,8 @@ blind-scoring project.
 
 ## Recently shipped
 
+- 0.13.0: reads Nikon `.nd2`, Olympus FluoView `.oib` and `.oif`, and (when turned on for a source)
+  ImageJ hyperstack TIFF.
 - 0.12.0: safer saving (a held Ctrl+Enter, a slow image or a results file open in Excel can no
   longer save the wrong answers or half a save), images never mixed up between projects or builds,
   clear messages instead of "lost connection" for errors, and finishing touches on both screens.

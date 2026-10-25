@@ -27,7 +27,9 @@ organisms work the same way.
 - **Local:** runs on your computer only. Nothing is uploaded.
 
 Supported raw formats: Leica `.lif`, Zeiss `.czi`, OME-TIFF (including Micro-Manager style files with
-a `.companion.ome`). Channel identity (marker vs brightfield) is read from metadata, never guessed.
+a `.companion.ome`), Nikon `.nd2`, Olympus FluoView `.oib` and `.oif`, and ImageJ hyperstack TIFF (only
+where you turn it on, because ImageJ files do not record which channel is which). Channel identity
+(marker vs brightfield) is read from metadata, never guessed.
 
 ## Install
 
@@ -183,6 +185,8 @@ lists all versions and resolves to the latest. GitHub's "Cite this repository" b
 [CITATION.cff](https://github.com/arjunkai/wormscore/blob/main/CITATION.cff)) gives the reference, and `log.md`
 in your project records which version ran each step.
 
-wormscore reads Leica files with [liffile](https://github.com/cgohlke/liffile) and Zeiss files with
-[czifile](https://github.com/cgohlke/czifile) (both BSD-3). The Windows app bundles these and other
-libraries; their licenses are in `THIRD_PARTY_LICENSES.txt` next to `wormscore.exe`.
+wormscore reads Leica files with [liffile](https://github.com/cgohlke/liffile), Zeiss files with
+[czifile](https://github.com/cgohlke/czifile), Olympus FluoView files with
+[oiffile](https://github.com/cgohlke/oiffile) and Nikon files with [nd2](https://github.com/tlambert03/nd2)
+(all BSD-3). With pip, Nikon support is an extra: `pip install "wormscore[nd2]"`. The Windows and Mac
+apps bundle these and other libraries; their licenses are in `THIRD_PARTY_LICENSES.txt` next to the app.

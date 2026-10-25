@@ -66,10 +66,10 @@ evidence that people struggle with it, and what wormscore does.
 
 ## Where wormscore is worse or not the right tool
 
-- **File formats.** Reads Leica `.lif`, Zeiss `.czi` and OME-TIFF only. It does not read Nikon `.nd2`,
-  Olympus `.oir`/`.oib`/`.vsi`, Imaris `.ims` or plain ImageJ TIFF stacks; Fiji (Bio-Formats) and napari
-  read far more. Openly licensed readers exist for several of these (for example
-  [nd2](https://github.com/tlambert03/nd2), [oiffile](https://github.com/cgohlke/oiffile)).
+- **File formats.** Reads Leica `.lif`, Zeiss `.czi`, OME-TIFF, Nikon `.nd2`, Olympus FluoView
+  `.oib`/`.oif` and (when turned on) ImageJ hyperstack TIFF. It does not read Olympus `.oir` or `.vsi`,
+  Imaris `.ims` and many others; Fiji (Bio-Formats) and napari read far more. ImageJ TIFFs carry no channel
+  identity, so their channel order has to be stated by hand.
 - **One marker channel.** Labs often find the cell on a second marker and judge the reporter, which is
   also what [Jost & Waters 2019](https://doi.org/10.1083/jcb.201812109) recommend: select regions on "a
   fluorescence channel or transmitted light image from which content of the experimental image cannot

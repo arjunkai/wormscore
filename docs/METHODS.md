@@ -11,7 +11,9 @@ role: raw image; duplicate (byte-identical to another file; the copy kept is set
 recognized by Fiji-style names such as `MAX_`, `Projections of`, `C1-`); metadata sidecar; other image
 without microscope metadata; reference document; or hidden system file (for example macOS `._` files).
 
-Each raw image (each series of a `.lif`, each scene of a `.czi`, each series of an OME-TIFF) is listed
+Each raw image (each series of a `.lif`, each scene of a `.czi`, each series of an OME-TIFF, each stage
+position of a Nikon `.nd2`, each Olympus FluoView `.oib` or `.oif`, and each ImageJ hyperstack TIFF in a
+source that turns ImageJ reading on) is listed
 in `outputs/inventory.csv` with objective, planes, pixel size, z-step, bit depth, channels and the
 acquisition settings that affect brightness (detector gain or voltage, laser power, averaging, exposure).
 Images whose settings differ from the most common value on the same microscope are flagged.
@@ -30,6 +32,16 @@ From metadata only:
   second fluorophore excited by the same 488 nm laser, and exactly one of them names a configured dye
   (EGFP, GFP), that one is the marker. If the file gives no objective name, the objective is written
   from its magnification, NA and immersion.
+- **Nikon and Olympus FluoView:** the same rules, using the channel name, dye name and excitation
+  wavelength the file records; brightfield is the channel recorded as brightfield or transmitted light
+  (Olympus detectors named TD). These files also record an emission wavelength, which counts only if
+  `marker.emission_nm` gives a range (for example `[500, 550]` for GFP). Olympus numbers written with a
+  decimal comma (`0,207`) are read as decimals. Colour (RGB) camera pictures are not used.
+- **ImageJ hyperstack TIFF:** these files record pixel size and z-step but not which channel is which.
+  They are used only if their source in `config.json` has `imagej_tiff` with the channel order, for
+  example `{"channels": ["marker", "brightfield"]}`, and optionally the objective; that setting is
+  copied into `log.md` when the blind set is built. If the file has a different number of channels the
+  image is UNRESOLVED. Projections made later (names starting `MAX_`, `SUM_` and so on) are never used.
 
 If not exactly one channel matches, the marker is UNRESOLVED and the image is excluded.
 

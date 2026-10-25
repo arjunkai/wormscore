@@ -20,9 +20,15 @@ DEFAULTS = {
     # the blind set and listed in outputs/excluded.csv with the reason.
     # note (optional): a label such as "collected by others" shown with an asterisk next to
     # this source in the results tables.
+    # imagej_tiff (optional): read ImageJ hyperstack TIFFs in this source. They carry no dye or laser
+    # metadata, so give the channel order, for example {"channels": ["marker", "brightfield"]}
+    # ("marker", "brightfield" or "other"), and optionally "objective" (e.g. "60x/1.4 oil") and
+    # "system" (the microscope). Without it, ImageJ TIFFs are listed but not used.
     "sources": [],
 
     # Which channel is the reporter. Identified from metadata only, never guessed.
+    # emission_nm (optional): [low, high]; a channel whose recorded emission wavelength (Nikon,
+    # Olympus FluoView) falls in this range also counts as the marker, e.g. [500, 550] for GFP.
     "marker": {
         "label": "GFP",
         "excitation_nm": [488],
@@ -258,6 +264,21 @@ def check(cfg):
     k = un["dim_cutoff_sd"]
     if isinstance(k, bool) or not isinstance(k, (int, float)) or k < 0:
         raise SystemExit("dim_cutoff_sd must be a number of 0 or more (0 = off).")
+    for src in cfg["sources"]:
+        ij = src.get("imagej_tiff")
+        if ij is None:
+            continue
+        chans = ij.get("channels") if isinstance(ij, dict) else None
+        if not isinstance(chans, list) or not chans or any(c not in ("marker", "brightfield", "other") for c in chans):
+            raise SystemExit(f"source '{src.get('name', src.get('path'))}': imagej_tiff needs \"channels\", a list of "
+                             "\"marker\", \"brightfield\" or \"other\" in the order the file stores them.")
+        if chans.count("marker") != 1 or chans.count("brightfield") > 1:
+            raise SystemExit(f"source '{src.get('name', src.get('path'))}': imagej_tiff channels need exactly one "
+                             "\"marker\" and at most one \"brightfield\".")
+    em = cfg["marker"].get("emission_nm")
+    if em is not None and (not isinstance(em, list) or len(em) != 2 or not all(isinstance(x, (int, float)) for x in em)
+                           or em[0] > em[1]):
+        raise SystemExit("marker.emission_nm must be [low, high] in nm, for example [500, 550].")
     f = cfg["reliability"]["repeat_fraction"]
     if isinstance(f, bool) or not isinstance(f, (int, float)) or not 0 <= f <= 0.5:
         raise SystemExit("reliability.repeat_fraction must be between 0 and 0.5 (0 = off).")

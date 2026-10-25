@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wormscore"
-version = "0.12.0"
+version = "0.13.0"
 description = "Blind scoring of fluorescent neurons in C. elegans confocal stacks, with measurement and genetics statistics."
 keywords = ["C. elegans", "worm", "neuron", "blind scoring", "fluorescence", "microscopy", "confocal", "penetrance"]
 readme = "README.md"
@@ -26,6 +26,7 @@ dependencies = [
   "pillow>=10",
   "liffile>=2026.10.14",
   "czifile>=2026.10.14",
+  "oiffile>=2026.10.15",
   "tifffile>=2024.1",
   "imagecodecs>=2024.1",
   # the app's own windows on Windows (WebView2); elsewhere the app uses the browser
@@ -39,7 +40,9 @@ Issues = "https://github.com/arjunkai/wormscore/issues"
 Releases = "https://github.com/arjunkai/wormscore/releases"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pyinstaller>=6.10"]
+# Nikon .nd2 files (large: brings dask and pydantic). The Windows and Mac apps include it.
+nd2 = ["nd2>=0.12"]
+dev = ["pytest>=8", "pyinstaller>=6.10", "nd2>=0.12"]
 
 [project.scripts]
 wormscore = "wormscore.cli:main"
