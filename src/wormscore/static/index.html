@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<div id="conn" class="conn hidden" role="alert"><span id="connText"></span><button id="connStart" class="hidden">Start wormscore</button></div>
+<div id="conn" class="conn hidden" role="alert"><span id="connText"></span><button id="connStart" class="primary hidden">Start wormscore</button></div>
 <header>
   <h1>wormscore <span class="sub" id="projectName"></span></h1>
   <div class="progress"><div class="bar"><div id="progFill"></div></div><span id="progText"></span></div>
@@ -41,7 +41,7 @@
       </div>
     </div>
     <div id="canvasWrap"><canvas id="cv" role="img" aria-label="Image"></canvas></div>
-    <div id="loadErr" class="load-err hidden" role="alert"><span id="loadErrText"></span><button id="loadErrRetry" type="button">Try again</button></div>
+    <div id="loadErr" class="load-err hidden" role="alert"><span id="loadErrText"></span><button id="loadErrRetry" type="button" class="primary">Try again</button></div>
     <div class="hint">Keys: left/right = plane, P = projection/planes, E = range, B = brightfield, N = next image, Ctrl+Enter = save and go to the next unscored image (skips marking cells)</div>
   </section>
 

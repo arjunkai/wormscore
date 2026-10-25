@@ -20,8 +20,6 @@ reports exactly as before.
 - **Imaging-session tools.** Optional flat-field or reference-slide correction per imaging session,
   and a check for gut autofluorescence.
 - **Example data.** An optional NeuroPAL example download, if its license allows.
-- **Interface polish.** Further edge cases and finishing touches in the app window and the scoring
-  page.
 
 ## Version 1.0.0
 
@@ -30,6 +28,9 @@ blind-scoring project.
 
 ## Recently shipped
 
+- 0.12.0: safer saving (a held Ctrl+Enter, a slow image or a results file open in Excel can no
+  longer save the wrong answers or half a save), images never mixed up between projects or builds,
+  clear messages instead of "lost connection" for errors, and finishing touches on both screens.
 - 0.11.0: faster start and image switching; keyboard and screen-reader fixes, clearer status and
   wording, safer dialogs, and Ctrl+Enter to save and open the next unscored image.
 - 0.10.0: hidden repeat images and a scorer-consistency report (percent agreement, Cohen's kappa); a

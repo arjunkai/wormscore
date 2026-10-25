@@ -181,6 +181,9 @@ function welcome() {
       tile("demo", "Try a demo", "20 simulated worms, or 4 real heads (CC BY 4.0).")));
 }
 
+// A long path may wrap only after a folder separator, never inside a folder name.
+const breakable = path => path.split(/(?<=[\\/])/).map(part => h("span", {}, part));
+
 function stepCard(n, state, title, desc, fact, actions, extra) {
   const chip = { done: ["done", "Done"], next: ["next", "Next"], running: ["running", "Running"], wait: ["wait", "Waiting"] }[state];
   return h("li", { class: `step ${state}` },
@@ -239,7 +242,7 @@ function renderMain(d) {
 
   main.replaceChildren(h("div", { class: "wrap" },
     h("div", { class: "p-head" },
-      h("div", {}, h("h2", {}, p.name || "Project"), h("div", { class: "p-path" }, p.path)),
+      h("div", {}, h("h2", {}, p.name || "Project"), h("div", { class: "p-path" }, breakable(p.path))),
       h("div", { class: "p-tools" },
         h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"),
         h("button", { class: "btn", "data-k": "config", disabled: !p.has_config, onclick: () => act("/api/open", { what: "config" }) }, "Edit config.json"))),

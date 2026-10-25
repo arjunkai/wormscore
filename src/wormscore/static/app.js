@@ -17,8 +17,12 @@ function h(tag, attrs = {}, ...kids) {
   return el;
 }
 
-const PALETTE = ["#ff6b6b", "#5aa9ff", "#c58cff", "#ffb347"];
-const BG_COLOR = "#b8bec7";
+// Region colours come from style.css, so the outlines and the page always match.
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const PALETTE = ["--l1", "--l2", "--l3", "--l4"].map(css);
+const BG_COLOR = css("--lbg");
+const SUGGEST = css("--suggest");
+const MUTED = css("--muted");
 const FLAG_QUESTIONS = {
   repeat: { q: "Count this image for this animal?", options: ["count", "do not count"] },
   edge: { q: "Is the whole cell inside the stack?", options: ["yes", "no", "can't tell"] },
@@ -372,7 +376,7 @@ function draw() {
   ctx.fillRect(0, 0, g.fw, g.fh);
   if (!vals) {
     if (!$("#loadErr").classList.contains("hidden")) return;     // the error box says it instead
-    ctx.fillStyle = "#888";
+    ctx.fillStyle = MUTED;
     ctx.font = `${14 * st.zoom}px system-ui`;
     const failed = st.view === "plane" && st.planeFailed?.has(st.z);
     ctx.fillText(failed ? "Could not load this plane. Move to another plane and back to try again." : "Loading...", 16, 28);
@@ -426,12 +430,12 @@ function drawCandidate(c) {
   const [x, y] = toScreen(c.x, c.y);
   ctx.save();
   ctx.setLineDash([4, 4]);
-  ctx.strokeStyle = "#ffd84a";
+  ctx.strokeStyle = SUGGEST;
   ctx.lineWidth = 1.5 * st.zoom;
   ctx.beginPath();
   ctx.arc(x, y, Math.max(c.r * st.geom.s + 4, 8), 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = "#ffd84a";
+  ctx.fillStyle = SUGGEST;
   ctx.font = `bold ${13 * st.zoom}px system-ui`;
   ctx.fillText(`S${c.rank}`, x + c.r * st.geom.s + 6, y - 4);
   ctx.restore();
@@ -539,18 +543,18 @@ function renderSuggestions() {
   const neurons = st.cfg.scoring.neurons;
   box.replaceChildren(...st.meta.candidates.map(c =>
     h("div", { class: "item" },
-      h("span", { class: "sw", style: "background:#ffd84a" }), h("span", { class: "nowrap" }, `Spot S${c.rank}`),
-      h("span", { class: "btns" }, neurons.map((n, i) =>
-        h("button", { type: "button", title: `Use S${c.rank} as ${n}`,
+      h("span", { class: "sw suggest" }), h("span", { class: "nowrap" }, `Spot S${c.rank}`),
+      h("span", { class: "btns" }, h("span", { class: "use", "aria-hidden": "true" }, "use as"), neurons.map(n =>
+        h("button", { type: "button", title: `Use S${c.rank} as ${n}`, "aria-label": `Use S${c.rank} as ${n}`,
           onclick: () => commitRoi({ type: "candidate", rank: c.rank, label: n, source: `suggestion S${c.rank}` }) },
-        i === 0 ? `Use as ${n}` : n))))));
+        n))))));
 }
 
 function renderRoiList() {
   $("#roiList").replaceChildren(...st.rois.map(r =>
     h("div", { class: "item" },
       h("span", { class: "sw", style: `background:${st.colors[r.label] || "#fff"}` }), r.label,
-      h("span", { class: "small", style: "margin:0" }, r.source),
+      h("span", { class: "small" }, r.source),
       h("span", { class: "btns" }, h("button", { type: "button", onclick: () => {
         st.rois = st.rois.filter(x => x !== r);
         st.roisDirty = true;
