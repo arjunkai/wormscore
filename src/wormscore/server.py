@@ -62,6 +62,21 @@ def safe_cell(v):
     return v
 
 
+class FileBusy(Exception):
+    """A results file another program holds open (Excel locks a CSV it shows)."""
+
+
+def check_writable(*paths):
+    """Find a locked file before anything is written, so a save is all or nothing."""
+    for p in paths:
+        if p.exists():
+            try:
+                with open(p, "r+b"):
+                    pass
+            except PermissionError:
+                raise FileBusy(f"{p.name} is open in another program (Excel?). Close it, then save again.")
+
+
 def heavy_imports():
     """numpy, Pillow and the measurement code (which loads scipy) are needed only to measure
     regions. Loading them here, not when this file is imported, keeps them out of the app
@@ -134,7 +149,14 @@ class Project:
     def meta(self, code):
         return json.loads((self.blind / code / "meta.json").read_text())
 
+    def image_version(self, code):
+        """Part of every image address: a new build or another project on this port gets new
+        addresses, so the browser never shows a cached picture of a different image."""
+        stamp = (self.blind / code / "meta.json").stat().st_mtime_ns
+        return hashlib.sha256(f"{self.id}:{stamp}".encode()).hexdigest()[:12]
+
     def save_score(self, code, body):
+        check_writable(*(self.scoring / n for n in ("scores.json", "scores.csv", "score_history.csv")))
         body["saved"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         scores = self.load("scores.json", {})
         scores[code] = body
@@ -186,6 +208,7 @@ class Project:
         return rows
 
     def save_rois(self, code, rois):
+        check_writable(*(self.scoring / n for n in ("rois.json", "roi_measurements.json", "roi_measurements.csv")))
         all_rois = self.load("rois.json", {})
         all_rois[code] = rois
         self.save("rois.json", all_rois)
@@ -237,7 +260,35 @@ def make_handler(project):
                 return True
             return False
 
+        def failed(self, exc):
+            """Say what went wrong instead of dropping the connection, which the page would show as
+            "lost connection". Only the error type and a file name inside the project are sent."""
+            if isinstance(exc, FileBusy):
+                return self.send_json({"ok": False, "error": str(exc)}, 423)
+            name = Path(exc.filename).name if isinstance(exc, OSError) and exc.filename else ""
+            why = exc.strerror if isinstance(exc, OSError) and exc.strerror else type(exc).__name__
+            if sys.stderr:      # None in the windowed app
+                sys.stderr.write(f"wormscore scoring server error: {type(exc).__name__}: {exc}\n")
+            where = f": {name}" if name else ""
+            self.send_json({"ok": False, "error": f"wormscore could not do that ({why}{where})."}, 500)
+
         def do_GET(self):
+            try:
+                self.get()
+            except (ConnectionError, BrokenPipeError):
+                pass
+            except Exception as exc:
+                self.failed(exc)
+
+        def do_POST(self):
+            try:
+                self.post()
+            except (ConnectionError, BrokenPipeError):
+                pass
+            except Exception as exc:
+                self.failed(exc)
+
+        def get(self):
             if not self.local_request():
                 return self.send_error(403)
             if self.other_project():
@@ -277,12 +328,12 @@ def make_handler(project):
             if parts[:2] == ["api", "worm"] and len(parts) == 3 and CODE.match(parts[2]) \
                     and (project.blind / parts[2]).is_dir():
                 code = parts[2]
-                return self.send_json({"meta": project.meta(code), "score": project.load("scores.json", {}).get(code),
+                return self.send_json({"meta": project.meta(code), "img_v": project.image_version(code), "score": project.load("scores.json", {}).get(code),
                                        "rois": project.load("rois.json", {}).get(code, []),
                                        "draft": project.drafts().get(code)})
             self.send_error(404)
 
-        def do_POST(self):
+        def post(self):
             # Saves must come from the app's own page: a local Host, a JSON body (other sites
             # cannot send one without a permission check this server never grants), and, if the
             # browser says where the request came from, that origin must be this server.

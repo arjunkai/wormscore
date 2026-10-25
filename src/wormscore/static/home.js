@@ -61,14 +61,17 @@ async function api(path, body) {
   return data;
 }
 
-function toast(msg, kind = "error") {
+// Errors (and notes the user must act on) stay until closed; other notes go after 6 s.
+function toast(msg, kind = "error", stay = kind === "error") {
   const t = $("#toast");
-  t.textContent = msg;
   t.className = `toast ${kind}`;
   t.setAttribute("role", kind === "error" ? "alert" : "status");
+  t.replaceChildren(h("span", {}, msg), stay ? h("button", {
+    class: "ghost icon t-x", title: "Close", "aria-label": "Close message", onclick: () => (t.hidden = true),
+  }, icon("close", 14)) : null);
   t.hidden = false;
   clearTimeout(toast.t);
-  toast.t = setTimeout(() => (t.hidden = true), 6000);
+  if (!stay) toast.t = setTimeout(() => (t.hidden = true), 6000);
 }
 
 async function act(path, body) {
@@ -154,7 +157,7 @@ function renderSide(d) {
       h("button", { class: "pick", "data-k": `pick:${p.path}`, "aria-current": p.path === cur ? "true" : null,
         onclick: () => p.path !== cur && act("/api/select", { path: p.path }) },
         h("span", { class: "nm" }, name),
-        h("span", { class: "pth", title: p.path }, p.path),
+        h("span", { class: "pth", title: p.path }, h("bdi", { dir: "ltr" }, p.path)),
         h("span", { class: "st" }, cardStatus(p))),
       h("button", {
         class: "x", "data-k": `x:${p.path}`, title: "Remove from this list (the folder itself is not changed)",
@@ -367,7 +370,7 @@ function renderUpdate(d) {
 
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); toast("Copied. Paste it in a terminal.", "ok"); }
-  catch { toast(`Run this in a terminal: ${text}`, "ok"); }
+  catch { toast(`Run this in a terminal: ${text}`, "ok", true); }
 }
 
 async function openSettings() {
@@ -405,6 +408,9 @@ function render() {
   $("#themeBtn").replaceChildren(icon(d.theme === "dark" ? "sun" : "moon", 18));
   $("#themeBtn").title = d.theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
   $("#ver").textContent = d.version;
+  // "I have finished scoring" is about one project: switching projects clears it.
+  const path = d.project?.path ?? null;
+  if (path !== st.tickedFor) { st.tickedFor = path; st.finished = false; }
   // The state is polled every few seconds. Rebuilding the page each time would throw keyboard
   // focus back to the top and make screen readers read it again, so only redraw on a change.
   const key = JSON.stringify([d.recent, d.project, d.job, st.finished, st.showLog, st.log.length]);
@@ -527,7 +533,10 @@ function connectionBack() {
 
 async function refresh(soon) {
   try {
-    const d = await (await fetch(`/api/state?since=${st.since}`)).json();
+    const res = await fetch(`/api/state?since=${st.since}`);
+    const d = await res.json();
+    if (!res.ok) throw Object.assign(new Error(d.error || `Request failed (${res.status})`), { fromApp: true });
+    st.stateError = null;
     // Another version answers on this address (after an update or a go back): load its page.
     if (st.data && d.version !== st.data.version) return location.reload();
     // wormscore now shows its pages in its own window; this one is left over from before.
@@ -540,8 +549,13 @@ async function refresh(soon) {
     st.lastRunning = d.job.running;
     st.data = d;
     render();
-  } catch {
-    connectionLost();       // polling goes on, so the window recovers by itself
+  } catch (e) {
+    if (e.fromApp) {
+      connectionBack();
+      if (e.message !== st.stateError) toast((st.stateError = e.message));
+    } else {
+      connectionLost();       // polling goes on, so the window recovers by itself
+    }
   }
   clearTimeout(st.timer);
   const fast = st.data?.job.running || st.data?.update.phase === "downloading" || st.data?.update.checking;

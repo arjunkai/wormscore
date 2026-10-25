@@ -240,3 +240,14 @@ def test_a_link_start_never_runs_a_command(monkeypatch):
     monkeypatch.setattr("wormscore.home.main", lambda *a, **k: called.append("home"))
     runpy.run_path(str(Path(__file__).parents[1] / "packaging" / "wormscore_app.py"), run_name="__main__")
     assert called == ["home"] and sys.argv == ["wormscore.exe"]
+
+
+def test_an_unexpected_error_is_shown_not_read_as_a_lost_connection(desk, tmp_path, monkeypatch):
+    """A folder that cannot be written answers with a message, not a dropped connection."""
+    logged = []
+    monkeypatch.setattr(home, "log_event", logged.append)        # never the real app.log
+    desk["picks"].append(str(tmp_path / "does" / "not" / "exist"))
+    status, body = call(desk["port"], "POST", "/api/new-project", {})
+    assert status == 500 and body["ok"] is False and "did not work" in body["error"]
+    assert state(desk["port"])["version"]          # the app is still running
+    assert logged and logged[0].startswith("error: FileNotFoundError")

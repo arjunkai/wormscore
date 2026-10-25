@@ -307,6 +307,10 @@ def assign_codes(project, images, reassign, add=False, cfg=None):
         for f in ("key.csv", "seed.txt", "settings_groups.csv"):
             if (key_dir / f).exists():
                 (key_dir / f).rename(old_dir / f)
+    # Unsaved answers belong to the old codes; with new codes they would open on other images.
+    drafts = project / "scoring_drafts" / "drafts.json"
+    if drafts.exists():
+        drafts.rename(drafts.with_name(f"superseded_{dt.datetime.now():%Y%m%d_%H%M%S}.json"))
     seed = secrets.randbits(32)
     (key_dir / "seed.txt").write_text(f"{seed}\n")
     fraction = C.repeat_fraction(cfg) if cfg else 0

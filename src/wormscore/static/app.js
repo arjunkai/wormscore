@@ -61,7 +61,10 @@ async function api(path, body) {
     otherProject();
     throw new Error("this window belongs to another project");
   }
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const said = await res.json().then(d => d.error).catch(() => null);
+    throw new Error(said || `${res.status} ${res.statusText}`);
+  }
   return res.json();
 }
 
@@ -91,6 +94,7 @@ function setConnected(ok) {
   const was = st.downSince;
   st.downSince = null;
   bar.classList.add("hidden");
+  if (!st.ready) start();
   if (was && st.formDirty) {
     saveDraft();
     saveMessage("Connected again. Click Save to save this image.");
@@ -233,21 +237,28 @@ async function openWorm(code) {
       clearTimeout(st.draftTimer);
       api(`/api/worm/${st.code}/draft`, { discard: true }).catch(() => {});
     }
+    st.formDirty = st.roisDirty = false;
   }
   // Clicking codes quickly starts several loads; only the latest may fill the page.
   const seq = (st.openSeq = (st.openSeq || 0) + 1);
-  const r = await api(`/api/worm/${code}`);
+  // Saving waits until this image is on screen, so a held Ctrl+Enter can never save a score
+  // for an image the scorer has not seen.
+  st.loading = true;
+  let r, pixels;
+  try {
+    r = await api(`/api/worm/${code}`);
+  } catch (err) {
+    if (seq === st.openSeq) loadFailed(code, err);
+    return;
+  }
   if (seq !== st.openSeq) return;
   Object.assign(st, {
-    code, meta: r.meta, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
-    view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), drawing: null,
-    mip: null, bfVals: null,
+    code, meta: r.meta, imgV: r.img_v, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
+    view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), planeFailed: new Set(),
+    drawing: null, mip: null, bfVals: null,
   });
-  const ahead = st.next && st.next.code === code ? await st.next.ready : null;
-  st.next = null;
-  const pixels = ahead || await loadImages(code, st.meta);
-  if (seq !== st.openSeq) return;
-  [st.mip, st.bfVals] = pixels;
+  // The form shows this image's answers at once, never the last image's under this code.
+  $("#loadErr").classList.add("hidden");
   $("#bfToggle").disabled = !st.meta.has_brightfield;
   $("#bfToggle").parentElement.title = st.meta.has_brightfield ? "" : "No brightfield channel was recorded for this image";
   $("#codeTitle").textContent = code;
@@ -262,16 +273,40 @@ async function openWorm(code) {
   $("#roiMsg").textContent = "";
   setTab(st.score ? st.tab : "score");
   renderList();
+  try {
+    const ahead = st.next && st.next.code === code ? await st.next.ready : null;
+    st.next = null;
+    pixels = ahead && ahead.v === r.img_v ? ahead.pixels : await loadImages(code, st.meta, r.img_v);
+  } catch (err) {
+    if (seq === st.openSeq) loadFailed(code, err);
+    return;
+  }
+  if (seq !== st.openSeq) return;
+  [st.mip, st.bfVals] = pixels;
+  st.loading = false;
   draw();
   loadNext(code);
   preloadPlanes(code);
 }
 
-function loadImages(code, meta) {
+// An image that cannot be loaded says so and offers to try again; saving stays locked.
+function loadFailed(code, err) {
+  st.failedCode = code;
+  $("#loadErrText").textContent = `Could not load ${code}: ${err?.message || "the image file could not be read"}.`;
+  $("#loadErr").classList.remove("hidden");
+  draw();
+}
+$("#loadErrRetry").onclick = () => st.failedCode && openWorm(st.failedCode);
+
+// Image addresses carry the project and build (img_v): the browser keeps images for an hour, and
+// every project scores on the same port, so a plain /img/W0001/... could show another image.
+const imgUrl = (code, file, v) => `/img/${code}/${file}?v=${encodeURIComponent(v)}`;
+
+function loadImages(code, meta, v) {
   const { width: w, height: hgt } = meta;
   return Promise.all([
-    loadValues(`/img/${code}/mip.png`, w, hgt),
-    meta.has_brightfield ? loadValues(`/img/${code}/brightfield.png`, w, hgt, false) : null,
+    loadValues(imgUrl(code, "mip.png", v), w, hgt),
+    meta.has_brightfield ? loadValues(imgUrl(code, "brightfield.png", v), w, hgt, false) : null,
   ]);
 }
 
@@ -281,16 +316,29 @@ function loadNext(code) {
   const i = st.worms.findIndex(w => w.code === code);
   const next = st.worms[i + 1];
   if (!next) return;
-  const ready = api(`/api/worm/${next.code}`).then(r => loadImages(next.code, r.meta)).catch(() => null);
+  const ready = api(`/api/worm/${next.code}`)
+    .then(r => loadImages(next.code, r.meta, r.img_v).then(pixels => ({ v: r.img_v, pixels })))
+    .catch(() => null);
   st.next = { code: next.code, ready };
 }
 
-async function preloadPlanes(code) {
-  const { width: w, height: hgt, n_z } = st.meta;
-  for (let z = 0; z < n_z; z++) {
+async function loadPlane(code, z) {
+  const { width: w, height: hgt } = st.meta;
+  try {
+    const vals = await loadValues(imgUrl(code, `planes/z${String(z).padStart(2, "0")}.png`, st.imgV), w, hgt);
     if (st.code !== code) return;
-    if (!st.planes[z]) st.planes[z] = await loadValues(`/img/${code}/planes/z${String(z).padStart(2, "0")}.png`, w, hgt);
-    if (st.view === "plane" && st.z === z) draw();
+    st.planes[z] = vals;
+    st.planeFailed.delete(z);
+  } catch {
+    if (st.code === code) st.planeFailed.add(z);
+  }
+  if (st.code === code && st.view === "plane" && st.z === z) draw();
+}
+
+async function preloadPlanes(code) {
+  for (let z = 0; z < st.meta.n_z; z++) {
+    if (st.code !== code) return;
+    if (!st.planes[z]) await loadPlane(code, z);
   }
 }
 
@@ -323,9 +371,11 @@ function draw() {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, g.fw, g.fh);
   if (!vals) {
+    if (!$("#loadErr").classList.contains("hidden")) return;     // the error box says it instead
     ctx.fillStyle = "#888";
     ctx.font = `${14 * st.zoom}px system-ui`;
-    ctx.fillText("Loading...", 16, 28);
+    const failed = st.view === "plane" && st.planeFailed?.has(st.z);
+    ctx.fillText(failed ? "Could not load this plane. Move to another plane and back to try again." : "Loading...", 16, 28);
     return;
   }
   // Fixed display range: the same numbers for every image from this microscope.
@@ -571,6 +621,7 @@ $("#scoreForm").addEventListener("input", e => {
   const sec = e.target.closest(".missing");
   if (sec) { sec.classList.remove("missing"); sec.removeAttribute("aria-invalid"); }
   st.formDirty = true;
+  st.formRev = (st.formRev || 0) + 1;
   saveMessage(st.connected === false ? `Unsaved changes (${LOST}; they stay in this window)` : "Unsaved changes");
   if (e.target.name === "usable") syncUsable();
   clearTimeout(st.draftTimer);
@@ -579,6 +630,12 @@ $("#scoreForm").addEventListener("input", e => {
 
 $("#scoreForm").addEventListener("submit", async e => {
   e.preventDefault();
+  // One save at a time, and only for an image that is on screen.
+  if (st.saving || st.loading) {
+    if (st.loading) saveMessage("Wait for the image to load, then save.", true);
+    st.saveAndNext = false;
+    return;
+  }
   const fd = new FormData(e.target);
   const v = Object.fromEntries([...fd.entries()].filter(([k]) => !k.startsWith("flag_")));
   if (v.usable === "no") {
@@ -615,12 +672,21 @@ $("#scoreForm").addEventListener("submit", async e => {
   const count = "repeat" in flag_answers ? (flag_answers.repeat === "count" ? "yes" : "no")
     : (st.meta.counted_by_default ? "yes" : "no");
   const body = { ...v, flag_answers, count_this_image: count, display_preset_when_saved: st.range };
+  const rev = st.formRev;
+  st.saving = true;
   try {
     const r = await api(`/api/worm/${st.code}/score`, body);
-    clearTimeout(st.draftTimer);
+    st.saving = false;
     st.score = { ...body, saved: r.saved };
-    st.formDirty = false;
-    saveMessage(`Saved ${r.saved}`);
+    if (st.formRev === rev) {
+      clearTimeout(st.draftTimer);
+      st.formDirty = false;
+      saveMessage(`Saved ${r.saved}`);
+    } else {
+      // an answer was changed while saving: that change is not in the saved score yet
+      st.saveAndNext = false;
+      saveMessage(`Saved ${r.saved}, but you changed an answer while it saved. Click Save again.`, true);
+    }
     markAvailable(true);
     await loadList();
     if (st.saveAndNext) {
@@ -630,8 +696,9 @@ $("#scoreForm").addEventListener("submit", async e => {
       if (next) return openWorm(next.code);
       return saveMessage(`Saved ${r.saved}. Every image is scored.`);
     }
-    if (v.usable === "yes") setTab("mark");    // nothing to outline on an unusable image
+    if (v.usable === "yes" && !st.formDirty) setTab("mark");    // nothing to outline on an unusable image
   } catch (err) {
+    st.saving = false;
     st.saveAndNext = false;
     saveMessage(err.message === LOST
       ? "Not saved: lost connection to wormscore. Your answers stay here; open wormscore again and click Save once this window reconnects."
@@ -674,6 +741,7 @@ function setZ(z) {
   if (!st.meta) return;
   st.z = Math.max(0, Math.min(st.meta.n_z - 1, z));
   st.view = "plane";
+  if (st.planeFailed.has(st.z)) loadPlane(st.code, st.z);
   syncButtons();
   draw();
 }
@@ -715,6 +783,7 @@ document.addEventListener("keydown", e => {
   // Ctrl+Enter (Cmd+Enter on a Mac) saves the score and opens the next unscored image, from anywhere.
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && st.meta && st.tab === "score") {
     e.preventDefault();
+    if (e.repeat) return;      // a held key repeats; one press saves once
     st.saveAndNext = true;
     $("#scoreForm").requestSubmit();
     return;
@@ -733,7 +802,7 @@ document.addEventListener("keydown", e => {
   else if (k === "p") setView(st.view === "mip" ? "plane" : "mip");
   else if (k === "e") { st.range = st.range === "full" ? "enhanced" : "full"; syncButtons(); draw(); }
   else if (k === "b" && st.meta.has_brightfield) { st.bf = !st.bf; syncButtons(); draw(); }
-  else if (k === "n") {
+  else if (k === "n" && !e.repeat) {
     const i = st.worms.findIndex(w => w.code === st.code);
     if (i + 1 < st.worms.length) openWorm(st.worms[i + 1].code);
   } else if (k === "escape") { st.drawing = null; draw(); }
@@ -744,15 +813,31 @@ window.addEventListener("beforeunload", e => {
   if (st.formDirty || st.roisDirty) e.preventDefault();
 });
 
-(async () => {
-  st.cfg = await api("/api/config");
-  st.projectId = st.cfg.project_id;
-  buildForm();
-  await loadList();
-  const first = st.worms.find(w => !w.scored) || st.worms[0];
-  if (first) openWorm(first.code);
-  else $("#codeTitle").textContent = "No images";
-})();
+// Start the page; if wormscore cannot be reached yet, try again when the connection is back.
+async function start() {
+  if (st.starting) return;
+  st.starting = true;
+  try {
+    if (!st.cfg) {
+      const cfg = await api("/api/config");
+      st.projectId = cfg.project_id;
+      st.cfg = cfg;
+      buildForm();
+    }
+    await loadList();
+    st.ready = true;
+    const first = st.worms.find(w => !w.scored) || st.worms[0];
+    if (first) openWorm(first.code);
+    else $("#codeTitle").textContent = "No images";
+  } catch (err) {
+    if (err.message !== LOST) saveMessage(`Could not start: ${err.message}`, true);
+    clearTimeout(st.checkTimer);
+    st.checkTimer = setTimeout(checkIn, 2000);
+  } finally {
+    st.starting = false;
+  }
+}
+start();
 
 // Tells the desktop app this page is still open, and reconnects after a lost connection.
 st.checkTimer = setTimeout(checkIn, 20000);

@@ -46,7 +46,7 @@ h1 .sub { color: var(--muted); font-weight: 400; margin-left: 6px; }
 .defs summary { cursor: pointer; color: var(--muted); }
 .defs ul:empty::before { content: "No rules set in config.json."; }
 .defs ul {
-  position: absolute; right: 0; top: 28px; z-index: 5; width: 420px; margin: 0; padding: 12px 12px 12px 28px;
+  position: absolute; right: 0; top: 28px; z-index: 5; width: min(420px, calc(100vw - 32px)); margin: 0; padding: 12px 12px 12px 28px;
   background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius);
 }
 
@@ -69,7 +69,7 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 }
 .flagmark { margin-left: auto; color: var(--warn); font-size: 12px; }
 
-#viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 .toolbar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 8px 12px;
   border-bottom: 1px solid var(--line);
@@ -105,7 +105,7 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 10px; padding: 8px 10px 10px; }
 fieldset.missing, .flag.missing { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
 legend { color: var(--muted); padding: 0 4px; font-size: 12px; }
-fieldset label { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; line-height: 1.9; cursor: pointer; white-space: nowrap; }
+fieldset label { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; line-height: 1.9; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
 fieldset select { display: block; width: 100%; margin-top: 10px; }
 fieldset select + select { margin-top: 8px; }
 select, textarea {
@@ -164,6 +164,17 @@ textarea { width: 100%; resize: vertical; }
 .conn.hidden { display: none; }
 .conn { display: flex; align-items: center; gap: 12px; }
 .conn button {
+  flex: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600;
+  background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent);
+}
+
+/* an image that could not be loaded */
+.load-err {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 4;
+  max-width: min(480px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: 8px; background: var(--panel); border: 1px solid var(--warn);
+}
+.load-err button {
   flex: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600;
   background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent);
 }

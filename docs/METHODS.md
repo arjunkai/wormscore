@@ -54,7 +54,9 @@ images, plane counts, pixel size and quality questions, but no genotype, file na
 number. Re-running `prepare` keeps the same codes; new codes are refused once any score is saved.
 Unsaved answers are kept per code in `scoring_drafts/` (the same fields as a score, no genotype or
 file name) and deleted when the score is saved; drafts are never read as scores and do not lock the
-codes. Each scoring window sends its project's ID with every request, so a window left open from
+codes. New codes set any drafts aside (`scoring_drafts/superseded_<time>.json`), so answers typed for an
+old code never open on the image that now has that code. Images are fetched at addresses that name the
+project and the build, so a picture cached from another project or an earlier build is never shown. Each scoring window sends its project's ID with every request, so a window left open from
 another project cannot save into the one being scored.
 
 Images imaged later can be added with `prepare --add-new-images` (or **Add new images** in the app's

@@ -875,7 +875,30 @@ def make_handler(app):
             host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
             return host in LOCAL_HOSTS
 
+        def failed(self, exc):
+            """An unexpected error is reported to the page (and the app log) instead of dropping
+            the connection, which the page would read as "wormscore is not running"."""
+            log_event(f"error: {type(exc).__name__}: {exc}")
+            why = f"{exc.strerror}: {exc.filename}" if isinstance(exc, OSError) and exc.strerror and exc.filename                 else str(exc) or type(exc).__name__
+            self.send_json({"ok": False, "error": f"That did not work. {why}"}, 500)
+
         def do_GET(self):
+            try:
+                self.get()
+            except (ConnectionError, BrokenPipeError):
+                pass
+            except Exception as exc:
+                self.failed(exc)
+
+        def do_POST(self):
+            try:
+                self.post()
+            except (ConnectionError, BrokenPipeError):
+                pass
+            except Exception as exc:
+                self.failed(exc)
+
+        def get(self):
             if not self.local_request():
                 return self.send_error(403)
             app.last_seen = time.time()
@@ -892,7 +915,7 @@ def make_handler(app):
                 return self.send_json(app.state(int(since) if since.isdigit() else 0))
             self.send_error(404)
 
-        def do_POST(self):
+        def post(self):
             # Same rules as the scoring server: a local Host, a JSON body, and a local origin.
             origin = self.headers.get("Origin")
             if not self.local_request() or self.headers.get("Content-Type", "").split(";")[0] != "application/json" \

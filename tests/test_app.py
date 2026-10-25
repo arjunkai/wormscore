@@ -1,5 +1,6 @@
 import http.client
 import json
+import sys
 import threading
 
 import pytest
@@ -162,3 +163,66 @@ def test_drafts_do_not_block_new_codes(fresh_project):
     (fresh_project / "scoring_drafts").mkdir()
     (fresh_project / "scoring_drafts" / "drafts.json").write_text("{}", encoding="utf-8")
     prepare(fresh_project, reassign=True, log=lambda *a: None)
+    # the drafts belonged to the old codes, so they are set aside, not opened on other images
+    assert not (fresh_project / "scoring_drafts" / "drafts.json").exists()
+    assert list((fresh_project / "scoring_drafts").glob("superseded_*.json"))
+
+
+def test_image_addresses_name_the_project_and_the_build(fresh_project, tmp_path):
+    """Images are cached for an hour and every project scores on the same port, so the same code in
+    another project, or after a rebuild, must get a different address."""
+    import shutil
+    other = tmp_path / "other"
+    shutil.copytree(fresh_project, other)
+    versions = []
+    for project in (fresh_project, other):
+        srv = make_server(project, port=0)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        port = srv.server_address[1]
+        v = json.loads(request(port, "GET", "/api/worm/W0001")[1])["img_v"]
+        assert request(port, "GET", f"/img/W0001/mip.png?v={v}")[0] == 200
+        versions.append(v)
+        srv.shutdown()
+        srv.server_close()
+    assert versions[0] != versions[1]
+    srv = make_server(fresh_project, port=0)
+    meta = fresh_project / "blind" / "W0001" / "meta.json"
+    meta.write_text(meta.read_text())        # a rebuild writes meta.json again
+    import os
+    os.utime(meta, ns=(meta.stat().st_atime_ns, meta.stat().st_mtime_ns + 10**9))
+    assert srv.project.image_version("W0001") != versions[0]
+    srv.server_close()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows file locks")
+def test_a_results_file_open_in_excel_stops_the_save_and_says_why(app):
+    """Excel locks a CSV it shows. Nothing is saved, and the page is told which file to close."""
+    import ctypes
+    from ctypes import wintypes
+    project, port = app
+    score = {"usable": "no", "unusable_reason": "out of focus", "flag_answers": {}}
+    assert request(port, "POST", "/api/worm/W0001/score", score)[0] == 200
+    before = (project / "scoring" / "scores.json").read_bytes()
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.CreateFileW.restype = wintypes.HANDLE
+    handle = k32.CreateFileW(str(project / "scoring" / "scores.csv"), 0x80000000, 0, None, 3, 0x80, None)
+    assert handle != wintypes.HANDLE(-1).value
+    try:
+        status, data = request(port, "POST", "/api/worm/W0002/score", score)
+        assert status == 423 and "scores.csv is open in another program" in json.loads(data)["error"]
+        assert (project / "scoring" / "scores.json").read_bytes() == before
+    finally:
+        k32.CloseHandle(wintypes.HANDLE(handle))
+    assert request(port, "POST", "/api/worm/W0002/score", score)[0] == 200
+    assert len(read_csv(project / "scoring" / "score_history.csv")) == 2
+
+
+def test_an_unexpected_error_is_reported_not_dropped(app):
+    """A dropped connection reads as "lost connection"; the page gets a short message instead,
+    with no path."""
+    project, port = app
+    (project / "blind" / "W0001" / "meta.json").write_text("{broken")
+    status, data = request(port, "GET", "/api/worm/W0001")
+    body = json.loads(data)
+    assert status == 500 and body["error"].startswith("wormscore could not do that")
+    assert str(project) not in body["error"]
