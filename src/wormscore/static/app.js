@@ -219,12 +219,13 @@ async function loadList() {
 function renderList() {
   const nav = $("#list");
   nav.replaceChildren(...st.worms.map(w => {
-    const dot = w.scored && w.has_roi ? "done" : w.scored ? "scored" : "";
-    const said = { done: "scored, cells marked", scored: "scored", "": "not scored" }[dot];
+    // A saved score is what counts, so it gets the tick. Marked cells are said in the label and
+    // counted in the header; an image with no visible cells has nothing to mark.
+    const said = !w.scored ? "not scored" : w.has_roi ? "scored, cells marked" : "scored";
     return h("button", { class: w.code === st.code ? "cur" : "", "aria-current": w.code === st.code ? "true" : null,
       "aria-label": `${w.code}, ${said}` + (w.unanswered_flags ? `, ${w.unanswered_flags} questions to confirm` : ""),
       title: said, onclick: () => openWorm(w.code) },
-      h("span", { class: `dot ${dot}`, "aria-hidden": "true" }), w.code,
+      h("span", { class: w.scored ? "dot done" : "dot", "aria-hidden": "true" }), w.code,
       w.unanswered_flags ? h("span", { class: "flagmark", title: "questions to confirm" }, `${w.unanswered_flags}?`) : null);
   }));
   const n = st.worms.filter(w => w.scored).length;

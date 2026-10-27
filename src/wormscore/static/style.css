@@ -74,9 +74,9 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 }
 #list button:hover { background: var(--raised); }
 #list button.cur { background: var(--raised); outline: 1px solid var(--accent); }
-/* not scored: empty ring; scored: filled dot; scored and cells marked: filled dot with a tick */
+/* not scored: empty ring; scored: filled dot with a tick */
 .dot { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--muted); flex: none; position: relative; }
-.dot.scored, .dot.done { background: var(--accent); border-color: var(--accent); }
+.dot.done { background: var(--accent); border-color: var(--accent); }
 /* the tick is drawn centred on the whole dot, border included */
 .dot.done::after {
   content: ""; position: absolute; inset: -1.5px; background: var(--accent-ink);
