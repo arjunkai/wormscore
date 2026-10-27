@@ -74,8 +74,9 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 }
 #list button:hover { background: var(--raised); }
 #list button.cur { background: var(--raised); outline: 1px solid var(--accent); }
-/* not scored: empty ring; scored: filled dot with a tick */
+/* not scored: empty ring; started, not saved: half-filled; scored: filled dot with a tick */
 .dot { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--muted); flex: none; position: relative; }
+.dot.draft { border-color: var(--accent); background: linear-gradient(90deg, var(--accent) 50%, transparent 50%); }
 .dot.done { background: var(--accent); border-color: var(--accent); }
 /* the tick is drawn centred on the whole dot, border included */
 .dot.done::after {
@@ -124,7 +125,8 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 .hidden { display: none !important; }
 
 fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 10px; padding: 8px 10px 10px; }
-fieldset.missing, .flag.missing { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
+/* the section's own border changes colour, so it keeps the gap around its title */
+fieldset.missing, .flag.missing { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
 legend { color: var(--muted); padding: 0 4px; font-size: var(--text-xs); }
 fieldset label { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; line-height: 1.9; cursor: pointer; max-width: 100%; overflow-wrap: anywhere; }
 fieldset select { display: block; width: 100%; margin-top: 10px; }

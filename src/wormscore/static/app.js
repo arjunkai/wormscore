@@ -221,11 +221,11 @@ function renderList() {
   nav.replaceChildren(...st.worms.map(w => {
     // A saved score is what counts, so it gets the tick. Marked cells are said in the label and
     // counted in the header; an image with no visible cells has nothing to mark.
-    const said = !w.scored ? "not scored" : w.has_roi ? "scored, cells marked" : "scored";
+    const said = w.scored ? (w.has_roi ? "scored, cells marked" : "scored") : w.draft ? "started, not saved" : "not scored";
     return h("button", { class: w.code === st.code ? "cur" : "", "aria-current": w.code === st.code ? "true" : null,
       "aria-label": `${w.code}, ${said}` + (w.unanswered_flags ? `, ${w.unanswered_flags} questions to confirm` : ""),
       title: said, onclick: () => openWorm(w.code) },
-      h("span", { class: w.scored ? "dot done" : "dot", "aria-hidden": "true" }), w.code,
+      h("span", { class: w.scored ? "dot done" : w.draft ? "dot draft" : "dot", "aria-hidden": "true" }), w.code,
       w.unanswered_flags ? h("span", { class: "flagmark", title: "questions to confirm" }, `${w.unanswered_flags}?`) : null);
   }));
   const n = st.worms.filter(w => w.scored).length;
@@ -236,14 +236,15 @@ function renderList() {
 }
 
 async function openWorm(code) {
-  if (st.formDirty || st.roisDirty) {
-    if (!confirm("You have unsaved changes on this image. Leave anyway?")) return;
-    if (st.formDirty) {
-      clearTimeout(st.draftTimer);
-      api(`/api/worm/${st.code}/draft`, { discard: true }).catch(() => {});
-    }
-    st.formDirty = st.roisDirty = false;
+  // Outlines are only kept once saved, so leaving them asks first. Unsaved answers stay as a
+  // draft (never a score) and come back when this image is opened again.
+  if (st.roisDirty && !confirm("The outlines you drew on this image are not saved. Leave anyway?")) return;
+  if (st.formDirty) {
+    saveDraft();
+    const w = st.worms.find(x => x.code === st.code);
+    if (w) w.draft = true;
   }
+  st.formDirty = st.roisDirty = false;
   // Clicking codes quickly starts several loads; only the latest may fill the page.
   const seq = (st.openSeq = (st.openSeq || 0) + 1);
   // Saving waits until this image is on screen, so a held Ctrl+Enter can never save a score
@@ -272,6 +273,7 @@ async function openWorm(code) {
   syncButtons();
   fillForm();
   renderFlags();
+  markMissing([]);       // outlines from pressing Save on the last image do not carry over
   if (r.draft) applyDraft(r.draft);
   renderSuggestions();
   renderRoiList();

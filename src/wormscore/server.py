@@ -315,7 +315,7 @@ def make_handler(project):
                                        "marker": project.cfg["marker"]["label"], "scoring": sc,
                                        "min_scored": project.cfg["unblinding"]["min_scored_worms"]})
             if parts == ["api", "worms"]:
-                scores, rois = project.load("scores.json", {}), project.load("rois.json", {})
+                scores, rois, drafts = project.load("scores.json", {}), project.load("rois.json", {}), project.drafts()
                 worms = []
                 for d in sorted(project.blind.iterdir()):
                     if not (d / "meta.json").exists():
@@ -323,6 +323,7 @@ def make_handler(project):
                     meta = json.loads((d / "meta.json").read_text())
                     answered = scores.get(d.name, {}).get("flag_answers", {})
                     worms.append({"code": d.name, "scored": d.name in scores, "has_roi": bool(rois.get(d.name)),
+                                  "draft": d.name in drafts,
                                   "unanswered_flags": len([f for f in meta["flags"] if f["id"] not in answered])})
                 return self.send_json({"worms": worms})
             if parts[:2] == ["api", "worm"] and len(parts) == 3 and CODE.match(parts[2]) \

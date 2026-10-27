@@ -133,7 +133,10 @@ def test_unsaved_answers_are_kept_as_a_draft_until_saved(app):
     assert request(port, "POST", "/api/worm/W0002/draft", {"values": {"usable": "no"}}, h)[0] == 200
     assert request(port, "POST", "/api/worm/W0002/draft", {"discard": True}, h)[0] == 200
     assert json.loads(request(port, "GET", "/api/worm/W0002", headers=h)[1])["draft"] is None
-    score = {"usable": "no", "unusable_reason": "out of focus", "flag_answers": {}}
+    # the list shows which images were started but not saved
+    listed = {w["code"]: w["draft"] for w in json.loads(request(port, "GET", "/api/worms", headers=h)[1])["worms"]}
+    assert listed["W0001"] is True and listed["W0002"] is False
+    score ={"usable": "no", "unusable_reason": "out of focus", "flag_answers": {}}
     assert request(port, "POST", "/api/worm/W0001/score", score, h)[0] == 200
     assert json.loads(request(port, "GET", "/api/worm/W0001", headers=h)[1])["draft"] is None
 

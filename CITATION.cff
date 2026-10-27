@@ -4,7 +4,7 @@ title: "wormscore: blind scoring and fluorescence measurement of neurons in conf
 authors:
   - family-names: Bansal
     given-names: Arjun
-version: 0.13.3
+version: 0.13.4
 date-released: 2026-10-27
 doi: 10.5281/zenodo.23520610
 license: MIT
