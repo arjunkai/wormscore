@@ -1,4 +1,5 @@
 :root {
+  /* the same names and values as the home screen's dark theme (home.css); a test keeps them in step */
   --bg: #121417;
   --panel: #1a1d21;
   --raised: #23272d;
@@ -6,9 +7,15 @@
   --line: #31363d;
   --text: #e4e6e9;
   --muted: #959ca6;
+  --faint: #8a919b;
   --accent: #4fbf7a;
   --accent-ink: #0d1f14;
+  --accent-soft: rgba(79, 191, 122, .14);
   --warn: #e0a84a;
+  --warn-soft: rgba(224, 168, 74, .14);
+  --danger: #ff6b6b;
+  --run: #5aa9ff;
+  --run-soft: rgba(90, 169, 255, .14);
   /* region colours, also read by app.js for the outlines drawn on the image */
   --l1: #ff6b6b;
   --l2: #5aa9ff;
@@ -18,14 +25,17 @@
   --suggest: #ffd84a;      /* suggested spots */
   --focus: #5aa9ff;        /* the same focus ring as the home screen */
   --shadow: 0 10px 30px rgba(0, 0, 0, .45);
-  --radius: 6px;           /* controls */
-  --radius-lg: 8px;        /* notices */
+  --radius-sm: 6px;        /* small buttons, code */
+  --radius: 6px;           /* controls (the scoring page is denser than the home screen) */
+  --radius-lg: 8px;        /* notices and dialogs */
   /* type scale, shared with the home screen */
   --text-xs: 12px;
   --text-sm: 13px;
   --text-md: 14px;
   --text-lg: 16px;
+  --text-xl: 18px;
   --text-2xl: 22px;
+  --text-3xl: 26px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -55,7 +65,7 @@ h1 .sub { color: var(--muted); font-weight: 400; margin-left: 6px; }
 .progress { display: flex; align-items: center; gap: 10px; color: var(--muted); min-width: 0; }
 .progress .bar { width: 180px; flex: none; height: 6px; background: var(--raised); border-radius: 3px; overflow: hidden; }
 #progText { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#progFill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+#progFill { height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform .2s; }
 .defs { margin-left: auto; position: relative; flex: none; }
 .defs summary { cursor: pointer; color: var(--muted); }
 .defs summary:hover { color: var(--text); }
@@ -154,6 +164,20 @@ textarea { width: 100%; resize: vertical; }
 }
 .primary:hover:not(:disabled) { filter: brightness(1.08); }
 .primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn { padding: 7px 14px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--raised); cursor: pointer; }
+.btn:hover { background: var(--hover); }
+/* soft red, as on the home screen: only for what cannot be undone */
+.btn.danger { color: var(--danger); font-weight: 600;
+  background: color-mix(in srgb, var(--danger) 14%, transparent); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.btn.danger:hover { background: color-mix(in srgb, var(--danger) 22%, transparent); }
+
+/* the page's own dialog, in the home screen's style */
+.modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(0, 0, 0, .5); }
+.dialog { width: min(440px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow); padding: 20px 22px 16px; }
+.dialog h2 { margin: 0 0 8px; font-size: var(--text-lg); }
+.dialog p { margin: 0; color: var(--muted); }
+.dlg-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
 #saveMsg, #roiMsg { color: var(--muted); font-size: var(--text-xs); }
 #saveMsg.err, #roiMsg.err { color: var(--l1); }
 

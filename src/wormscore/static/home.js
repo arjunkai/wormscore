@@ -277,7 +277,7 @@ function activity(job) {
   return h("section", { class: "activity" + cls, "aria-live": "polite" },
     h("div", { class: "a-head" }, h("span", { class: "a-title" }, job.running ? job.title : `Last step: ${job.title}`),
       h("span", { class: "a-meta" }, meta)),
-    h("div", { class: "bar" + (job.running && pct === null ? " indet" : "") }, h("div", { style: `width:${width}%` })),
+    h("div", { class: "bar" + (job.running && pct === null ? " indet" : "") }, h("div", { style: `transform:scaleX(${width / 100})` })),
     h("div", { class: "a-last", title: last }, last),
     h("button", { class: "btn subtle log-toggle", "data-k": "log", onclick: () => { st.showLog = !st.showLog; render(); } },
       st.showLog ? "Hide log" : "Show log"),
@@ -337,7 +337,7 @@ function renderUpdate(d) {
     const pct = u.frac !== null && u.frac !== undefined ? Math.round(100 * u.frac) : null;
     kids = [head(u.phase === "restarting" ? "Restarting wormscore" : `Updating to ${u.latest}`, versions),
       h("div", { class: "bar" + (u.phase === "downloading" && pct === null ? " indet" : "") },
-        h("div", { style: `width:${u.phase === "restarting" ? 100 : pct ?? 0}%` })),
+        h("div", { style: `transform:scaleX(${(u.phase === "restarting" ? 100 : pct ?? 0) / 100})` })),
       h("p", { class: "ud-msg" }, st.closing ? "wormscore is restarting. This window reconnects by itself in a few seconds."
         : u.message || "Starting the download...")];
     // The new version answers on the same address, and refresh() reloads this page when it does.
@@ -410,12 +410,28 @@ function citeBlock(v) {
   let fmt = "APA";
   const text = h("pre", { class: "cite-text", tabindex: "0", "aria-label": "Citation" });
   const copy = h("button", { class: "ghost icon cite-copy", title: "Copy", "aria-label": "Copy citation" }, icon("copy", 16));
-  const tabs = Object.keys(CITATIONS).map(f => h("button", { role: "tab", class: "cite-tab", onclick: () => show(f) }, f));
-  const show = f => {
+  // Tabs as the ARIA pattern expects: one Tab stop (the selected tab), arrow keys move between them.
+  const tabs = Object.keys(CITATIONS).map(f => h("button", { role: "tab", class: "cite-tab", id: `cite-tab-${f}`,
+    "aria-controls": "cite-panel", onclick: () => show(f) }, f));
+  const panel = h("div", { class: "cite-box", role: "tabpanel", id: "cite-panel" }, text, copy);
+  const show = (f, focus = false) => {
     fmt = f;
     text.textContent = CITATIONS[f](v);
     text.classList.toggle("mono", f === "BibTeX");
-    tabs.forEach(t => t.setAttribute("aria-selected", String(t.textContent === f)));
+    panel.setAttribute("aria-labelledby", `cite-tab-${f}`);
+    for (const t of tabs) {
+      const on = t.textContent === f;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      if (on && focus) t.focus();
+    }
+  };
+  const onKey = e => {
+    const names = Object.keys(CITATIONS), i = names.indexOf(fmt);
+    const to = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: names.length - 1 }[e.key];
+    if (to === undefined) return;
+    e.preventDefault();
+    show(names[(to + names.length) % names.length], true);
   };
   copy.onclick = async () => {
     try { await navigator.clipboard.writeText(CITATIONS[fmt](v)); }
@@ -425,8 +441,8 @@ function citeBlock(v) {
     setTimeout(() => { copy.replaceChildren(icon("copy", 16)); copy.setAttribute("aria-label", "Copy citation"); }, 1500);
   };
   show(fmt);
-  return h("div", { class: "cite" }, h("div", { class: "cite-tabs", role: "tablist", "aria-label": "Citation format" }, tabs),
-    h("div", { class: "cite-box" }, text, copy));
+  return h("div", { class: "cite" },
+    h("div", { class: "cite-tabs", role: "tablist", "aria-label": "Citation format", onkeydown: onKey }, tabs), panel);
 }
 
 async function openSettings() {

@@ -230,15 +230,39 @@ function renderList() {
   }));
   const n = st.worms.filter(w => w.scored).length;
   const marked = st.worms.filter(w => w.scored && w.has_roi).length;
-  $("#progFill").style.width = `${(100 * n) / Math.max(st.worms.length, 1)}%`;
+  $("#progFill").style.transform = `scaleX(${n / Math.max(st.worms.length, 1)})`;
   $("#progText").textContent = `${n} / ${st.worms.length} scored, ${marked} with cells marked` +
     (n < st.cfg.min_scored ? ` (at least ${st.cfg.min_scored} before unblinding)` : "");
+}
+
+// Asks before unsaved outlines are left behind, in the app's own dialog. Stay has the focus, so one
+// Enter press never throws outlines away; Escape stays too. Resolves true to leave.
+function confirmLeave() {
+  const m = $("#leaveDlg"), stay = $("#leaveStay"), go = $("#leaveGo"), opener = document.activeElement;
+  return new Promise(resolve => {
+    const done = leave => {
+      m.classList.add("hidden");
+      st.dialogOpen = false;
+      m.onkeydown = stay.onclick = go.onclick = null;
+      if (!leave) opener?.focus?.();
+      resolve(leave);
+    };
+    m.onkeydown = e => {
+      if (e.key === "Escape") { e.preventDefault(); done(false); }
+      else if (e.key === "Tab") { e.preventDefault(); (document.activeElement === stay ? go : stay).focus(); }
+    };
+    stay.onclick = () => done(false);
+    go.onclick = () => done(true);
+    st.dialogOpen = true;
+    m.classList.remove("hidden");
+    stay.focus();
+  });
 }
 
 async function openWorm(code) {
   // Outlines are only kept once saved, so leaving them asks first. Unsaved answers stay as a
   // draft (never a score) and come back when this image is opened again.
-  if (st.roisDirty && !confirm("The outlines you drew on this image are not saved. Leave anyway?")) return;
+  if (st.roisDirty && !(await confirmLeave())) return;
   if (st.formDirty) {
     saveDraft();
     const w = st.worms.find(x => x.code === st.code);
@@ -787,6 +811,7 @@ $("#bfToggle").onchange = e => { st.bf = e.target.checked; draw(); };
 $("#sugToggle").onchange = draw;
 
 document.addEventListener("keydown", e => {
+  if (st.dialogOpen) return;     // the dialog handles its own keys; no shortcut acts behind it
   // Ctrl+Enter (Cmd+Enter on a Mac) saves the score and opens the next unscored image, from anywhere.
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && st.meta && st.tab === "score") {
     e.preventDefault();
@@ -815,7 +840,11 @@ document.addEventListener("keydown", e => {
   } else if (k === "escape") { st.drawing = null; draw(); }
 });
 
-window.addEventListener("resize", draw);
+// Resizing fires many events a second; draw at most once per frame.
+window.addEventListener("resize", () => {
+  if (st.resizeFrame) return;
+  st.resizeFrame = requestAnimationFrame(() => { st.resizeFrame = 0; draw(); });
+});
 window.addEventListener("beforeunload", e => {
   if (st.formDirty || st.roisDirty) e.preventDefault();
 });

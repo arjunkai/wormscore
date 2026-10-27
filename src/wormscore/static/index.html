@@ -107,6 +107,16 @@
     </div>
   </aside>
 </main>
+<div id="leaveDlg" class="modal hidden">
+  <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="leaveTitle" aria-describedby="leaveText">
+    <h2 id="leaveTitle">Leave without saving the outlines?</h2>
+    <p id="leaveText">The outlines you drew on this image are not saved. Your score is not affected.</p>
+    <div class="dlg-foot">
+      <button type="button" id="leaveStay" class="btn">Stay</button>
+      <button type="button" id="leaveGo" class="btn danger">Leave without saving</button>
+    </div>
+  </div>
+</div>
 <script src="/static/app.js"></script>
 </body>
 </html>
