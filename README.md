@@ -1,14 +1,20 @@
-# wormscore
+<p align="center">
+  <img src="https://raw.githubusercontent.com/arjunkai/wormscore/main/src/wormscore/static/icon-512.png" alt="wormscore logo: a crawling C. elegans with one labelled neuron" width="112">
+</p>
 
-<p>
+<h1 align="center">wormscore</h1>
+
+<p align="center">
   <a href="https://github.com/arjunkai/wormscore/releases/latest/download/wormscore-windows.zip"><img alt="Download for Windows" src="https://img.shields.io/badge/Download_for-Windows-0078D4?style=for-the-badge&logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMy40IDkuOCAydjkuNUgwek0xMC45IDEuOSAyNCAwdjExLjVIMTAuOXpNMCAxMi42aDkuOHY5LjVMMCAyMC42ek0xMC45IDEyLjZIMjRWMjRsLTEzLjEtMS45eiIvPjwvc3ZnPg=="></a>
   <a href="https://github.com/arjunkai/wormscore/releases/latest/download/wormscore-mac.zip"><img alt="Download for macOS" src="https://img.shields.io/badge/Download_for-macOS-D1D1D6?style=for-the-badge&logo=apple&logoColor=white"></a>
 </p>
 
-[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23520610-blue)](https://doi.org/10.5281/zenodo.23520610)
-[![PyPI](https://img.shields.io/pypi/v/wormscore?label=PyPI)](https://pypi.org/project/wormscore/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/arjunkai/wormscore/blob/main/LICENSE)
-[![Tests](https://github.com/arjunkai/wormscore/actions/workflows/tests.yml/badge.svg)](https://github.com/arjunkai/wormscore/actions/workflows/tests.yml)
+<p align="center">
+  <a href="https://doi.org/10.5281/zenodo.23520610"><img alt="DOI" src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23520610-blue"></a>
+  <a href="https://pypi.org/project/wormscore/"><img alt="PyPI" src="https://img.shields.io/pypi/v/wormscore?label=PyPI"></a>
+  <a href="https://github.com/arjunkai/wormscore/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
+  <a href="https://github.com/arjunkai/wormscore/actions/workflows/tests.yml"><img alt="Tests" src="https://github.com/arjunkai/wormscore/actions/workflows/tests.yml/badge.svg"></a>
+</p>
 
 Blind scoring of fluorescent neurons in *C. elegans*, with measurement and genetics statistics.
 Built for scoring reporter neurons (normal / dim / missing) in confocal z-stacks. Nothing is tied
