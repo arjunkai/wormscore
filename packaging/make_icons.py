@@ -1,50 +1,77 @@
-"""Draw the wormscore logo (the same shape as src/wormscore/static/icon.svg) at high resolution
-and write every icon size the apps need. Run from the repository root:  python packaging/make_icons.py
+"""Draw the wormscore logo and write every icon file from one drawing. Run from the repository
+root:  python packaging/make_icons.py
 
-Outputs: packaging/wormscore.ico (Windows exe, 16 to 256 px), packaging/icon-1024.png (macOS app),
-src/wormscore/static/icon-192.png and icon-512.png (taskbar and app-window icons).
+The logo: a C. elegans crawling as it does on a plate (a sine wave, thickest mid-body, a pointed
+tail and a blunt nose) with one labelled neuron lit in the head. Two shapes on the tile, so it
+still reads at 16 px.
+
+Outputs: src/wormscore/static/icon.svg (pages), packaging/wormscore.ico and
+src/wormscore/static/wormscore.ico (Windows exe and window title bars, 16 to 256 px),
+packaging/icon-1024.png (macOS app), src/wormscore/static/icon-192.png and icon-512.png.
 """
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
 ROOT = Path(__file__).resolve().parent.parent
+STATIC = ROOT / "src" / "wormscore" / "static"
 BIG = 2048                      # drawn large, then scaled down, for smooth edges
-S = BIG / 32                    # the SVG is drawn on a 32 x 32 grid
+S = BIG / 32                    # everything is laid out on a 32 x 32 grid
+TILE, BODY, CELL = "#121417", "#4fbf7a", "#d9fbe4"
+NEURON_AT = 0.72                # along the body, tail = 0, nose = 1
 
 
-def cubic(p0, p1, p2, p3, n=400):
-    return [tuple((1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t ** 2 * c + t ** 3 * d
-                  for a, b, c, d in zip(p0, p1, p2, p3)) for t in (i / n for i in range(n + 1))]
+def centre(t):
+    """Centre line: tail at the lower left, nose at the right, one and three quarter waves."""
+    return 4.5 + 23 * t, 20.5 - 8.5 * t - 3 * math.sin(2 * math.pi * 1.75 * t - 0.2)
+
+
+def half_width(t):
+    """Thickest mid-body, narrowing to a point at the tail and to a blunt nose."""
+    end = 0.3 + 0.75 * t
+    return end + (2 - end) * math.sin(math.pi * min(t, 0.999)) ** 0.55
+
+
+def discs(n):
+    """The body as overlapping discs along the centre line (the union is a smooth tapered worm)."""
+    return [(*centre(i / n), half_width(i / n)) for i in range(n + 1)]
+
+
+def neuron():
+    x, y = centre(NEURON_AT)
+    return x, y, half_width(NEURON_AT) * 0.72      # inside the body, clear of its edge
 
 
 def logo():
     im = Image.new("RGBA", (BIG, BIG), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
-    d.rounded_rectangle([0, 0, BIG - 1, BIG - 1], radius=7 * S, fill="#121417")
-    # path "M6 22 c4-10 8 2 12-6 s6-6 8-4", in absolute points
-    pts = cubic((6, 22), (10, 12), (14, 24), (18, 16)) + cubic((18, 16), (22, 8), (24, 10), (26, 12))[1:]
-    pts = [(x * S, y * S) for x, y in pts]
-    r = 1.5 * S                                          # stroke width 3 on the 32 grid
-    # A round-capped stroke drawn as overlapping discs along the curve: smooth edges at any size.
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
-        steps = max(1, int(((x1 - x0) ** 2 + (y1 - y0) ** 2) ** .5 // 2))
-        for k in range(steps + 1):
-            x, y = x0 + (x1 - x0) * k / steps, y0 + (y1 - y0) * k / steps
-            d.ellipse([x - r, y - r, x + r, y + r], fill="#4fbf7a")
-    d.ellipse([15 * S, 13 * S, 21 * S, 19 * S], fill="#b8f5c9")
+    d.rounded_rectangle([0, 0, BIG - 1, BIG - 1], radius=7 * S, fill=TILE)
+    for x, y, r in discs(1600):
+        d.ellipse([(x - r) * S, (y - r) * S, (x + r) * S, (y + r) * S], fill=BODY)
+    x, y, r = neuron()
+    d.ellipse([(x - r) * S, (y - r) * S, (x + r) * S, (y + r) * S], fill=CELL)
     return im
+
+
+def svg():
+    body = "".join(f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{r:.2f}"/>' for x, y, r in discs(220))
+    x, y, r = neuron()
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+            f'<rect width="32" height="32" rx="7" fill="{TILE}"/><g fill="{BODY}">{body}</g>'
+            f'<circle cx="{x:.2f}" cy="{y:.2f}" r="{r:.2f}" fill="{CELL}"/></svg>\n')
 
 
 def main():
     big = logo()
     sized = {n: big.resize((n, n), Image.LANCZOS) for n in (16, 20, 24, 32, 40, 48, 64, 128, 192, 256, 512, 1024)}
-    sized[256].save(ROOT / "packaging" / "wormscore.ico",
-                    sizes=[(n, n) for n in (16, 20, 24, 32, 40, 48, 64, 128, 256)],
-                    append_images=[sized[n] for n in (16, 20, 24, 32, 40, 48, 64, 128)])
+    ico = [(n, n) for n in (16, 20, 24, 32, 40, 48, 64, 128, 256)]
+    for path in (ROOT / "packaging" / "wormscore.ico", STATIC / "wormscore.ico"):
+        sized[256].save(path, sizes=ico, append_images=[sized[n] for n in (16, 20, 24, 32, 40, 48, 64, 128)])
     sized[1024].save(ROOT / "packaging" / "icon-1024.png", optimize=True)
     for n in (192, 512):
-        sized[n].save(ROOT / "src" / "wormscore" / "static" / f"icon-{n}.png", optimize=True)
+        sized[n].save(STATIC / f"icon-{n}.png", optimize=True)
+    (STATIC / "icon.svg").write_text(svg(), encoding="utf-8")
     print("icons written")
 
 
