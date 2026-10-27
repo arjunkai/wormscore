@@ -123,6 +123,11 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: var(--text-
   padding: 1px 6px; border-radius: var(--radius-sm); }
 .settings .check { color: var(--text); }
 .settings .fine { margin: 8px 0 0; font-size: var(--text-sm); color: var(--muted); }
+.settings h4 { margin: 0 0 10px; font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.settings h4 ~ h4 { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.settings .s-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
+.settings .s-row .fine { margin: 0; }
+.settings .s-row .btn { flex: none; color: var(--text); }
 
 /* ---------------------------------------------------------------- layout */
 .layout { flex: 1; display: grid; grid-template-columns: 290px 1fr; min-height: 0; }

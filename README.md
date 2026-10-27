@@ -5,7 +5,7 @@
   <a href="https://github.com/arjunkai/wormscore/releases/latest/download/wormscore-mac.zip"><img alt="Download for macOS" src="https://img.shields.io/badge/Download_for-macOS-D1D1D6?style=for-the-badge&logo=apple&logoColor=white"></a>
 </p>
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23520610.svg)](https://doi.org/10.5281/zenodo.23520610)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23520610-blue)](https://doi.org/10.5281/zenodo.23520610)
 [![PyPI](https://img.shields.io/pypi/v/wormscore?label=PyPI)](https://pypi.org/project/wormscore/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/arjunkai/wormscore/blob/main/LICENSE)
 [![Tests](https://github.com/arjunkai/wormscore/actions/workflows/tests.yml/badge.svg)](https://github.com/arjunkai/wormscore/actions/workflows/tests.yml)

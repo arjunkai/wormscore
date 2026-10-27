@@ -68,7 +68,7 @@ function toast(msg, kind = "error", stay = kind === "error") {
   t.setAttribute("role", kind === "error" ? "alert" : "status");
   t.replaceChildren(h("span", {}, msg), stay ? h("button", {
     class: "ghost icon t-x", title: "Close", "aria-label": "Close message", onclick: () => (t.hidden = true),
-  }, icon("close", 14)) : null);
+  }, icon("close", 14)) : "");     // replaceChildren would print a null as the word "null"
   t.hidden = false;
   clearTimeout(toast.t);
   if (!stay) toast.t = setTimeout(() => (t.hidden = true), 6000);
@@ -122,7 +122,8 @@ function ask(title, body, choices, cancel = "Cancel") {
     document.addEventListener("keydown", esc);
     m.hidden = false;
     // A choice that cannot be undone never gets the focus: one Enter press must not pick it.
-    (choices.some(c => c.danger) ? $("#mCancel") : box.querySelector("button"))?.focus();
+    (choices.some(c => c.danger) ? $("#mCancel")
+      : box.querySelector("button") || $("#mBody").querySelector("input, button") || $("#mCancel"))?.focus();
   });
 }
 
@@ -377,33 +378,47 @@ function renderUpdate(d) {
   (box.querySelector("button.primary:not(:disabled)") || box.querySelector("button"))?.focus();
 }
 
-async function copyText(text) {
-  try { await navigator.clipboard.writeText(text); toast("Copied. Paste it in a terminal.", "ok"); }
-  catch { toast(`Run this in a terminal: ${text}`, "ok", true); }
+async function copyText(text, done = "Copied. Paste it in a terminal.", failed = `Run this in a terminal: ${text}`) {
+  try { await navigator.clipboard.writeText(text); toast(done, "ok"); }
+  catch { toast(failed, "ok", true); }
 }
+
+// Keep the year and DOI in step with CITATION.cff. The DOI covers all versions; the version
+// number says which one was used.
+const citation = v => `Bansal, A. (2026). wormscore (Version ${v}) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23520610`;
 
 async function openSettings() {
   const u = st.data.update;
   const status = u.checking ? "Checking..." : u.error ? u.error
     : u.newer ? `wormscore ${u.latest} is available. You have ${st.data.version}.`
     : u.latest ? `You have the latest version (${st.data.version}).` : "Not checked yet.";
+  // Buttons sit next to what they act on; picking one closes Settings and acts on it below.
+  let pick = null;
+  const choose = v => () => { pick = v; $("#mCancel").click(); };
+  const cite = citation(st.data.version);
   const box = h("div", { class: "settings" },
+    h("h4", {}, "Updates"),
     h("label", { class: "check" },
       h("input", { type: "checkbox", checked: u.enabled, onchange: e => act("/api/settings", { update_check: e.target.checked }) }),
       "Check for updates when wormscore starts"),
     h("p", { class: "fine" }, "The check asks GitHub for the latest release. Nothing about you or your projects is sent."),
-    h("p", { class: "fine" }, status),
-    u.kind === "pip" ? h("p", { class: "fine" }, "Installed with Python. Update with: ", h("code", {}, u.pip_command)) : null);
-  const choices = [{ value: "check", label: "Check now" }];
-  if (u.previous) choices.push({ value: "rollback", label: `Go back to ${u.previous}`, danger: true,
-    desc: `Closes wormscore, swaps the kept copy of ${u.previous} back in and reopens it. ${st.data.version} is kept in its place.` });
-  const pick = await ask("Settings", box, choices, "Close");
+    h("div", { class: "s-row" }, h("span", { class: "fine" }, status),
+      h("button", { class: "btn", disabled: u.checking, onclick: choose("check") }, "Check now")),
+    u.kind === "pip" ? h("p", { class: "fine" }, "Installed with Python. Update with: ", h("code", {}, u.pip_command)) : null,
+    u.previous ? h("div", { class: "s-row" }, h("span", { class: "fine" }, `${u.previous} is kept in case you need it.`),
+      h("button", { class: "btn", onclick: choose("rollback") }, `Go back to ${u.previous}`)) : null,
+    h("h4", {}, "About"),
+    h("p", { class: "fine" }, `wormscore ${st.data.version}. Free and open source under the MIT license, with no warranty.`),
+    h("div", { class: "s-row" }, h("span", { class: "fine" }, "Cite the version you scored with. log.md records it."),
+      h("button", { class: "btn", onclick: () => copyText(cite, "Citation copied.", `Citation: ${cite}`) }, "Copy citation")));
+  await ask("Settings", box, [], "Close");
   if (pick === "check") {
     await act("/api/update", { action: "check" });
     return openSettings();
   }
   if (pick === "rollback") {
-    const go = await ask(`Go back to ${u.previous}?`, "wormscore closes and reopens as the older version. Projects and scores are not changed.",
+    const go = await ask(`Go back to ${u.previous}?`,
+      `wormscore closes and reopens as ${u.previous}. ${st.data.version} is kept, and projects and scores are not changed.`,
       [{ value: true, label: `Go back to ${u.previous}` }]);
     if (go) act("/api/update", { action: "rollback" });
   }
