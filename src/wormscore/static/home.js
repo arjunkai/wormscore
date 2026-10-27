@@ -430,18 +430,38 @@ function citeBlock(v) {
 
 async function openSettings() {
   const u = st.data.update, v = st.data.version;
-  const status = u.checking ? "Checking..." : u.error ? u.error
-    : u.newer ? `${u.latest} is available.` : u.latest ? "You have the latest version." : "Not checked yet.";
+  const statusText = x => x.checking ? "Checking..." : x.error ? x.error
+    : x.newer ? `${x.latest} is available.` : x.latest ? "You have the latest version." : "Not checked yet.";
   // Buttons sit next to what they act on; picking one closes Settings and acts on it below.
   let pick = null;
   const choose = c => () => { pick = c; $("#mCancel").click(); };
+  // Check now works inside Settings. If it finds a newer version, Settings closes and the update
+  // dialog opens by itself; otherwise the status line just changes.
+  const status = h("span", {}, statusText(u));
+  const checkNow = async () => {
+    verBtn.disabled = true;
+    verBtn.textContent = status.textContent = "Checking...";
+    try { await api("/api/update", { action: "check" }); } catch (e) { toast(e.message); }
+    const now = await api("/api/state").catch(() => null);
+    if (now?.update?.newer) {        // close first, so the update dialog keeps the focus
+      pick = "found";
+      return $("#mCancel").click();
+    }
+    await refresh(true);
+    status.textContent = statusText(st.data.update);
+    verBtn.disabled = false;
+    verBtn.textContent = "Check now";
+  };
+  const verBtn = u.newer
+    ? h("button", { class: "primary", onclick: choose("see") }, "See update")
+    : h("button", { class: "btn", disabled: u.checking, onclick: checkNow }, "Check now");
   const box = h("div", { class: "settings" },
     h("h4", {}, "Updates"),
     h("div", { class: "s-card" },
       sRow("Check for updates at start", "Asks GitHub for the latest version. Nothing about you or your projects is sent.",
         h("input", { type: "checkbox", role: "switch", class: "switch", id: "updSwitch", checked: u.enabled,
           onchange: e => act("/api/settings", { update_check: e.target.checked }) }), "updSwitch"),
-      sRow(`Version ${v}`, status, h("button", { class: "btn", disabled: u.checking, onclick: choose("check") }, "Check now")),
+      sRow(`Version ${v}`, status, verBtn),
       u.kind === "pip" ? sRow("Installed with Python", h("span", {}, "Update with ", h("code", {}, u.pip_command)), null) : null,
       u.previous ? sRow("Previous version", `${u.previous} is still on this computer. Projects and scores are not affected.`,
         h("button", { class: "btn", onclick: choose("rollback") }, `Go back to ${u.previous}`)) : null),
@@ -453,9 +473,11 @@ async function openSettings() {
           h("div", { class: "s-desc" }, "Cite the version you scored with. log.md records it.")),
         citeBlock(v))));
   await ask("Settings", box, [], "Close");
-  if (pick === "check") {
-    await act("/api/update", { action: "check" });
-    return openSettings();
+  if (pick === "found") return refresh(true);      // the update dialog opens from the new state
+  if (pick === "see") {
+    st.updOpen = true;
+    st.updKey = "";
+    return render();
   }
   if (pick === "rollback") {
     const go = await ask(`Go back to ${u.previous}?`,
