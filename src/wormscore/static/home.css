@@ -121,13 +121,42 @@ button:focus-visible, a:focus-visible, input:focus-visible, [tabindex]:focus-vis
 .upd-dialog .bar { margin-top: 18px; }
 code { font-family: "Cascadia Mono", Consolas, monospace; font-size: var(--text-xs); background: var(--raised);
   padding: 1px 6px; border-radius: var(--radius-sm); }
-.settings .check { color: var(--text); }
-.settings .fine { margin: 8px 0 0; font-size: var(--text-sm); color: var(--muted); }
-.settings h4 { margin: 0 0 10px; font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.settings h4 ~ h4 { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
-.settings .s-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; }
-.settings .s-row .fine { margin: 0; }
-.settings .s-row .btn { flex: none; color: var(--text); }
+/* settings: grouped cards of rows (title and description left, control right) */
+.settings { white-space: normal; }
+.settings h4 { margin: 14px 0 8px; font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.settings h4 ~ h4 { margin-top: 22px; }
+.s-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.s-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; }
+.s-row + .s-row { border-top: 1px solid var(--line); }
+.s-row.s-col { flex-direction: column; align-items: stretch; gap: 10px; }
+.s-text { min-width: 0; }
+.s-title { display: block; color: var(--text); font-size: var(--text-md); font-weight: 600; }
+.s-desc { margin-top: 2px; color: var(--muted); font-size: var(--text-sm); }
+.s-row > .btn { flex: none; color: var(--text); }
+.switch {
+  appearance: none; flex: none; position: relative; width: 36px; height: 20px; margin: 0; border-radius: 999px;
+  background: var(--line); cursor: pointer; transition: background .15s;
+}
+.switch::before {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--text); transition: transform .15s;
+}
+.switch:checked { background: var(--accent); }
+.switch:checked::before { transform: translateX(16px); background: var(--accent-ink); }
+.cite-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.cite-tab {
+  padding: 6px 10px; margin-bottom: -1px; border: 0; border-bottom: 2px solid transparent; background: none;
+  color: var(--muted); font-size: var(--text-sm); cursor: pointer;
+}
+.cite-tab:hover { color: var(--text); }
+.cite-tab[aria-selected="true"] { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+.cite-box { display: flex; align-items: flex-start; gap: 6px; margin-top: 10px; padding: 8px 6px 8px 12px;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+.cite-text { flex: 1; min-width: 0; margin: 0; padding-top: 3px; white-space: pre-wrap; overflow-wrap: anywhere;
+  font: inherit; font-size: var(--text-sm); color: var(--text); user-select: text; }
+.cite-text.mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: var(--text-xs); }
+.cite-copy { flex: none; width: 30px; height: 30px; }
+@media (prefers-reduced-motion: reduce) { .switch, .switch::before { transition: none; } }
 
 /* ---------------------------------------------------------------- layout */
 .layout { flex: 1; display: grid; grid-template-columns: 290px 1fr; min-height: 0; }
@@ -244,6 +273,7 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: var(--text-
 .dialog {
   width: min(560px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg);
   box-shadow: var(--shadow); padding: 20px 22px 16px;
+  max-height: calc(100vh - 32px); overflow-y: auto;   /* a tall dialog scrolls instead of losing its buttons */
 }
 .dialog h3 { margin: 0 0 8px; font-size: var(--text-xl); }
 .m-body { color: var(--muted); font-size: var(--text-md); white-space: pre-wrap; }

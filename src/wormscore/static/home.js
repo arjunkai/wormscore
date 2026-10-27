@@ -23,6 +23,7 @@ const ICONS = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 };
@@ -383,34 +384,74 @@ async function copyText(text, done = "Copied. Paste it in a terminal.", failed =
   catch { toast(failed, "ok", true); }
 }
 
-// Keep the year and DOI in step with CITATION.cff. The DOI covers all versions; the version
-// number says which one was used.
-const citation = v => `Bansal, A. (2026). wormscore (Version ${v}) [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.23520610`;
+// The same two formats GitHub's "Cite this repository" makes from CITATION.cff; keep the title,
+// year and DOI in step with it. The DOI covers all versions; the version number says which one.
+const CITE_TITLE = "wormscore: blind scoring and fluorescence measurement of neurons in confocal z-stacks";
+const CITATIONS = {
+  APA: v => `Bansal, A. (2026). ${CITE_TITLE} (Version ${v}) [Computer software]. https://doi.org/10.5281/zenodo.23520610`,
+  BibTeX: v => `@software{Bansal_wormscore_2026,
+  author = {Bansal, Arjun},
+  doi = {10.5281/zenodo.23520610},
+  title = {{${CITE_TITLE}}},
+  url = {https://github.com/arjunkai/wormscore},
+  version = {${v}},
+  year = {2026}
+}`,
+};
+
+// One settings row: title and a short description on the left, its control on the right.
+const sRow = (title, desc, control, forId) => h("div", { class: "s-row" },
+  h("div", { class: "s-text" }, forId ? h("label", { class: "s-title", for: forId }, title) : h("div", { class: "s-title" }, title),
+    desc ? h("div", { class: "s-desc" }, desc) : null),
+  control);
+
+function citeBlock(v) {
+  let fmt = "APA";
+  const text = h("pre", { class: "cite-text", tabindex: "0", "aria-label": "Citation" });
+  const copy = h("button", { class: "ghost icon cite-copy", title: "Copy", "aria-label": "Copy citation" }, icon("copy", 16));
+  const tabs = Object.keys(CITATIONS).map(f => h("button", { role: "tab", class: "cite-tab", onclick: () => show(f) }, f));
+  const show = f => {
+    fmt = f;
+    text.textContent = CITATIONS[f](v);
+    text.classList.toggle("mono", f === "BibTeX");
+    tabs.forEach(t => t.setAttribute("aria-selected", String(t.textContent === f)));
+  };
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(CITATIONS[fmt](v)); }
+    catch { return toast("Could not copy. Select the citation and press Ctrl+C.", "error"); }
+    copy.replaceChildren(icon("check", 16));
+    copy.setAttribute("aria-label", "Copied");
+    setTimeout(() => { copy.replaceChildren(icon("copy", 16)); copy.setAttribute("aria-label", "Copy citation"); }, 1500);
+  };
+  show(fmt);
+  return h("div", { class: "cite" }, h("div", { class: "cite-tabs", role: "tablist", "aria-label": "Citation format" }, tabs),
+    h("div", { class: "cite-box" }, text, copy));
+}
 
 async function openSettings() {
-  const u = st.data.update;
+  const u = st.data.update, v = st.data.version;
   const status = u.checking ? "Checking..." : u.error ? u.error
-    : u.newer ? `wormscore ${u.latest} is available. You have ${st.data.version}.`
-    : u.latest ? `You have the latest version (${st.data.version}).` : "Not checked yet.";
+    : u.newer ? `${u.latest} is available.` : u.latest ? "You have the latest version." : "Not checked yet.";
   // Buttons sit next to what they act on; picking one closes Settings and acts on it below.
   let pick = null;
-  const choose = v => () => { pick = v; $("#mCancel").click(); };
-  const cite = citation(st.data.version);
+  const choose = c => () => { pick = c; $("#mCancel").click(); };
   const box = h("div", { class: "settings" },
     h("h4", {}, "Updates"),
-    h("label", { class: "check" },
-      h("input", { type: "checkbox", checked: u.enabled, onchange: e => act("/api/settings", { update_check: e.target.checked }) }),
-      "Check for updates when wormscore starts"),
-    h("p", { class: "fine" }, "The check asks GitHub for the latest release. Nothing about you or your projects is sent."),
-    h("div", { class: "s-row" }, h("span", { class: "fine" }, status),
-      h("button", { class: "btn", disabled: u.checking, onclick: choose("check") }, "Check now")),
-    u.kind === "pip" ? h("p", { class: "fine" }, "Installed with Python. Update with: ", h("code", {}, u.pip_command)) : null,
-    u.previous ? h("div", { class: "s-row" }, h("span", { class: "fine" }, `${u.previous} is kept in case you need it.`),
-      h("button", { class: "btn", onclick: choose("rollback") }, `Go back to ${u.previous}`)) : null,
+    h("div", { class: "s-card" },
+      sRow("Check for updates at start", "Asks GitHub for the latest version. Nothing about you or your projects is sent.",
+        h("input", { type: "checkbox", role: "switch", class: "switch", id: "updSwitch", checked: u.enabled,
+          onchange: e => act("/api/settings", { update_check: e.target.checked }) }), "updSwitch"),
+      sRow(`Version ${v}`, status, h("button", { class: "btn", disabled: u.checking, onclick: choose("check") }, "Check now")),
+      u.kind === "pip" ? sRow("Installed with Python", h("span", {}, "Update with ", h("code", {}, u.pip_command)), null) : null,
+      u.previous ? sRow("Previous version", `${u.previous} is still on this computer. Projects and scores are not affected.`,
+        h("button", { class: "btn", onclick: choose("rollback") }, `Go back to ${u.previous}`)) : null),
     h("h4", {}, "About"),
-    h("p", { class: "fine" }, `wormscore ${st.data.version}. Free and open source under the MIT license, with no warranty.`),
-    h("div", { class: "s-row" }, h("span", { class: "fine" }, "Cite the version you scored with. log.md records it."),
-      h("button", { class: "btn", onclick: () => copyText(cite, "Citation copied.", `Citation: ${cite}`) }, "Copy citation")));
+    h("div", { class: "s-card" },
+      sRow("License", "MIT. Free and open source, with no warranty.", null),
+      h("div", { class: "s-row s-col" },
+        h("div", { class: "s-text" }, h("div", { class: "s-title" }, "Cite wormscore"),
+          h("div", { class: "s-desc" }, "Cite the version you scored with. log.md records it.")),
+        citeBlock(v))));
   await ask("Settings", box, [], "Close");
   if (pick === "check") {
     await act("/api/update", { action: "check" });
