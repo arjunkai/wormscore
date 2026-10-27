@@ -61,6 +61,9 @@ body {
   display: flex; flex-direction: column;
 }
 button, input { font: inherit; color: inherit; }
+/* the box itself shows the hand too, not only its label */
+input[type="checkbox"], input[type="radio"] { cursor: pointer; }
+input:disabled { cursor: not-allowed; }
 a { color: inherit; }
 
 /* ---------------------------------------------------------------- top bar */
