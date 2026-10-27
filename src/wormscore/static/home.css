@@ -253,7 +253,12 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: var(--text-
 .choice.danger:hover { border-color: var(--danger); background: var(--hover); }
 .choice b { display: block; }
 .choice span { color: var(--muted); font-size: var(--text-xs); }
-.m-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
+.m-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.m-foot-choices { display: contents; }
+.dialog.sm { width: min(420px, 100%); }
+.dialog.sm .m-choices { display: none; }
+.dialog.sm .m-foot { margin-top: 20px; }
+.btn.danger { color: var(--danger); border-color: var(--danger); font-weight: 600; }
 .toast {
   position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 30; max-width: min(620px, 92vw);
   background: var(--panel); border: 1px solid var(--danger);

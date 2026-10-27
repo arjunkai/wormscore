@@ -100,10 +100,16 @@ function ask(title, body, choices, cancel = "Cancel") {
     if (body instanceof Node) $("#mBody").replaceChildren(body);
     else $("#mBody").textContent = body;
     $("#mCancel").textContent = cancel;
-    const box = $("#mChoices");
-    box.replaceChildren(...choices.map(c => h("button", {
-      class: "choice" + (c.danger ? " danger" : ""), onclick: () => close(c.value),
-    }, h("b", {}, c.label), c.desc ? h("span", {}, c.desc) : null)));
+    // A plain yes/no question gets a small box with its button next to Cancel; choices that
+    // need explaining are listed as cards.
+    const simple = !(body instanceof Node) && choices.every(c => !c.desc);
+    $("#modal .dialog").classList.toggle("sm", simple);
+    const box = simple ? $("#mFootChoices") : $("#mChoices");
+    (simple ? $("#mChoices") : $("#mFootChoices")).replaceChildren();
+    box.replaceChildren(...choices.map(c => simple
+      ? h("button", { class: c.danger ? "btn danger" : "primary", onclick: () => close(c.value) }, c.label)
+      : h("button", { class: "choice" + (c.danger ? " danger" : ""), onclick: () => close(c.value) },
+        h("b", {}, c.label), c.desc ? h("span", {}, c.desc) : null)));
     const m = $("#modal");
     const close = v => {
       m.hidden = true;
@@ -144,8 +150,8 @@ function cardStatus(p) {
 // The X only takes a project off this list; people reasonably fear it deletes the folder.
 async function forgetProject(name, path) {
   const go = await ask(`Remove "${name}" from the list?`,
-    `Only the list in wormscore changes. The folder and every file in it (images, codes, scores) stay on your computer:\n${path}\n\nYou can add it back any time with Open project.`,
-    [{ value: true, label: "Remove from the list", desc: "Nothing is deleted." }]);
+    "The folder stays on your computer. Use Open project to add it back.",
+    [{ value: true, label: "Remove" }]);
   if (go) act("/api/forget", { path });
 }
 
