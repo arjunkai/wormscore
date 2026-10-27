@@ -472,7 +472,9 @@ async function openSettings() {
         h("div", { class: "s-text" }, h("div", { class: "s-title" }, "Cite wormscore"),
           h("div", { class: "s-desc" }, "Cite the version you scored with. log.md records it.")),
         citeBlock(v))));
+  $("#modal .dialog").classList.add("wide");      // rows and the citation wrap less
   await ask("Settings", box, [], "Close");
+  $("#modal .dialog").classList.remove("wide");
   if (pick === "found") return refresh(true);      // the update dialog opens from the new state
   if (pick === "see") {
     st.updOpen = true;

@@ -122,11 +122,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, [tabindex]:focus-vis
 code { font-family: "Cascadia Mono", Consolas, monospace; font-size: var(--text-xs); background: var(--raised);
   padding: 1px 6px; border-radius: var(--radius-sm); }
 /* settings: grouped cards of rows (title and description left, control right) */
-.settings { white-space: normal; }
-.settings h4 { margin: 14px 0 8px; font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.settings h4 ~ h4 { margin-top: 22px; }
+.dialog.wide { width: min(640px, 100%); }
+.settings { white-space: normal; text-wrap: pretty; }   /* pretty: no single word left alone on a line */
+.settings h4 { margin: 10px 0 6px; font-size: var(--text-xs); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.settings h4 ~ h4 { margin-top: 18px; }
 .s-card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
-.s-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; }
+.s-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 14px; }
 .s-row + .s-row { border-top: 1px solid var(--line); }
 .s-row.s-col { flex-direction: column; align-items: stretch; gap: 10px; }
 .s-text { min-width: 0; }
