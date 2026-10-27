@@ -103,12 +103,13 @@ function ask(title, body, choices, cancel = "Cancel") {
     $("#mCancel").textContent = cancel;
     // A plain yes/no question gets a small box with its button next to Cancel; choices that
     // need explaining are listed as cards.
-    const simple = !(body instanceof Node) && choices.every(c => !c.desc);
+    const simple = choices.length > 0 && choices.every(c => !c.desc);
     $("#modal .dialog").classList.toggle("sm", simple);
     const box = simple ? $("#mFootChoices") : $("#mChoices");
     (simple ? $("#mChoices") : $("#mFootChoices")).replaceChildren();
     box.replaceChildren(...choices.map(c => simple
-      ? h("button", { class: c.danger ? "btn danger" : "primary", onclick: () => close(c.value) }, c.label)
+      // red only for what cannot be undone; plain for harmless ones like taking a project off the list
+      ? h("button", { class: c.danger ? "btn danger" : c.plain ? "btn" : "primary", onclick: () => close(c.value) }, c.label)
       : h("button", { class: "choice" + (c.danger ? " danger" : ""), onclick: () => close(c.value) },
         h("b", {}, c.label), c.desc ? h("span", {}, c.desc) : null)));
     const m = $("#modal");
@@ -152,8 +153,8 @@ function cardStatus(p) {
 // The X only takes a project off this list; people reasonably fear it deletes the folder.
 async function forgetProject(name, path) {
   const go = await ask(`Remove "${name}" from the list?`,
-    "The folder stays on your computer. Use Open project to add it back.",
-    [{ value: true, label: "Remove" }]);
+    h("span", {}, "The folder stays on your computer. Use ", h("b", {}, "Open project"), " to add it back."),
+    [{ value: true, label: "Remove", plain: true }]);
   if (go) act("/api/forget", { path });
 }
 
