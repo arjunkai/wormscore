@@ -23,14 +23,16 @@ NEURON_AT = 0.72                # along the body, tail = 0, nose = 1
 
 
 def centre(t):
-    """Centre line: tail at the lower left, nose at the right, one and three quarter waves."""
-    return 4.5 + 23 * t, 20.5 - 8.5 * t - 3 * math.sin(2 * math.pi * 1.75 * t - 0.2)
+    """Centre line: tail at the lower left, nose at the right, one and a half waves. The bends are
+    kept wider than the body (bend radius above half the width everywhere), so the inside of a
+    bend stays round instead of folding into a sharp corner."""
+    return 4.5 + 23 * t, 20.5 - 8.5 * t - 2.7 * math.sin(2 * math.pi * 1.5 * t + 0.3)
 
 
 def half_width(t):
     """Thickest mid-body, narrowing to a point at the tail and to a blunt nose."""
     end = 0.3 + 0.75 * t
-    return end + (2 - end) * math.sin(math.pi * min(t, 0.999)) ** 0.55
+    return end + (1.75 - end) * math.sin(math.pi * min(t, 0.999)) ** 0.55
 
 
 def discs(n):
