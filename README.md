@@ -182,8 +182,8 @@ download.
 MIT License (see [LICENSE](https://github.com/arjunkai/wormscore/blob/main/LICENSE)). If you use wormscore in research, please cite the version you used.
 Each release has its own DOI on Zenodo; [doi:10.5281/zenodo.23520610](https://doi.org/10.5281/zenodo.23520610)
 lists all versions and resolves to the latest. GitHub's "Cite this repository" button (from
-[CITATION.cff](https://github.com/arjunkai/wormscore/blob/main/CITATION.cff)) gives the reference, and `log.md`
-in your project records which version ran each step.
+[CITATION.cff](https://github.com/arjunkai/wormscore/blob/main/CITATION.cff)) gives the reference, as does
+**Settings > Copy citation** in the app. `log.md` in your project records which version ran each step.
 
 wormscore reads Leica files with [liffile](https://github.com/cgohlke/liffile), Zeiss files with
 [czifile](https://github.com/cgohlke/czifile), Olympus FluoView files with
