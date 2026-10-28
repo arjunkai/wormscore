@@ -1032,6 +1032,7 @@ def fix_shortcuts():
     def run():
         try:
             script = U.data_dir() / "shortcut-fix.ps1"
+            script.parent.mkdir(parents=True, exist_ok=True)     # not there yet on a first start
             script.write_text(SHORTCUT_FIX, encoding="utf-8")
             r = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
                                 "-Exe", sys.executable, "-Id", APP_ID], capture_output=True, text=True,
@@ -1149,6 +1150,7 @@ def main(argv=None):
     app.can_start = register_launch_link()
     fix_shortcuts()
     url = app.home_url = f"http://127.0.0.1:{srv.server_address[1]}"
+    desktop.unblock_app_files(log_event)       # before .NET loads, or the own windows cannot start
     use_desktop = "--edge-window" not in argv and desktop.available()
     if use_desktop:
         # marks the page as shown in wormscore's own window; a leftover Edge window (from an
@@ -1168,6 +1170,12 @@ def main(argv=None):
             log_event(f"own windows failed, using an Edge window: {type(exc).__name__}: {exc}")
             global DESKTOP
             DESKTOP = None
+            # run_desktop closed its server on the way out; the Edge window needs a running one
+            try:
+                srv = make_home_server(app, HOME_PORT)
+            except OSError:
+                srv = make_home_server(app)
+            url = app.home_url = f"http://127.0.0.1:{srv.server_address[1]}"
     run_edge_window(app, srv, url, started)
 
 

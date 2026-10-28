@@ -16,6 +16,28 @@ from pathlib import Path
 APP_ID = "arjunkai.wormscore"
 
 
+def unblock_app_files(log=lambda text: None):
+    """The downloaded Windows app, unzipped with Explorer: every file carries the browser's
+    "downloaded from the internet" mark, and .NET then refuses to load the bridge the windows need
+    (Python.Runtime.dll). Removing the mark from wormscore's own files is what the Unblock box in
+    a file's Properties does. Only this app's folder is touched, and only when the mark is there."""
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+    app = Path(sys.executable).parent
+    probe = app / "_internal" / "pythonnet" / "runtime" / "Python.Runtime.dll"
+    if not Path(f"{probe}:Zone.Identifier").exists():
+        return
+    done = 0
+    for f in app.rglob("*"):
+        try:
+            if f.is_file():
+                Path(f"{f}:Zone.Identifier").unlink()
+                done += 1
+        except OSError:
+            pass
+    log(f"removed the downloaded-file mark from {done} app files")
+
+
 def set_app_id():
     """The process's taskbar ID. Must run before the first window (any window) is created."""
     if sys.platform == "win32":

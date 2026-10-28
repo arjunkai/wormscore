@@ -41,6 +41,18 @@ jobs:
           $APP inventory "$RUNNER_TEMP/demo"
           $APP prepare "$RUNNER_TEMP/demo"
           $APP unblind "$RUNNER_TEMP/demo" --i-have-finished-scoring --anyway
+      - name: Smoke test the app itself (home screen answers)
+        run: |
+          APP=dist/wormscore.app/Contents/MacOS/wormscore
+          $APP > "$RUNNER_TEMP/app.out" 2>&1 &
+          PID=$!
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:47311/api/state > "$RUNNER_TEMP/state.json"; then break; fi
+            sleep 1
+          done
+          kill $PID || true
+          cat "$RUNNER_TEMP/app.out"
+          grep -q "\"version\"" "$RUNNER_TEMP/state.json"
       - name: Zip
         run: |
           mkdir -p stage/wormscore

@@ -1,4 +1,7 @@
 """The app's own windows (desktop.py), with a stand-in for pywebview."""
+import sys
+from pathlib import Path
+
 import pytest
 
 from wormscore import desktop, home
@@ -112,3 +115,53 @@ def test_windows_open_maximized_then_as_they_were_left():
     w2 = d.open("home", "http://127.0.0.1:1", "wormscore", (1200, 820))
     assert (w2.kw["width"], w2.kw["height"], w2.kw["maximized"]) == (1400, 900, False)
     assert home.window_sizes({"home": {"w": 5, "h": 900, "max": False}, "x": {}}) == {}
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the downloaded-file mark is an NTFS stream")
+def test_unzipped_download_is_unblocked(tmp_path, monkeypatch):
+    """Explorer copies the browser's "from the internet" mark onto every unzipped file, and .NET
+    then refuses the bridge the own windows need. The app removes the mark from its own files."""
+    app = tmp_path / "wormscore"
+    dll = app / "_internal" / "pythonnet" / "runtime" / "Python.Runtime.dll"
+    other = app / "_internal" / "other.dll"
+    for f in (dll, other):
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(b"x")
+        Path(f"{f}:Zone.Identifier").write_text("[ZoneTransfer]\nZoneId=3\n")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(app / "wormscore.exe"))
+    logged = []
+    desktop.unblock_app_files(logged.append)
+    assert not Path(f"{dll}:Zone.Identifier").exists() and not Path(f"{other}:Zone.Identifier").exists()
+    assert dll.read_bytes() == b"x" and logged
+    desktop.unblock_app_files(logged.append)          # nothing marked: nothing done, nothing logged
+    assert len(logged) == 1
+
+
+def test_edge_window_gets_a_running_server_when_own_windows_fail(monkeypatch):
+    """If the own window cannot start, its server is closed on the way out; the Edge window must
+    get a fresh one, not the closed one (which crashed with "Invalid file descriptor: -1")."""
+    logged, served = [], []
+    make_app = home.HomeApp
+    monkeypatch.setattr(make_app, "start_updates", lambda self: None)  # no update check over the network
+    monkeypatch.setattr(home, "HomeApp", lambda: make_app(open_windows=False))
+    monkeypatch.setattr(home, "HOME_PORT", 0)
+    monkeypatch.setattr(home, "log_event", logged.append)            # never the real app.log
+    monkeypatch.setattr(home, "register_launch_link", lambda: False)  # never the real registry
+    monkeypatch.setattr(home, "fix_shortcuts", lambda: None)
+    monkeypatch.setattr(home, "heavy_imports", lambda: None)
+    monkeypatch.setattr(desktop, "available", lambda: True)
+
+    def failing_desktop(app, srv, url, d):
+        srv.server_close()
+        raise RuntimeError("Failed to resolve Python.Runtime.Loader.Initialize")
+
+    def edge(app, srv, url, started):
+        served.append((srv.socket.fileno(), url))
+        srv.server_close()
+    monkeypatch.setattr(home, "run_desktop", failing_desktop)
+    monkeypatch.setattr(home, "run_edge_window", edge)
+    home.main([])
+    (fd, url), = served
+    assert fd != -1 and url.startswith("http://127.0.0.1:")
+    assert any("own windows failed" in line for line in logged)
