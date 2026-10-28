@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;          /* Safari draws radios, checkboxes and scrollbars to match */
   /* the same names and values as the home screen's dark theme (home.css); a test keeps them in step */
   --bg: #121417;
   --panel: #1a1d21;

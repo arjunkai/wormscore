@@ -1,5 +1,6 @@
 /* Home screen. Same palette and type as the scoring page (style.css), plus a light mode. */
 :root, [data-theme="dark"] {
+  color-scheme: dark;          /* Safari draws radios, checkboxes and scrollbars to match */
   --bg: #121417;
   --panel: #1a1d21;
   --raised: #23272d;
@@ -32,6 +33,7 @@
   --text-3xl: 26px;
 }
 [data-theme="light"] {
+  color-scheme: light;
   --bg: #f4f5f7;
   --panel: #ffffff;
   --raised: #eef0f3;
@@ -203,7 +205,9 @@ code { font-family: "Cascadia Mono", Consolas, monospace; font-size: var(--text-
 .p-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .p-head h2 { margin: 0; font-size: var(--text-2xl); font-weight: 650; letter-spacing: -.01em; }
 .p-path { color: var(--muted); font-size: var(--text-xs); margin-top: 2px; font-family: "Cascadia Mono", Consolas, monospace; overflow-wrap: anywhere; }
-.p-path span { white-space: nowrap; }   /* a folder name stays on one line; the path wraps between folders */
+/* a folder name stays on one line and the path wraps between folders; a name longer than the
+   line still breaks (Safari does not break inside nowrap) */
+.p-path span { display: inline-block; max-width: 100%; }
 .p-tools { display: flex; gap: 6px; flex-wrap: wrap; }
 
 .banner {

@@ -3,9 +3,10 @@ screenshots and fail on page errors. The mac-ui workflow runs it against the bui
 the Mac screens can be checked without a Mac. It works the same against the Windows app.
 
 Start the app first (it serves the home page on port 47311), with a demo project that has a
-blind set, then:  python packaging/mac_ui_check.py PROJECT OUT_DIR
+blind set, then:  python packaging/mac_ui_check.py PROJECT OUT_DIR [chromium]
+(chromium: the engine of the Windows app's window, to compare)
 
-Needs:  pip install playwright  and  python -m playwright install webkit
+Needs:  pip install playwright  and  python -m playwright install webkit (or chromium)
 It selects PROJECT in the app's settings (~/.wormscore.json), sets the theme and opens the
 scoring page; it never saves a score or an outline.
 """
@@ -39,7 +40,7 @@ def wait_for_app(seconds=60):
     sys.exit(f"wormscore did not answer on {HOME}")
 
 
-def main(project, out):
+def main(project, out, engine="webkit"):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     state = wait_for_app()
@@ -61,10 +62,18 @@ def main(project, out):
         wide = page.evaluate("document.scrollingElement.scrollWidth - innerWidth")
         if wide > 0:
             problems.append(f"{name}: page scrolls sideways by {wide} px")
+        # text cut off at the window's right edge (the page itself may not scroll)
+        cut = page.evaluate("""() => [...document.querySelectorAll('body *')].filter(el => {
+            if (!el.checkVisibility() || el.closest('#canvasWrap')) return false;
+            const r = el.getBoundingClientRect();
+            return r.width && r.right > innerWidth + 1;
+        }).map(el => el.id || el.className || el.tagName).slice(0, 5)""")
+        if cut:
+            problems.append(f"{name}: past the right edge: {cut}")
         print("saved", name)
 
     with sync_playwright() as p:
-        browser = p.webkit.launch()
+        browser = getattr(p, engine).launch()
         ctx = browser.new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=2)
 
         home = ctx.new_page()
@@ -125,6 +134,6 @@ def main(project, out):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         sys.exit(__doc__)
-    main(sys.argv[1], sys.argv[2])
+    main(*sys.argv[1:])
