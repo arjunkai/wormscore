@@ -319,6 +319,10 @@ def prepare_install(info, say=lambda text: None, progress=lambda done, total: No
     if not info.get("asset"):
         raise UpdateError(f"The latest release has no {ASSETS[kind]}. Download it from {RELEASES_PAGE}")
     paths = app_paths(kind)
+    if kind == "mac" and "/AppTranslocation/" in paths["current"].as_posix():
+        # opened straight from the download: macOS runs it from a hidden read-only copy
+        raise UpdateError("Move wormscore.app into your Applications folder (drag it there in Finder), "
+                          "open it from there, then update.")
     if not can_write(paths):
         raise UpdateError(f"wormscore cannot write to {paths['current'].parent}. "
                           f"Download the new version from {RELEASES_PAGE}")

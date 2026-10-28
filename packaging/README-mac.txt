@@ -8,7 +8,9 @@ wormscore for macOS (Apple silicon: M1 and newer)
      wormscore. Confirm with your password.
    After that it opens normally.
 3. wormscore opens in your web browser. Nothing leaves your computer: the page is served from
-   your own Mac (127.0.0.1).
+   your own Mac (127.0.0.1). Closed the page? Click wormscore in the Dock to open it again.
+   To close wormscore, quit it from the Dock (or press Cmd+Q). It also closes by itself
+   30 minutes after its pages were closed.
 
 Intel Mac, or prefer Python? Install Python 3.12 or newer, then: pip install wormscore
 and run wormscore-launcher.

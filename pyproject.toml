@@ -42,7 +42,8 @@ Releases = "https://github.com/arjunkai/wormscore/releases"
 [project.optional-dependencies]
 # Nikon .nd2 files (large: brings dask and pydantic). The Windows and Mac apps include it.
 nd2 = ["nd2>=0.12"]
-dev = ["pytest>=8", "pyinstaller>=6.10", "nd2>=0.12"]
+# pyobjc: the Mac app answers the Dock (opening it again, Quit); only the built Mac app uses it
+dev = ["pytest>=8", "pyinstaller>=6.10", "nd2>=0.12", "pyobjc-framework-Cocoa>=10.3; sys_platform == 'darwin'"]
 
 [project.scripts]
 wormscore = "wormscore.cli:main"

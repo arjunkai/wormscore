@@ -3,6 +3,7 @@
 "use strict";
 
 const $ = s => document.querySelector(s);
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";   // the copy key the hint names
 const $$ = s => [...document.querySelectorAll(s)];
 
 function h(tag, attrs = {}, ...kids) {
@@ -435,7 +436,7 @@ function citeBlock(v) {
   };
   copy.onclick = async () => {
     try { await navigator.clipboard.writeText(CITATIONS[fmt](v)); }
-    catch { return toast("Could not copy. Select the citation and press Ctrl+C.", "error"); }
+    catch { return toast(`Could not copy. Select the citation and press ${MOD}+C.`, "error"); }
     copy.replaceChildren(icon("check", 16));
     copy.setAttribute("aria-label", "Copied");
     setTimeout(() => { copy.replaceChildren(icon("copy", 16)); copy.setAttribute("aria-label", "Copy citation"); }, 1500);
@@ -532,7 +533,7 @@ function render() {
 
 async function sideAction(which) {
   if (which === "demo") {
-    const real = await ask("Try a demo", "Pick the kind of demo, then choose an empty folder for it (outside OneDrive is best).", [
+    const real = await ask("Try a demo", "Pick the kind of demo, then choose an empty folder for it.", [
       { value: "sim", label: "Simulated worms", desc: "20 heads with known normal, dim and missing cells. Instant, works offline." },
       { value: "real", label: "Real worm images", desc: "4 L1 heads from Sun and Hobert 2021 (Zenodo, CC BY 4.0). Downloads about 150 MB once." },
     ]);

@@ -528,8 +528,11 @@ def open_path(p):
     """Open a folder or file with the system's default program."""
     if hasattr(os, "startfile"):
         os.startfile(p)
+    elif sys.platform == "darwin":
+        # a Mac often has no program set for .json files; -t opens the default text editor
+        subprocess.Popen(["open", "-t", str(p)] if Path(p).suffix == ".json" else ["open", str(p)])
     else:
-        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", str(p)])
+        subprocess.Popen(["xdg-open", str(p)])
 
 
 def dpi_aware():
@@ -1221,6 +1224,9 @@ def run_edge_window(app, srv, url, started):
             tick = now
     threading.Thread(target=watchdog, daemon=True).start()
     threading.Thread(target=show_home_window, args=(app, url, started), daemon=True).start()
+    from . import macapp
+    if macapp.available():
+        return run_mac_app(app, srv, url, macapp)
     try:
         srv.serve_forever()
     except BaseException as exc:
@@ -1229,6 +1235,34 @@ def run_edge_window(app, srv, url, started):
     finally:
         app.stop_scoring()
         srv.server_close()
+
+
+def run_mac_app(app, srv, url, macapp):
+    """Mac app: the server runs on a thread and Cocoa's event loop on the main thread, so macOS
+    can reach the app. Opening it again shows the home page; Quit closes it cleanly."""
+    ended = threading.Event()
+
+    def serve():
+        try:
+            srv.serve_forever()
+        except BaseException as exc:
+            log_event(f"stopped by an error: {type(exc).__name__}: {exc}")
+        ended.set()
+        macapp.stop()            # closed by the watchdog, for an update, or by an error
+
+    def reopen():
+        log_event("opened again: showing the home page")
+        threading.Thread(target=open_window, args=(url,), daemon=True).start()
+
+    def quit_now():
+        if not ended.is_set():
+            log_event("closing: quit from the Dock or menu")
+            srv.shutdown()
+        app.stop_scoring()
+        srv.server_close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    macapp.run(reopen, lambda: macapp.quit_question(app), quit_now)
 
 
 if __name__ == "__main__":

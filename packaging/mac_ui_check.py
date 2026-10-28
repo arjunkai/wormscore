@@ -8,7 +8,7 @@ blind set, then:  python packaging/mac_ui_check.py PROJECT OUT_DIR [chromium]
 
 Needs:  pip install playwright  and  python -m playwright install webkit (or chromium)
 It selects PROJECT in the app's settings (~/.wormscore.json), sets the theme and opens the
-scoring page; it never saves a score or an outline.
+scoring page; it never saves a score or an outline (one answer is kept as a draft).
 """
 import json
 import sys
@@ -125,6 +125,9 @@ def main(project, out, engine="webkit"):
         shot(score, "scoring-missing-answers")
         if score.evaluate("st.score"):
             problems.append("scoring: a score was saved with no answers")
+        # a chosen answer, to see the checked radio (kept as a draft, never a score)
+        score.check("#scoreForm input[name=usable][value=yes]")
+        shot(score, "scoring-answer-chosen")
         browser.close()
 
     if problems:

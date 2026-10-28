@@ -40,6 +40,23 @@ jobs:
           kill $PID || true
           cat "$RUNNER_TEMP/app.out"
           exit ${FAILED:-0}
+      - name: Open the app twice, then quit it from the Dock
+        run: |
+          APP="$PWD/dist/wormscore.app"
+          LOG="$HOME/Library/Application Support/wormscore/app.log"
+          up() { curl -sf http://127.0.0.1:47311/api/state > /dev/null; }
+          open "$APP"
+          for i in $(seq 1 30); do up && break; sleep 1; done
+          up
+          open "$APP"           # already running: macOS sends it "reopen", which shows the home page
+          sleep 5
+          grep -q "opened again: showing the home page" "$LOG"
+          ( osascript -e 'tell application id "io.github.arjunkai.wormscore" to quit' ) &
+          for i in $(seq 1 20); do up || break; sleep 1; done
+          cat "$LOG"
+          ! up
+          grep -q "closing: quit from the Dock or menu" "$LOG"
+          ! pgrep -f "wormscore.app/Contents/MacOS/wormscore"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

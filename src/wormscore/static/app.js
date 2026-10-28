@@ -3,6 +3,9 @@
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+// Mac keyboards: the hints name Cmd (Ctrl works there too)
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? "Cmd" : "Ctrl";
+$$(".mod").forEach(el => (el.textContent = MOD));
 
 // Small DOM builder so text from config files is never parsed as HTML.
 function h(tag, attrs = {}, ...kids) {
