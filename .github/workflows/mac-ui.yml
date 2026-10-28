@@ -47,7 +47,7 @@ jobs:
           up() { curl -sf http://127.0.0.1:47311/api/state > /dev/null; }
           open "$APP"
           for i in $(seq 1 30); do up && break; sleep 1; done
-          up
+          up || { cat "$LOG"; exit 1; }     # also fails if a restart did not get port 47311 back
           open "$APP"           # already running: macOS sends it "reopen", which shows the home page
           sleep 5
           grep -q "opened again: showing the home page" "$LOG"

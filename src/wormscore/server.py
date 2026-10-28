@@ -30,8 +30,11 @@ DRAFTS = "scoring_drafts"     # unsaved answers, kept outside scoring/ so they n
 
 class LocalServer(ThreadingHTTPServer):
     """An HTTP server that owns its port alone. Python's default lets a second server bind a
-    port that is already in use on Windows, which would split requests between two servers."""
-    allow_reuse_address = False
+    port that is already in use on Windows, which would split requests between two servers.
+    On macOS and Linux address reuse only lets a restart take the port back at once (a closed
+    server's connections block it for about a minute otherwise); a second live server is
+    still refused there."""
+    allow_reuse_address = sys.platform != "win32"
 
     def server_bind(self):
         if sys.platform == "win32" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
