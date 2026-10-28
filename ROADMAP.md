@@ -14,6 +14,14 @@ reports exactly as before.
 - **Second identity channel.** Find the cell on one marker and judge the reporter on another, as
   recommended for unbiased selection. Presets for common fluorescent proteins beyond GFP (for
   example mNeonGreen, YFP, mCherry, TagRFP, mScarlet, mKate2, BFP), matched by emission band.
+- **Score form builder.** Make your own set of scoring questions in the app instead of editing
+  `config.json`: start from a preset (cell fate, axon guidance, neurodegeneration, dendrite
+  length, counts and position) or a blank form; choose each question's answer type (choice,
+  yes/no, ordered scale, count), whether it is asked per neuron, per left/right cell or per
+  animal, which answers count as a defect, and simple conditions ("only if the axon is
+  visible"); pick one main outcome; see the score panel as the scorer will. The form is locked
+  and recorded in the log at Build blind set, and each answer type gets its test at unblinding
+  (Fisher's exact for choices, a rank test for scales and counts).
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
 - **Interim report.** Totals for the images scored so far, with no codes shown, recorded in the
   log as an interim look.
