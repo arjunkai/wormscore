@@ -20,6 +20,13 @@ from playwright.sync_api import sync_playwright
 
 HOME = "http://127.0.0.1:47311"
 SIZES = [(1440, 900), (1280, 800)]          # 15 and 13 inch MacBook windows
+# number of lit pixels on the scoring canvas (an empty image has almost none)
+LIT = """() => {
+    const c = document.querySelector('#cv'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 60) n++;
+    return n;
+}"""
 
 
 def post(route, body):
@@ -101,12 +108,7 @@ def main(project, out, engine="webkit"):
         watch(score, "scoring")
         score.goto(url)
         score.wait_for_function("typeof st !== 'undefined' && st.code && st.mip && !st.loading", timeout=60000)
-        lit = score.evaluate("""() => {
-            const c = document.querySelector('#cv'), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-            let n = 0;
-            for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 60) n++;
-            return n;
-        }""")
+        lit = score.evaluate(LIT)
         if lit < 100:
             problems.append(f"scoring: the image looks empty ({lit} lit pixels)")
         for w, h in SIZES:
@@ -118,6 +120,31 @@ def main(project, out, engine="webkit"):
         score.wait_for_timeout(300)
         shot(score, "scoring-zoom2")
         score.click("[data-zoom='1']")
+
+        # 3D: turn the stack with the keys and by dragging; it must draw a real image
+        off = score.evaluate("why3dOff()")
+        if off:
+            problems.append(f"scoring 3D: not available for this project ({off})")
+        else:
+            score.click("[data-view='3d']")
+            score.wait_for_function("st.planesDone", timeout=60000)
+            for _ in range(6):
+                score.keyboard.press("ArrowRight")
+            score.wait_for_function("st.angle === 30 && st.rot.has(30)", timeout=60000)
+            score.wait_for_timeout(300)
+            lit3d = score.evaluate(LIT)
+            if lit3d < 100:
+                problems.append(f"scoring 3D: the turned image looks empty ({lit3d} lit pixels)")
+            shot(score, "scoring-3d")
+            box = score.locator("#cv").bounding_box()
+            score.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+            score.mouse.down()
+            score.mouse.move(box["x"] + box["width"] * 0.1, box["y"] + box["height"] / 2, steps=8)
+            score.mouse.up()
+            score.wait_for_function("st.angle < 0 && st.rot.has(st.angle)", timeout=60000)
+            score.wait_for_timeout(300)
+            shot(score, "scoring-3d-dragged")
+            score.click("[data-view='mip']")
 
         # Save with nothing answered: nothing is saved, the questions to answer are outlined
         score.click("#scoreForm button[type=submit]")

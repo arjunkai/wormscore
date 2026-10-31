@@ -24,7 +24,7 @@ organisms work the same way.
 - **Blind:** every image gets a random code. Genotypes and file names stay in a sealed key
   until you finish scoring.
 - **Fixed display:** every image from the same microscope is shown with the same brightness range.
-  You can page through z-planes and overlay brightfield.
+  You can page through z-planes, turn the stack in 3D and overlay brightfield.
 - **Measured, not decided:** suggested cell bodies and your drawn regions are measured (peak, mean,
   local background, sharpest plane, saturation). The numbers are written to files and never shown
   while you score. The software never labels a cell normal, dim or missing.

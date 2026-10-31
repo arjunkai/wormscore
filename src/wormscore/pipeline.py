@@ -513,7 +513,7 @@ def prepare(project, reassign=False, add=False, log=print):
             if bf_disp is not None:
                 Image.fromarray(M.overlay(g, bf_disp)).save(d / f"overlay_{name}.png")
         meta = {"code": s["code"], "n_z": int(shape[0]), "width": int(shape[2]), "height": int(shape[1]),
-                "pixel_um": s["pixel_um"], "display_um_per_px": cfg["display"]["display_um_per_px"],
+                "pixel_um": s["pixel_um"], "z_step_um": s["z_step_um"], "display_um_per_px": cfg["display"]["display_um_per_px"],
                 "frame_px": cfg["display"]["frame_px"], "has_brightfield": bf_disp is not None,
                 "full_range": r["full"], "enhanced_range": r["enhanced"], "saturation_value": sat,
                 "flags": flags, "candidates": cand_meta, "same_field_as": others,

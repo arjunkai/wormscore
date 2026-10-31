@@ -29,8 +29,12 @@
       <div class="seg" role="group" aria-label="View">
         <button data-view="mip" class="on">Projection</button>
         <button data-view="plane">Planes</button>
+        <button data-view="3d" id="view3d" title="Turn the stack to see depth">3D</button>
       </div>
-      <label class="plane">Plane <input id="zSlider" type="range" min="0" max="0" value="0" disabled> <span id="zText">-</span></label>
+      <div class="dial">
+        <label class="plane" id="planeCtl">Plane <input id="zSlider" type="range" min="0" max="0" value="0" disabled> <span id="zText">-</span></label>
+        <label class="plane off" id="turnCtl">Turn <input id="aSlider" type="range" min="-60" max="60" step="5" value="0" aria-label="Turn in degrees"> <span id="aText">0°</span></label>
+      </div>
       <div class="seg" role="group" aria-label="Display range">
         <button data-range="full" title="Full detector range, same for every image from this microscope">Standard</button>
         <button data-range="enhanced" class="on" title="Background to typical bright spot, same for every image from this microscope">Enhanced</button>
@@ -42,7 +46,7 @@
     </div>
     <div id="canvasWrap"><canvas id="cv" role="img" aria-label="Image"></canvas></div>
     <div id="loadErr" class="load-err hidden" role="alert"><span id="loadErrText"></span><button id="loadErrRetry" type="button" class="primary">Try again</button></div>
-    <div class="hint">Keys: left/right = plane, P = projection/planes, E = range, B = brightfield, N = next image, <span class="mod">Ctrl</span>+Enter = save and go to the next unscored image (skips marking cells)</div>
+    <div class="hint">Keys: left/right = plane (turn in 3D), P = projection/planes, D = 3D, E = range, B = brightfield, N = next image, <span class="mod">Ctrl</span>+Enter = save and go to the next unscored image (skips marking cells)</div>
   </section>
 
   <aside id="panel">
@@ -84,6 +88,7 @@
     </form>
 
     <div class="tab hidden" data-tab="mark">
+      <p class="small note3d hidden" id="mark3d">Outlines are drawn on Projection or Planes. Switch back to draw; 3D only shows the stack turned.</p>
       <p class="small">Outline each cell body so it can be measured. Numbers are written to a file, not shown here. No cells to outline? Skip this step. Your score is already saved.</p>
       <div class="row">
         <span>Draw as</span>

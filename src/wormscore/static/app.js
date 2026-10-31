@@ -39,6 +39,7 @@ const st = {
   cfg: null, colors: {}, worms: [], code: null, meta: null, score: null, rois: [], roisDirty: false, formDirty: false,
   view: "mip", z: 0, range: "enhanced", bf: false, zoom: 1, tab: "score", tool: "ellipse", label: null,
   mip: null, bfVals: null, planes: [], drawing: null, geom: null,
+  angle: 0, rot: new Map(),   // 3D: the turn in degrees, and turned projections already drawn for this image
   next: null,   // the next image's projection and brightfield, decoded ahead: { code, mip, bfVals }
 };
 
@@ -288,8 +289,9 @@ async function openWorm(code) {
   Object.assign(st, {
     code, meta: r.meta, imgV: r.img_v, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
     view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), planeFailed: new Set(),
-    drawing: null, mip: null, bfVals: null,
+    drawing: null, mip: null, bfVals: null, angle: 0, rot: new Map(), planesDone: false, rendering: null, vol: null,
   });
+  $("#aSlider").value = 0;
   // The form shows this image's answers at once, never the last image's under this code.
   $("#loadErr").classList.add("hidden");
   $("#bfToggle").disabled = !st.meta.has_brightfield;
@@ -366,7 +368,7 @@ async function loadPlane(code, z) {
   } catch {
     if (st.code === code) st.planeFailed.add(z);
   }
-  if (st.code === code && st.view === "plane" && st.z === z) draw();
+  if (st.code === code && ((st.view === "plane" && st.z === z) || st.view === "3d")) draw();
 }
 
 async function preloadPlanes(code) {
@@ -374,6 +376,157 @@ async function preloadPlanes(code) {
     if (st.code !== code) return;
     if (!st.planes[z]) await loadPlane(code, z);
   }
+  if (st.code !== code) return;
+  st.planesDone = true;
+  if (st.view === "3d") { pump3d(); draw(); }
+}
+
+// ---------------------------------------------------------------- 3D view
+// The stack turned about the vertical axis, drawn here from the planes the page already has:
+// each output pixel is the brightest value along a straight line through the turned stack, so
+// at 0 degrees it is the normal maximum projection. The z axis is stretched by z step / pixel
+// size so depth looks true. Display only: nothing is measured or saved from it, and it uses the
+// same fixed display range as every other view.
+
+const TURN_STEP = 5, TURN_MAX = 60;
+
+function why3dOff() {
+  const m = st.meta;
+  if (!m) return "No image";
+  if (m.n_z < 2) return "This image has one plane only";
+  if (!(m.z_step_um > 0) || !(m.pixel_um > 0)) return "3D needs a blind set built with wormscore 0.14.0 or later";
+  return "";
+}
+
+// The turned projection for this angle, or null while it is still being drawn.
+function turned(a) {
+  return a === 0 ? st.mip : st.rot.get(a) || null;
+}
+
+// The angles worth keeping for this image: the nearest ones to the current turn, as many as fit
+// in about 80 MB (all of them for a 512 x 512 image, fewer for very large ones).
+function wantedAngles() {
+  const keep = Math.max(4, Math.floor(40e6 / (st.meta.width * st.meta.height)));
+  const all = [];
+  for (let a = -TURN_MAX; a <= TURN_MAX; a += TURN_STEP) if (a !== 0) all.push(a);
+  all.sort((p, q) => Math.abs(p - st.angle) - Math.abs(q - st.angle) || p - q);
+  return all.slice(0, keep);
+}
+
+// Draws the current angle first, then the nearby ones while the page is idle.
+async function pump3d() {
+  if (st.rendering || st.view !== "3d" || !st.planesDone || st.planeFailed.size || why3dOff()) return;
+  const want = wantedAngles();
+  for (const a of [...st.rot.keys()]) if (!want.includes(a)) st.rot.delete(a);
+  const a = st.angle !== 0 && !st.rot.has(st.angle) ? st.angle : want.find(x => !st.rot.has(x));
+  if (a === undefined) return;
+  // The open-image counter, not the code: opening A, then B, then A again starts afresh.
+  const seq = st.openSeq;
+  st.rendering = a;
+  let out = null, failed = false;
+  try {
+    out = await render3d(seq, a);
+  } catch (err) {
+    failed = true;          // the nearest drawn angle stays on screen; the page never locks up
+    console.warn("3D", err);
+  } finally {
+    if (st.openSeq === seq) st.rendering = null;
+  }
+  if (st.openSeq !== seq) return;
+  if (out) st.rot.set(a, out);
+  if (a === st.angle) draw();
+  if (!failed) setTimeout(pump3d, 0);
+}
+
+// The planes 3D turns. Very large images (over 1.5 million pixels, such as 2000 x 2000) are turned
+// at half size, each pixel the brightest of 2 x 2, so a cell never fades and a turn stays quick.
+async function volume3d(seq) {
+  if (st.vol) return st.vol;
+  const m = st.meta;
+  if (m.width * m.height <= 1.5e6) return (st.vol = { r: 1, W: m.width, H: m.height, P: st.planes });
+  const W = Math.ceil(m.width / 2), H = Math.ceil(m.height / 2), P = [];
+  for (const p of st.planes) {
+    const q = new Uint16Array(W * H);
+    for (let y = 0; y < m.height; y++) {
+      const row = y * m.width, qrow = (y >> 1) * W;
+      for (let x = 0; x < m.width; x++) {
+        const v = p[row + x], j = qrow + (x >> 1);
+        if (v > q[j]) q[j] = v;
+      }
+    }
+    P.push(q);
+    await new Promise(r => setTimeout(r, 0));
+    if (st.openSeq !== seq) return null;
+  }
+  return (st.vol = { r: 2, W, H, P });
+}
+
+async function render3d(seq, a) {
+  const vol = await volume3d(seq);
+  if (!vol) return null;
+  const m = st.meta, { W, H, P, r } = vol, nz = m.n_z;
+  const zs = m.z_step_um / (m.pixel_um * r);
+  const rad = (a * Math.PI) / 180, c = Math.cos(rad), s = Math.sin(rad);
+  // Between two planes, extra planes are blended in so a thin process does not break into
+  // dots when the stack is turned (at most 6, so very large images stay quick).
+  const sub = Math.max(1, Math.min(6, Math.ceil(zs * Math.abs(s))));
+  const cx = (W - 1) / 2, cz = ((nz - 1) * zs) / 2;
+  const out = new Uint16Array(W * H);
+  let t0 = performance.now();
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    for (let z = 0; z < nz; z++) {
+      const p0 = P[z], p1 = P[Math.min(z + 1, nz - 1)];
+      const steps = z === nz - 1 ? 1 : sub;
+      for (let k = 0; k < steps; k++) {
+        const f = k / steps, g = 1 - f;
+        // output column u = x cos a + b for this (blended) plane
+        const b = cx - cx * c + ((z + f) * zs - cz) * s + 0.5;
+        const x0 = Math.max(0, Math.ceil(-b / c)), x1 = Math.min(W - 1, Math.floor((W - b) / c - 1e-9));
+        for (let x = x0; x <= x1; x++) {
+          const i = row + x;
+          const v = f ? p0[i] * g + p1[i] * f : p0[i];
+          const o = row + ((x * c + b) | 0);
+          if (v > out[o]) out[o] = v;
+        }
+      }
+    }
+    // Hand the page back now and then, so clicks and keys never wait for a large image.
+    if (performance.now() - t0 > 25) {
+      await new Promise(r => setTimeout(r, 0));
+      if (st.openSeq !== seq || !wantedAngles().includes(a)) return null;
+      t0 = performance.now();
+    }
+  }
+  if (r === 1) return out;
+  const full = new Uint16Array(m.width * m.height);       // back to the image's own size
+  for (let y = 0; y < m.height; y++) {
+    const row = y * m.width, srow = (y >> 1) * W;
+    for (let x = 0; x < m.width; x++) full[row + x] = out[srow + (x >> 1)];
+  }
+  return full;
+}
+
+function setAngle(a) {
+  if (!st.meta || why3dOff()) return;
+  a = Math.max(-TURN_MAX, Math.min(TURN_MAX, Math.round(a / TURN_STEP) * TURN_STEP));
+  const changed = a !== st.angle || st.view !== "3d";
+  st.angle = a;
+  st.view = "3d";
+  if (!changed) return;
+  syncButtons();
+  draw();
+  pump3d();
+}
+
+// A plane that failed to load is tried again when 3D is opened.
+async function retryFailedPlanes() {
+  const code = st.code;
+  for (const z of [...st.planeFailed]) {
+    if (st.code !== code) return;
+    await loadPlane(code, z);
+  }
+  if (st.code === code && st.view === "3d") { pump3d(); draw(); }
 }
 
 // ---------------------------------------------------------------- drawing
@@ -392,7 +545,18 @@ function geometry() {
 function draw() {
   if (!st.meta) return;
   const m = st.meta;
-  const vals = st.view === "mip" ? st.mip : st.planes[st.z];
+  const in3d = st.view === "3d";
+  let vals = st.view === "mip" ? st.mip : in3d ? turned(st.angle) : st.planes[st.z];
+  // In 3D, until this angle is drawn, the nearest angle already drawn stays on screen, labelled.
+  let status3d = "";
+  if (in3d && !vals && st.mip) {
+    const near = [0, ...st.rot.keys()].sort((p, q) => Math.abs(p - st.angle) - Math.abs(q - st.angle))[0];
+    vals = turned(near);
+    const have = st.planes.filter(Boolean).length;
+    status3d = st.planesDone && st.planeFailed.size ? "3D is not available for this image: a plane could not be loaded. Choose 3D again to retry."
+      : have < m.n_z ? `Loading planes for 3D... ${have} / ${m.n_z}`
+      : `Turning to ${st.angle}°... (showing ${near}°)`;
+  }
   const g = (st.geom = geometry());
   cv.width = g.fw;
   cv.height = g.fh;
@@ -414,7 +578,7 @@ function draw() {
   }
   // Fixed display range: the same numbers for every image from this microscope.
   const [lo, hi] = st.range === "full" ? m.full_range : m.enhanced_range;
-  const showBf = st.bf && st.bfVals;
+  const showBf = st.bf && st.bfVals && !in3d;     // brightfield is one flat image; it cannot turn
   // The image itself is recomputed only when what is shown changes, not while a region is
   // being drawn (a large image has over a million pixels).
   const drawn = st.drawn;
@@ -445,9 +609,15 @@ function draw() {
   ctx.fillRect(bx, by, len, 3 * st.zoom);
   ctx.font = `${14 * st.zoom}px system-ui`;
   ctx.fillText("10 µm", bx, by - 6 * st.zoom);
+  if (status3d) {
+    const wrap = $("#canvasWrap");
+    const sx = cv.width / (parseFloat(cv.style.width) || cv.width);    // canvas pixels per screen pixel
+    ctx.font = `${14 * sx}px system-ui`;
+    ctx.fillText(status3d, (wrap.scrollLeft + 16) * sx, (wrap.scrollTop + 26) * sx);
+  }
   ctx.shadowBlur = 0;
 
-  if (st.tab === "mark") {
+  if (st.tab === "mark" && !in3d) {
     if ($("#sugToggle").checked) for (const c of m.candidates) drawCandidate(c);
     for (const r of st.rois) drawRoi(r);
     if (st.drawing) drawRoi(st.drawing, true);
@@ -531,8 +701,25 @@ function commitRoi(r) {
   draw();
 }
 
+// In 3D, dragging left or right turns the stack (the full width of the view is 120 degrees).
+cv.addEventListener("pointerdown", e => {
+  if (st.view !== "3d" || e.button !== 0) return;
+  st.turnDrag = { x: e.clientX, a: st.angle, w: cv.getBoundingClientRect().width || 1 };
+  cv.setPointerCapture(e.pointerId);
+  cv.style.cursor = "grabbing";
+  e.preventDefault();
+});
+cv.addEventListener("pointermove", e => {
+  if (!st.turnDrag) return;
+  const d = st.turnDrag;
+  setAngle(d.a + ((e.clientX - d.x) / d.w) * 2 * TURN_MAX);
+});
+const endTurnDrag = () => { if (st.turnDrag) { st.turnDrag = null; syncCursor(); } };
+cv.addEventListener("pointerup", endTurnDrag);
+cv.addEventListener("pointercancel", endTurnDrag);
+
 cv.addEventListener("mousedown", e => {
-  if (st.tab !== "mark" || st.tool !== "ellipse") return;
+  if (st.tab !== "mark" || st.tool !== "ellipse" || st.view === "3d") return;
   const [x, y] = toRaw(e);
   st.drawing = { type: "ellipse", label: st.label, cx: x, cy: y, rx: 0, ry: 0, source: "drawn" };
 });
@@ -549,7 +736,7 @@ cv.addEventListener("mouseup", () => {
   draw();
 });
 cv.addEventListener("click", e => {
-  if (st.tab !== "mark" || st.tool !== "polygon") return;
+  if (st.tab !== "mark" || st.tool !== "polygon" || st.view === "3d") return;
   if (!st.drawing) st.drawing = { type: "polygon", label: st.label, points: [], source: "drawn" };
   st.drawing.points.push(toRaw(e));
   draw();
@@ -749,9 +936,14 @@ function setTab(t) {
     b.setAttribute("aria-selected", String(b.dataset.tab === t));
   });
   $$(".tab").forEach(el => el.classList.toggle("hidden", el.dataset.tab !== t));
-  cv.style.cursor = t === "mark" ? "crosshair" : "default";
   st.drawing = null;
+  syncCursor();
   draw();
+}
+
+function syncCursor() {
+  cv.style.touchAction = st.view === "3d" ? "none" : "";    // a finger drag turns the stack instead of scrolling
+  cv.style.cursor = st.view === "3d" ? "grab" : st.tab === "mark" ? "crosshair" : "default";
 }
 
 // Toggle buttons show their state with a class and tell screen readers with aria-pressed.
@@ -767,10 +959,35 @@ function syncButtons() {
   $("#zSlider").disabled = st.view !== "plane";
   $("#zSlider").value = st.z;
   $("#zText").textContent = st.meta ? (st.view === "plane" ? `${st.z + 1} / ${st.meta.n_z}` : `all ${st.meta.n_z}`) : "-";
+  const in3d = st.view === "3d", off3d = st.meta ? why3dOff() : "No image";
+  $("#view3d").disabled = !!off3d;
+  $("#view3d").title = off3d || "Turn the stack to see depth (drag the image or use left/right)";
+  $("#planeCtl").classList.toggle("off", in3d);
+  $("#turnCtl").classList.toggle("off", !in3d);
+  $("#aSlider").value = st.angle;
+  $("#aText").textContent = `${st.angle}°`;
+  $("#aSlider").setAttribute("aria-valuetext", `${st.angle} degrees`);
+  if (st.meta) cv.setAttribute("aria-label", `Image ${st.code}, ${in3d ? `3D, turned ${st.angle} degrees` : st.view === "plane" ? `plane ${st.z + 1}` : "projection"}`);
+  $$("#toolSeg button").forEach(b => (b.disabled = in3d));
+  $("#mark3d").classList.toggle("hidden", !in3d);
   $("#bfToggle").checked = st.bf && !!st.meta && st.meta.has_brightfield;
+  $("#bfToggle").disabled = !st.meta || !st.meta.has_brightfield || in3d;
+  if (st.meta) $("#bfToggle").parentElement.title = !st.meta.has_brightfield
+    ? "No brightfield channel was recorded for this image" : in3d ? "Brightfield is one flat image, so 3D does not show it" : "";
+  syncCursor();
 }
 
-function setView(v) { st.view = v; syncButtons(); draw(); }
+function setView(v) {
+  if (v === "3d" && (!st.meta || why3dOff())) return;
+  st.view = v;
+  st.drawing = null;
+  syncButtons();
+  draw();
+  if (v === "3d") {
+    if (st.planesDone && st.planeFailed.size) retryFailedPlanes();
+    else pump3d();
+  }
+}
 function setZ(z) {
   if (!st.meta) return;
   st.z = Math.max(0, Math.min(st.meta.n_z - 1, z));
@@ -810,6 +1027,7 @@ $$("#toolSeg button").forEach(b => (b.onclick = () => {
   draw();
 }));
 $("#zSlider").oninput = e => setZ(+e.target.value);
+$("#aSlider").oninput = e => setAngle(+e.target.value);
 $("#bfToggle").onchange = e => { st.bf = e.target.checked; draw(); };
 $("#sugToggle").onchange = draw;
 
@@ -832,9 +1050,14 @@ document.addEventListener("keydown", e => {
   if (t.tagName === "INPUT" && t.type !== "range") {
     if (!["radio", "checkbox"].includes(t.type) || k.startsWith("arrow")) return;
   }
-  if (k === "arrowright" || k === "arrowup") { setZ(st.view === "plane" ? st.z + 1 : st.z); e.preventDefault(); }
+  if (st.view === "3d" && k.startsWith("arrow")) {
+    // in 3D left/right turn the stack; up/down do nothing (they would leave 3D for Planes)
+    if (k === "arrowright" || k === "arrowleft") setAngle(st.angle + (k === "arrowright" ? TURN_STEP : -TURN_STEP));
+    e.preventDefault();
+  } else if (k === "arrowright" || k === "arrowup") { setZ(st.view === "plane" ? st.z + 1 : st.z); e.preventDefault(); }
   else if (k === "arrowleft" || k === "arrowdown") { setZ(st.view === "plane" ? st.z - 1 : st.z); e.preventDefault(); }
   else if (k === "p") setView(st.view === "mip" ? "plane" : "mip");
+  else if (k === "d") setView(st.view === "3d" ? "mip" : "3d");
   else if (k === "e") { st.range = st.range === "full" ? "enhanced" : "full"; syncButtons(); draw(); }
   else if (k === "b" && st.meta.has_brightfield) { st.bf = !st.bf; syncButtons(); draw(); }
   else if (k === "n" && !e.repeat) {

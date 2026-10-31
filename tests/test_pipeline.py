@@ -88,3 +88,10 @@ def test_same_image_saved_in_two_files_is_coded_once(tmp_path):
     assert len(key) == 4 and not any("zz_resaved" in r["file"] for r in key)
     (copy,) = [r for r in read_csv(project / "outputs" / "excluded.csv") if "identical pixels" in r["reason"]]
     assert "zz_resaved" in copy["local_path"] and original.name in copy["reason"]
+
+
+def test_meta_has_z_step_for_the_3d_view(demo_project):
+    # the scoring page's 3D view stretches z by z_step_um / pixel_um
+    for meta_path in (demo_project / "blind").glob("*/meta.json"):
+        meta = json.loads(meta_path.read_text())
+        assert meta["z_step_um"] > 0 and meta["pixel_um"] > 0

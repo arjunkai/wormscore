@@ -62,7 +62,7 @@ while still blind).
 
 Included images are shuffled with a random seed and numbered W0001, W0002, ... The seed and the
 code-to-file key are written to `key/`, which the scoring app never reads. The scoring page receives
-images, plane counts, pixel size and quality questions, but no genotype, file name, path or brightness
+images, plane counts, pixel size, z step and quality questions, but no genotype, file name, path or brightness
 number. Re-running `prepare` keeps the same codes; new codes are refused once any score is saved.
 Unsaved answers are kept per code in `scoring_drafts/` (the same fields as a score, no genotype or
 file name) and deleted when the score is saved; drafts are never read as scores and do not lock the
@@ -105,7 +105,14 @@ with two fixed ranges per microscope, the same for every image from that microsc
   Computed once over all included images of both genotypes.
 
 Images are drawn at a common physical scale (`display_um_per_px`) so microscope zoom does not change
-apparent cell size. Brightfield (middle plane, contrast-stretched per image) can be overlaid; it is
+apparent cell size. A **3D** view turns the stack about the vertical axis (-60 to +60 degrees in
+5-degree steps; 0 is the maximum projection): each screen pixel is the brightest value along the
+turned line of sight, with z stretched by z step / pixel size and up to 6 planes blended in between
+neighbouring planes (the same as Fiji's 3D Project, brightest point, with interpolation). It uses the
+same fixed display ranges, has no depth cueing (which would change apparent brightness), is drawn in
+the browser from the planes already shown, and is for viewing only: nothing is measured or saved from
+it, and regions are drawn on the projection or a plane. Images over 1.5 million pixels are turned at
+half size (each pixel the brightest of 2 x 2) to stay quick. Brightfield (middle plane, contrast-stretched per image) can be overlaid; it is
 never measured.
 
 ## 6. Measurements

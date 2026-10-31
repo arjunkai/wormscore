@@ -22,6 +22,8 @@ reports exactly as before.
   visible"); pick one main outcome; see the score panel as the scorer will. The form is locked
   and recorded in the log at Build blind set, and each answer type gets its test at unblinding
   (Fisher's exact for choices, a rank test for scales and counts).
+- **More 3D.** Depth of the brightest point under the cursor, and turning about the horizontal axis
+  too (both keep brightness unchanged; no depth cueing in the scoring view).
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
 - **Interim report.** Totals for the images scored so far, with no codes shown, recorded in the
   log as an interim look.
