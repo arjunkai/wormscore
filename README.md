@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/arjunkai/wormscore/main/src/wormscore/static/icon-512.png" alt="wormscore logo: a crawling C. elegans with one labelled neuron" width="112">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/arjunkai/wormscore/main/docs/img/logo-dark.png">
+    <img src="https://raw.githubusercontent.com/arjunkai/wormscore/main/src/wormscore/static/icon-512.png" alt="wormscore logo: a crawling C. elegans with one labelled neuron" width="112">
+  </picture>
 </p>
 
 <h1 align="center">wormscore</h1>
