@@ -29,10 +29,10 @@ LIT = """() => {
 }"""
 
 
-def post(route, body):
+def post(route, body, timeout=30):
     req = urllib.request.Request(f"{HOME}/api/{route}", json.dumps(body).encode(),
                                  {"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
 
@@ -103,7 +103,7 @@ def main(project, out, engine="webkit"):
         home.click("#themeBtn")
         home.wait_for_selector("html[data-theme=dark]", state="attached")
 
-        url = post("score", {})["url"]
+        url = post("score", {}, timeout=180)["url"]    # a first start on a fresh Mac runner can be slow
         score = ctx.new_page()
         watch(score, "scoring")
         score.goto(url)
