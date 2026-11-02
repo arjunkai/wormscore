@@ -73,6 +73,8 @@ def unblind(project, finished=False, anyway=False, log=print):
     if not finished:
         raise SystemExit("Unblinding reveals genotypes. Confirm you have finished scoring "
                          "(--i-have-finished-scoring, or the checkbox in the launcher).")
+    from . import scorers
+    scorers.refuse_in_package(project, "Unblinding")
     cfg = C.load(project)
     C.check(cfg)
     sc = cfg["scoring"]
@@ -284,6 +286,18 @@ def unblind(project, finished=False, anyway=False, log=print):
         for x in rel:
             lines.append(f"  {x['measure']}: {x['same_answer']}/{x['pairs']} same ({x['percent_agreement']}%), "
                          f"kappa {x['kappa'] if x['kappa'] != '' else 'undefined'} ({x['kappa_type']})")
+    between, differ, second = scorers.between_scorers(project, rows, cfg)
+    if second:
+        lines.append("")
+        lines.append("Agreement between scorers (outputs/unblinded/between_scorers.csv; the primary results above "
+                     "use only the primary scorer's answers):")
+        for s in second:
+            lines.append(f"  {s['scorer']}: {s['n_pairs']} images scored by both (package of {s['n_package']}, "
+                         f"{round(100 * s['fraction'])}% of each genotype)")
+        for x in between:
+            lines.append(f"  {x['second_scorer']} | {x['measure']}: {x['same_answer']}/{x['pairs']} same "
+                         f"({x['percent_agreement']}%), kappa {x['kappa'] if x['kappa'] != '' else 'undefined'} "
+                         f"({x['kappa_type']})")
     dims, dim_skipped = [], 0
     if C.dim_cutoff(cfg):
         dims = stats.dim_check(counted, cfg)
@@ -320,6 +334,9 @@ def unblind(project, finished=False, anyway=False, log=print):
         write_csv(out / "interaction_test.csv", itests or [{"note": inote}])
     if pairs:
         write_csv(out / "reliability.csv", rel)
+    if second:
+        write_csv(out / "between_scorers.csv", between or [{"note": "no image scored by both"}])
+        write_csv(out / "scorer_disagreements.csv", differ or [{"note": "no disagreements"}])
     if C.dim_cutoff(cfg):
         write_csv(out / "dim_check.csv", dims or [{"note": "no drawn regions with a measured background"}])
     excluded = [r for r in opt(project / "outputs" / "excluded.csv") if r.get("local_path")]
@@ -329,7 +346,7 @@ def unblind(project, finished=False, anyway=False, log=print):
         outcome_tests=outcome_tests, interaction_tests=itests,
         added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key_orig) if d).items()),
         key_rows=key_orig, excluded_rows=excluded, reliability=rel, n_repeats=len(pairs), dim_rows=dims,
-        dim_skipped=dim_skipped),
+        dim_skipped=dim_skipped, second_scorers=second, between=between),
         encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [

@@ -139,6 +139,26 @@ def reliability_sentences(cfg, n_repeats, reliability):
     return [blind], stat
 
 
+def second_scorer_sentences(second, between):
+    """Agreement with second scorers, who scored a package of the blind set (no key) on their own."""
+    out = []
+    for s in second:
+        rows = [r for r in between if r["second_scorer"] == s["scorer"] and r["pairs"]]
+        when = ("[dates]" if not s["first"] else f"on {s['first']}" if s["first"] == s["last"]
+                else f"between {s['first']} and {s['last']}")
+        parts = "; ".join(f"{r['measure']} {r['same_answer']}/{r['pairs']} ({r['percent_agreement']}%"
+                          + (f", {'weighted ' if r['kappa_type'] != 'unweighted' else ''}kappa {r['kappa']}"
+                             if r["kappa"] != "" else "") + ")" for r in rows)
+        out.append(f"A second scorer ({s['scorer']}) scored {s['n_package']} of the included images "
+                   f"({round(100 * s['fraction'])}% of each genotype, chosen at random) {when}, blind to genotype, "
+                   "from a copy of the coded images without the key, in a different random order and without "
+                   "seeing the first scorer's answers"
+                   + (", after the primary analysis had been unblinded" if s["after_unblinding"] else "")
+                   + ". Results use the first scorer's answers only. Agreement between scorers: "
+                   + (parts or "[no image scored by both]") + ".")
+    return out
+
+
 def dim_sentence(cfg, dim_rows, skipped=0):
     k = C.dim_cutoff(cfg)
     if not k:
@@ -177,7 +197,7 @@ def identity_sentence(cfg):
 
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
-              dim_rows=(), dim_skipped=0):
+              dim_rows=(), dim_skipped=0, second_scorers=(), between=()):
     """added: (date, number of images) for each batch added to an existing key.
     key_rows, excluded_rows: for the table of images per genotype and microscope.
     reliability, n_repeats: agreement of hidden repeats. dim_rows: the measured check of calls."""
@@ -230,7 +250,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "least one affected neuron. "
         + " ".join(definition_sentences(cfg) + [fisher_sentence(cfg, tests)]
                    + outcome_sentences(cfg, outcome_tests) + interaction_sentence(cfg, interaction_tests)
-                   + rel_stat)
+                   + rel_stat + second_scorer_sentences(second_scorers, between))
         + (" The analysis plan (definitions, comparisons, test direction, cross-microscope measures and "
            "interaction model) was recorded in the project log before scoring began."
            if C.analysis_plan(cfg) and all(t.get("set_before_scoring") == "yes"

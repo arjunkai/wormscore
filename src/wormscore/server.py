@@ -325,7 +325,9 @@ def make_handler(project):
             if parts == ["api", "worms"]:
                 scores, rois, drafts = project.load("scores.json", {}), project.load("rois.json", {}), project.drafts()
                 worms = []
-                for d in sorted(project.blind.iterdir()):
+                order = (project.cfg.get("scorer_package") or {}).get("order") or []
+                rank = {c: i for i, c in enumerate(order)}
+                for d in sorted(project.blind.iterdir(), key=lambda d: (rank.get(d.name, len(rank)), d.name)):
                     if not (d / "meta.json").exists():
                         continue
                     meta = json.loads((d / "meta.json").read_text())

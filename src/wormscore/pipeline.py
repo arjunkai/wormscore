@@ -89,6 +89,8 @@ def inventory_fields(cfg):
 
 def inventory(project, log=print, progress=None):
     project = Path(project)
+    from .scorers import refuse_in_package
+    refuse_in_package(project, "Scanning")
     cfg = C.load(project)
     ident = cfg.get("identity")
     manifest, images = R.scan(cfg, log=log, progress=progress)
@@ -395,6 +397,8 @@ def prepare(project, reassign=False, add=False, log=print):
     project = Path(project)
     if add and reassign:
         raise SystemExit("Use either --add-new-images or --reassign-codes, not both.")
+    from .scorers import refuse_in_package
+    refuse_in_package(project, "Building the blind set")
     cfg = C.load(project)
     C.check(cfg)
     images, excluded = [], []

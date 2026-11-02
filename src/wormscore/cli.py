@@ -40,6 +40,14 @@ def main(argv=None):
     s.add_argument("project")
     s.add_argument("--i-have-finished-scoring", dest="finished", action="store_true")
     s.add_argument("--anyway", action="store_true", help="unblind below the planned minimum number of scores")
+    s = sub.add_parser("export-scorer", help="make a copy of the blind set (no key) for a second scorer")
+    s.add_argument("project")
+    s.add_argument("destination", help="a new, empty folder outside the project")
+    s.add_argument("--scorer", required=True, help="the second scorer's name")
+    s.add_argument("--percent", type=float, default=30, help="share of each genotype's images, 1 to 100 (default 30)")
+    s = sub.add_parser("import-scorer", help="bring a second scorer's finished package back into the project")
+    s.add_argument("project")
+    s.add_argument("package")
     s = sub.add_parser("update", help="check GitHub for a newer version; --install or --rollback the downloaded app")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--install", action="store_true", help="download, check and install it when this command ends")
@@ -80,6 +88,14 @@ def main(argv=None):
         elif a.cmd == "unblind":
             from .unblind import unblind
             unblind(a.project, finished=a.finished, anyway=a.anyway)
+        elif a.cmd == "export-scorer":
+            from .scorers import export_package
+            export_package(a.project, a.scorer, a.destination, fraction=a.percent / 100)
+            print(f"Give {a.destination} to {a.scorer}. When they have finished: "
+                  f"wormscore import-scorer {a.project} <their folder>")
+        elif a.cmd == "import-scorer":
+            from .scorers import import_scores
+            import_scores(a.project, a.package)
         elif a.cmd == "update":
             update_command(a)
     except FileNotFoundError as exc:
