@@ -11,9 +11,8 @@ reports exactly as before.
 
 - **Second scorer.** A second person scores the same blind set; agreement between scorers.
 - **Reference images for "dim".** An optional panel of reference images the scorer can compare against.
-- **Second identity channel.** Find the cell on one marker and judge the reporter on another, as
-  recommended for unbiased selection. Presets for common fluorescent proteins beyond GFP (for
-  example mNeonGreen, YFP, mCherry, TagRFP, mScarlet, mKate2, BFP), matched by emission band.
+- **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
+  several identity channels (for multi-color systems such as NeuroPAL).
 - **Score form builder.** Make your own set of scoring questions in the app instead of editing
   `config.json`: start from a preset (cell fate, axon guidance, neurodegeneration, dendrite
   length, counts and position) or a blank form; choose each question's answer type (choice,
@@ -33,10 +32,18 @@ reports exactly as before.
 
 ## Version 1.0.0
 
-1.0.0 comes after the list above is done and wormscore has been used from start to finish on a real
-blind-scoring project.
+1.0.0 is the version used from start to finish on a real blind-scoring project (0.14.0, then
+unblinded) plus the identity channel and marker presets. The list above continues as 1.x releases;
+each is off by default, so a project that does not turn it on works exactly as in 1.0.0.
 
 ## Recently shipped
+
+- 1.0.0: presets for fluorescent proteins beyond GFP (mNeonGreen, YFP, mCherry, TagRFP, mScarlet,
+  mKate2, BFP) and an optional identity channel: a second marker that shows where the cell is. The
+  scoring page shows the reporter, the identity marker or both (keys 1, 2, 3), and suggested cells are
+  found on the identity marker and measured on the reporter, so a dim or missing reporter cell is still
+  found. GFP projects build exactly the same blind set as before.
+- 0.14.0: 3D view on the scoring page: turn the stack -60 to +60 degrees, same fixed display ranges.
 
 - 0.13.0: reads Nikon `.nd2`, Olympus FluoView `.oib` and `.oif`, and (when turned on for a source)
   ImageJ hyperstack TIFF.

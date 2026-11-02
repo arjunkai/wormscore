@@ -29,6 +29,9 @@ DEFAULTS = {
     # Which channel is the reporter. Identified from metadata only, never guessed.
     # emission_nm (optional): [low, high]; a channel whose recorded emission wavelength (Nikon,
     # Olympus FluoView) falls in this range also counts as the marker, e.g. [500, 550] for GFP.
+    # preset (optional): a fluorescent protein from PRESETS below ("mCherry", "YFP", ...). It fills
+    # in every other field; any field given next to it overrides the preset's value. Without a
+    # preset these GFP settings are used, exactly as in earlier versions.
     "marker": {
         "label": "GFP",
         "excitation_nm": [488],
@@ -38,6 +41,18 @@ DEFAULTS = {
         "leica_lut": "Green",
     },
     "brightfield_channel_names": ["BF", "Brightfield", "DIC", "Trans", "T-PMT", "T PMT", "TL"],
+
+    # Optional second marker that shows where the cell is, independently of the reporter being
+    # scored (for example a pan-neuronal or cell-identity mCherry). Same fields as "marker",
+    # usually just {"preset": "mCherry"}. When set:
+    #   - the scoring page can show the reporter, the identity channel or both;
+    #   - suggested cells are found on the identity channel, and the reporter is measured there,
+    #     so a dim or missing reporter cell is still found (spots_from: "identity"; set
+    #     "reporter" to find them on the reporter as before);
+    #   - required (default true): an image without an identity channel is left out of the blind
+    #     set with the reason in outputs/excluded.csv; false keeps it, scored on the reporter alone.
+    # Left out (null), nothing changes.
+    "identity": None,
 
     "inclusion": {
         "min_objective_magnification": 40,
@@ -53,6 +68,9 @@ DEFAULTS = {
         "display_um_per_px": 0.20,
         "frame_px": 940,
         "brightfield_contrast_percentiles": [1, 99],
+        # Identity channel only (display, never measured): each image from the median of its
+        # projection to this high percentile, so its brightness cannot hint at the genotype.
+        "identity_contrast_percentiles": [50, 99.9],
     },
     # Highest value each microscope can record, by system name. Missing systems use the
     # bit depth from the file metadata (255 for 8-bit, 65535 for 16-bit).
@@ -139,6 +157,113 @@ DEFAULTS = {
 }
 
 
+# Fluorescent protein presets for "marker" and "identity". Values follow FPbase peaks (excitation /
+# emission): EGFP 488/507, mNeonGreen 506/517, EYFP 513/527, mCherry 587/610, TagRFP-T 555/584,
+# mScarlet-I 569/593, mKate2 588/633, mTagBFP2 399/454.
+#   excitation_nm: laser lines that excite it, as recorded in metadata;
+#   emission_band_start_nm: [low, high] for where a Leica detection band starts;
+#   emission_nm: [low, high] for a recorded emission wavelength (Nikon, Olympus);
+#   dye_names / channel_name_prefixes: names microscopes write for it;
+#   color: how it is drawn on the scoring page (red, green, blue, 0 to 1).
+# GFP is exactly the settings used before presets existed (no emission_nm), so GFP projects build
+# the same blind set as before.
+PRESETS = {
+    "GFP": {"label": "GFP", "excitation_nm": [488], "emission_band_start_nm": [490, 530],
+            "dye_names": ["EGFP", "GFP", "Leica/EGFP"], "channel_name_prefixes": ["GFP", "EGFP"],
+            "leica_lut": "Green", "color": [0, 1, 0]},
+    "mNeonGreen": {"label": "mNeonGreen", "excitation_nm": [488, 505, 506], "emission_band_start_nm": [495, 535],
+                   "emission_nm": [505, 545], "dye_names": ["mNeonGreen", "mNG", "Leica/mNeonGreen"],
+                   "channel_name_prefixes": ["mNeonGreen", "mNG"], "leica_lut": None, "color": [0, 1, 0]},
+    "YFP": {"label": "YFP", "excitation_nm": [514, 515], "emission_band_start_nm": [515, 545],
+            "emission_nm": [520, 555], "dye_names": ["EYFP", "YFP", "Venus", "mVenus", "Citrine", "Leica/EYFP"],
+            "channel_name_prefixes": ["YFP", "EYFP", "Venus"], "leica_lut": None, "color": [1, 1, 0]},
+    "mCherry": {"label": "mCherry", "excitation_nm": [561, 587, 594], "emission_band_start_nm": [575, 625],
+                "emission_nm": [595, 645], "dye_names": ["mCherry", "mCherry2", "Leica/mCherry"],
+                "channel_name_prefixes": ["mCherry"], "leica_lut": None, "color": [1, 0, 1]},
+    "TagRFP": {"label": "TagRFP", "excitation_nm": [555, 561], "emission_band_start_nm": [560, 600],
+               "emission_nm": [570, 605], "dye_names": ["TagRFP", "TagRFP-T", "tagRFP", "Leica/TagRFP"],
+               "channel_name_prefixes": ["TagRFP"], "leica_lut": None, "color": [1, 0, 1]},
+    "mScarlet": {"label": "mScarlet", "excitation_nm": [561, 569], "emission_band_start_nm": [565, 610],
+                 "emission_nm": [580, 625], "dye_names": ["mScarlet", "mScarlet-I", "mScarlet3", "Leica/mScarlet"],
+                 "channel_name_prefixes": ["mScarlet"], "leica_lut": None, "color": [1, 0, 1]},
+    "mKate2": {"label": "mKate2", "excitation_nm": [561, 588, 594], "emission_band_start_nm": [590, 650],
+               "emission_nm": [615, 675], "dye_names": ["mKate2", "Leica/mKate2"],
+               "channel_name_prefixes": ["mKate"], "leica_lut": None, "color": [1, 0, 1]},
+    "BFP": {"label": "BFP", "excitation_nm": [402, 405], "emission_band_start_nm": [410, 460],
+            "emission_nm": [430, 485], "dye_names": ["TagBFP", "mTagBFP2", "EBFP2", "BFP", "Leica/TagBFP"],
+            "channel_name_prefixes": ["BFP", "TagBFP"], "leica_lut": None, "color": [0, 0.6, 1]},
+}
+MARKER_KEYS = ("label", "excitation_nm", "emission_band_start_nm", "emission_nm", "dye_names",
+               "channel_name_prefixes", "leica_lut", "color")
+IDENTITY_KEYS = MARKER_KEYS + ("preset", "spots_from", "required")
+SPOTS_FROM = ("identity", "reporter")
+
+
+def preset_names():
+    return ", ".join(PRESETS)
+
+
+def _preset(name, where):
+    """The preset of that name (case does not matter), or a plain error naming the choices."""
+    for k, v in PRESETS.items():
+        if k.lower() == str(name).lower():
+            return copy.deepcopy(v)
+    raise SystemExit(f"{where}.preset {name!r} is not known. Choose one of: {preset_names()}.")
+
+
+def resolve_marker(raw, where="marker"):
+    """Marker settings from what config.json gives: a preset filled in, then any field given next
+    to it. Without a preset, the given fields over the GFP defaults (as before presets existed)."""
+    raw = dict(raw or {})
+    if raw.get("preset"):
+        out = _preset(raw["preset"], where)
+        out["preset"] = PRESETS[next(k for k in PRESETS if k.lower() == str(raw["preset"]).lower())]["label"]
+    else:
+        out = copy.deepcopy(DEFAULTS["marker"])
+    for k, v in raw.items():
+        if k != "preset":
+            out[k] = v
+    return out
+
+
+def resolve_identity(raw):
+    """Identity-channel settings with defaults filled in, or None if none is configured."""
+    if not raw:
+        return None
+    if not isinstance(raw, dict):
+        raise SystemExit('identity must be an object, for example {"preset": "mCherry"}.')
+    if not raw.get("preset") and not (raw.get("dye_names") or raw.get("excitation_nm") or raw.get("emission_nm")):
+        raise SystemExit('identity needs a "preset" (for example "mCherry") or its own channel rules '
+                         '(dye_names, excitation_nm, emission_band_start_nm or emission_nm).')
+    base = _preset(raw["preset"], "identity") if raw.get("preset") else \
+        {"label": "Identity", "excitation_nm": [], "emission_band_start_nm": [0, 0], "dye_names": [],
+         "channel_name_prefixes": [], "leica_lut": None, "color": [1, 0, 1]}
+    if raw.get("preset"):
+        base["preset"] = base["label"]
+    out = {**base, "spots_from": "identity", "required": True}
+    for k, v in raw.items():
+        if k != "preset":
+            out[k] = v
+    return out
+
+
+def marker_color(cfg):
+    """The reporter's drawing color (red, green, blue, 0 to 1); green unless set."""
+    return list(cfg["marker"].get("color") or [0, 1, 0])
+
+
+def identity_color(cfg):
+    """The identity channel's color, changed to a contrasting one if it would match the reporter's,
+    so the two can be told apart when shown together."""
+    ident = cfg.get("identity")
+    if not ident:
+        return None
+    col = list(ident.get("color") or [1, 0, 1])
+    if col == marker_color(cfg):
+        col = [0, 1, 0] if col == [1, 0, 1] else [1, 0, 1]
+    return col
+
+
 def merge(base, over):
     out = copy.deepcopy(base)
     for k, v in over.items():
@@ -154,7 +279,14 @@ def load(project):
     if not path.exists():
         raise FileNotFoundError(f"No config.json in {project}. Run 'wormscore init {project}' first.")
     with open(path, encoding="utf-8") as fh:
-        return merge(DEFAULTS, json.load(fh))
+        raw = json.load(fh)
+    cfg = merge(DEFAULTS, raw)
+    # Marker and identity are not merged field by field: a preset replaces the GFP defaults as a
+    # whole, so an mCherry marker never keeps GFP's laser line or dye names.
+    if isinstance(raw.get("marker"), dict) and raw["marker"].get("preset"):
+        cfg["marker"] = resolve_marker(raw["marker"])
+    cfg["identity"] = resolve_identity(raw.get("identity"))
+    return cfg
 
 
 def matches(pattern, rel_path):
@@ -269,16 +401,38 @@ def check(cfg):
         if ij is None:
             continue
         chans = ij.get("channels") if isinstance(ij, dict) else None
-        if not isinstance(chans, list) or not chans or any(c not in ("marker", "brightfield", "other") for c in chans):
+        if not isinstance(chans, list) or not chans \
+                or any(c not in ("marker", "identity", "brightfield", "other") for c in chans):
             raise SystemExit(f"source '{src.get('name', src.get('path'))}': imagej_tiff needs \"channels\", a list of "
-                             "\"marker\", \"brightfield\" or \"other\" in the order the file stores them.")
-        if chans.count("marker") != 1 or chans.count("brightfield") > 1:
+                             "\"marker\", \"identity\", \"brightfield\" or \"other\" in the order the file stores them.")
+        if chans.count("marker") != 1 or chans.count("brightfield") > 1 or chans.count("identity") > 1:
             raise SystemExit(f"source '{src.get('name', src.get('path'))}': imagej_tiff channels need exactly one "
-                             "\"marker\" and at most one \"brightfield\".")
-    em = cfg["marker"].get("emission_nm")
-    if em is not None and (not isinstance(em, list) or len(em) != 2 or not all(isinstance(x, (int, float)) for x in em)
-                           or em[0] > em[1]):
-        raise SystemExit("marker.emission_nm must be [low, high] in nm, for example [500, 550].")
+                             "\"marker\", and at most one \"identity\" and one \"brightfield\".")
+        if "identity" in chans and not cfg.get("identity"):
+            raise SystemExit(f"source '{src.get('name', src.get('path'))}': imagej_tiff names an \"identity\" channel, "
+                             "but config.json has no \"identity\" settings.")
+    for where, m in (("marker", cfg["marker"]), ("identity", cfg.get("identity"))):
+        if not m:
+            continue
+        em = m.get("emission_nm")
+        if em is not None and (not isinstance(em, list) or len(em) != 2
+                               or not all(isinstance(x, (int, float)) for x in em) or em[0] > em[1]):
+            raise SystemExit(f"{where}.emission_nm must be [low, high] in nm, for example [500, 550].")
+        col = m.get("color")
+        if col is not None and (not isinstance(col, list) or len(col) != 3
+                                or not all(isinstance(x, (int, float)) and 0 <= x <= 1 for x in col) or not any(col)):
+            raise SystemExit(f"{where}.color must be [red, green, blue] with values from 0 to 1, for example [1, 0, 1].")
+    ident = cfg.get("identity")
+    if ident:
+        if ident.get("spots_from") not in SPOTS_FROM:
+            raise SystemExit(f"identity.spots_from must be one of {', '.join(SPOTS_FROM)}.")
+        if not isinstance(ident.get("required"), bool):
+            raise SystemExit("identity.required must be true or false.")
+        unknown = set(ident) - set(IDENTITY_KEYS)
+        if unknown:
+            raise SystemExit(f"identity: unknown setting(s) {sorted(unknown)}.")
+        if ident.get("label", "").lower() == cfg["marker"]["label"].lower():
+            raise SystemExit("identity and marker have the same label; give the identity channel its own \"label\".")
     f = cfg["reliability"]["repeat_fraction"]
     if isinstance(f, bool) or not isinstance(f, (int, float)) or not 0 <= f <= 0.5:
         raise SystemExit("reliability.repeat_fraction must be between 0 and 0.5 (0 = off).")

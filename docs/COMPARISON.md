@@ -70,10 +70,11 @@ evidence that people struggle with it, and what wormscore does.
   `.oib`/`.oif` and (when turned on) ImageJ hyperstack TIFF. It does not read Olympus `.oir` or `.vsi`,
   Imaris `.ims` and many others; Fiji (Bio-Formats) and napari read far more. ImageJ TIFFs carry no channel
   identity, so their channel order has to be stated by hand.
-- **One marker channel.** Labs often find the cell on a second marker and judge the reporter, which is
-  also what [Jost & Waters 2019](https://doi.org/10.1083/jcb.201812109) recommend: select regions on "a
+- **One identity channel.** Since 1.0.0 a second marker can find the cell while the reporter is judged,
+  as [Jost & Waters 2019](https://doi.org/10.1083/jcb.201812109) recommend (select regions on "a
   fluorescence channel or transmitted light image from which content of the experimental image cannot
-  be deduced". wormscore shows one fluorescent marker plus brightfield.
+  be deduced"). Only one identity channel is supported, so NeuroPAL's several colors are not; there is
+  no bleed-through check or chromatic-shift correction, and the 3D view turns the reporter only.
 - **No second-scorer mode yet.** Since 0.10.0 wormscore can hide repeat images and reports one scorer's
   consistency (percent agreement and Cohen's kappa) at unblinding, as Blind Analysis Tools (replicate
   copies) and Blinder (re-shown images) do. Agreement between two scorers is not supported yet. Kappa

@@ -20,6 +20,8 @@ def main(argv=None):
     s.add_argument("--n", type=int, default=10, help="simulated worms per genotype")
     s.add_argument("--real", action="store_true",
                    help="download 4 real worm heads (about 150 MB, CC BY 4.0) instead of simulating")
+    s.add_argument("--identity", action="store_true",
+                   help="add a simulated mCherry identity channel that marks every cell")
     s = sub.add_parser("copy", help="copy a data folder and verify every file by SHA-256")
     s.add_argument("source")
     s.add_argument("destination")
@@ -61,7 +63,7 @@ def main(argv=None):
                 make_real_demo(a.project)
             else:
                 from .demo import make_demo
-                make_demo(a.project, n_per_group=a.n)
+                make_demo(a.project, n_per_group=a.n, identity=a.identity)
             print(f"Next: wormscore inventory {a.project} && wormscore prepare {a.project} && wormscore app {a.project}")
         elif a.cmd == "copy":
             from .copydata import copy_verified

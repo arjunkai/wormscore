@@ -22,6 +22,19 @@ def brightfield_plane(bf_stack, cfg):
     return window(plane, p_lo, max(p_hi, p_lo + 1))
 
 
+def identity_display(stack, cfg):
+    """The identity channel for display only: one window per image, from the median of its maximum
+    projection (background) to a high percentile (bright cells), applied to every plane. Scaled per
+    image on purpose: the identity marker is only for finding the cell, and if its brightness differed
+    between genotypes, a fixed range could hint at the genotype. It is never measured.
+    Returns 8-bit (z, y, x) planes and the 8-bit projection."""
+    mip = stack.max(0).astype(float)
+    p_lo, p_hi = cfg["display"]["identity_contrast_percentiles"]
+    lo, hi = np.percentile(mip, [p_lo, p_hi])
+    hi = max(hi, lo + 1)
+    return window(stack, lo, hi), window(mip, lo, hi)
+
+
 def overlay(marker_display, bf_display):
     """Brightfield in gray at half strength with the marker added in the green channel."""
     bf = bf_display.astype(float) * 0.5

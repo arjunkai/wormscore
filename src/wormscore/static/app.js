@@ -39,6 +39,9 @@ const st = {
   cfg: null, colors: {}, worms: [], code: null, meta: null, score: null, rois: [], roisDirty: false, formDirty: false,
   view: "mip", z: 0, range: "enhanced", bf: false, zoom: 1, tab: "score", tool: "ellipse", label: null,
   mip: null, bfVals: null, planes: [], drawing: null, geom: null,
+  // Identity channel (projects that set one): which channel is shown, and its display-only images
+  // (8-bit, scaled per image when the blind set was built, so they hold no brightness numbers).
+  chan: "both", idMip: null, idPlanes: [],
   angle: 0, rot: new Map(),   // 3D: the turn in degrees, and turned projections already drawn for this image
   next: null,   // the next image's projection and brightfield, decoded ahead: { code, mip, bfVals }
 };
@@ -290,6 +293,7 @@ async function openWorm(code) {
     code, meta: r.meta, imgV: r.img_v, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
     view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), planeFailed: new Set(),
     drawing: null, mip: null, bfVals: null, angle: 0, rot: new Map(), planesDone: false, rendering: null, vol: null,
+    idMip: null, idPlanes: new Array(r.meta.n_z),
   });
   $("#aSlider").value = 0;
   // The form shows this image's answers at once, never the last image's under this code.
@@ -318,7 +322,7 @@ async function openWorm(code) {
     return;
   }
   if (seq !== st.openSeq) return;
-  [st.mip, st.bfVals] = pixels;
+  [st.mip, st.bfVals, st.idMip] = pixels;
   st.loading = false;
   draw();
   loadNext(code);
@@ -343,6 +347,7 @@ function loadImages(code, meta, v) {
   return Promise.all([
     loadValues(imgUrl(code, "mip.png", v), w, hgt),
     meta.has_brightfield ? loadValues(imgUrl(code, "brightfield.png", v), w, hgt, false) : null,
+    meta.has_identity ? loadValues(imgUrl(code, "identity_mip.png", v), w, hgt, false) : null,
   ]);
 }
 
@@ -361,9 +366,14 @@ function loadNext(code) {
 async function loadPlane(code, z) {
   const { width: w, height: hgt } = st.meta;
   try {
-    const vals = await loadValues(imgUrl(code, `planes/z${String(z).padStart(2, "0")}.png`, st.imgV), w, hgt);
+    const name = `z${String(z).padStart(2, "0")}.png`;
+    const [vals, ivals] = await Promise.all([
+      loadValues(imgUrl(code, `planes/${name}`, st.imgV), w, hgt),
+      st.meta.has_identity ? loadValues(imgUrl(code, `identity/${name}`, st.imgV), w, hgt, false) : null,
+    ]);
     if (st.code !== code) return;
     st.planes[z] = vals;
+    st.idPlanes[z] = ivals;
     st.planeFailed.delete(z);
   } catch {
     if (st.code === code) st.planeFailed.add(z);
@@ -557,6 +567,11 @@ function draw() {
       : have < m.n_z ? `Loading planes for 3D... ${have} / ${m.n_z}`
       : `Turning to ${st.angle}°... (showing ${near}°)`;
   }
+  // Identity channel: shown alone or with the reporter (Projection and Planes; 3D turns the
+  // reporter only). It waits for its own plane, so the two channels never show different planes.
+  const chan = m.has_identity && !in3d ? st.chan : "reporter";
+  const idVals = chan === "reporter" ? null : st.view === "mip" ? st.idMip : st.idPlanes[st.z];
+  if (chan !== "reporter" && !idVals) vals = null;
   const g = (st.geom = geometry());
   cv.width = g.fw;
   cv.height = g.fh;
@@ -582,20 +597,26 @@ function draw() {
   // The image itself is recomputed only when what is shown changes, not while a region is
   // being drawn (a large image has over a million pixels).
   const drawn = st.drawn;
-  if (!drawn || drawn.vals !== vals || drawn.bf !== showBf || drawn.lo !== lo || drawn.hi !== hi) {
+  if (!drawn || drawn.vals !== vals || drawn.bf !== showBf || drawn.lo !== lo || drawn.hi !== hi
+      || drawn.idVals !== idVals || drawn.chan !== chan) {
     off.width = m.width; off.height = m.height;
     const im = offCtx.createImageData(m.width, m.height);
     const d = im.data;
+    // Each channel in its own color, added together (green reporter alone looks as it always has).
+    const rc = st.cfg.marker_color || [0, 1, 0];
+    const ic = (st.cfg.identity && st.cfg.identity.color) || [1, 0, 1];
+    const showRep = chan !== "identity";
     for (let i = 0; i < vals.length; i++) {
-      const gv = Math.min(255, Math.max(0, ((vals[i] - lo) / (hi - lo)) * 255));
+      const gv = showRep ? Math.min(255, Math.max(0, ((vals[i] - lo) / (hi - lo)) * 255)) : 0;
+      const iv = idVals ? idVals[i] : 0;
       const base = showBf ? st.bfVals[i] * 0.5 : 0;
-      d[i * 4] = base;
-      d[i * 4 + 1] = Math.min(255, base + gv);
-      d[i * 4 + 2] = base;
+      d[i * 4] = Math.min(255, base + gv * rc[0] + iv * ic[0]);
+      d[i * 4 + 1] = Math.min(255, base + gv * rc[1] + iv * ic[1]);
+      d[i * 4 + 2] = Math.min(255, base + gv * rc[2] + iv * ic[2]);
       d[i * 4 + 3] = 255;
     }
     offCtx.putImageData(im, 0, 0);
-    st.drawn = { vals, bf: showBf, lo, hi };
+    st.drawn = { vals, bf: showBf, lo, hi, idVals, chan };
   }
   ctx.imageSmoothingEnabled = st.zoom === 1;
   ctx.drawImage(off, g.ox, g.oy, m.width * g.s, m.height * g.s);
@@ -970,11 +991,32 @@ function syncButtons() {
   if (st.meta) cv.setAttribute("aria-label", `Image ${st.code}, ${in3d ? `3D, turned ${st.angle} degrees` : st.view === "plane" ? `plane ${st.z + 1}` : "projection"}`);
   $$("#toolSeg button").forEach(b => (b.disabled = in3d));
   $("#mark3d").classList.toggle("hidden", !in3d);
+  syncChannel(in3d);
   $("#bfToggle").checked = st.bf && !!st.meta && st.meta.has_brightfield;
   $("#bfToggle").disabled = !st.meta || !st.meta.has_brightfield || in3d;
   if (st.meta) $("#bfToggle").parentElement.title = !st.meta.has_brightfield
     ? "No brightfield channel was recorded for this image" : in3d ? "Brightfield is one flat image, so 3D does not show it" : "";
   syncCursor();
+}
+
+// Channel buttons (Reporter / Identity / Both) appear only in projects with an identity channel.
+function syncChannel(in3d) {
+  const idc = st.cfg && st.cfg.identity;
+  $("#chanSeg").classList.toggle("hidden", !idc);
+  if (!idc) return;
+  const has = !!st.meta && !!st.meta.has_identity;
+  $$("[data-chan]").forEach(b => {
+    setOn(b, has && !in3d ? b.dataset.chan === st.chan : b.dataset.chan === "reporter");
+    b.disabled = !has || in3d;
+  });
+  $("#chanSeg").title = !st.meta ? "" : !has ? `No ${idc.label} channel was recorded for this image`
+    : in3d ? `3D turns the ${st.cfg.marker} channel only` : "";
+}
+function setChan(c) {
+  if (!st.meta || !st.meta.has_identity || st.view === "3d") return;
+  st.chan = c;
+  syncButtons();
+  draw();
 }
 
 function setView(v) {
@@ -999,6 +1041,7 @@ function setZ(z) {
 
 $$("[data-view]").forEach(b => (b.onclick = () => setView(b.dataset.view)));
 $$("[data-range]").forEach(b => (b.onclick = () => { st.range = b.dataset.range; syncButtons(); draw(); }));
+$$("[data-chan]").forEach(b => (b.onclick = () => setChan(b.dataset.chan)));
 // Zooming keeps the point at the middle of the view in the middle.
 $$("[data-zoom]").forEach(b => (b.onclick = () => {
   const wrap = $("#canvasWrap");
@@ -1060,6 +1103,7 @@ document.addEventListener("keydown", e => {
   else if (k === "d") setView(st.view === "3d" ? "mip" : "3d");
   else if (k === "e") { st.range = st.range === "full" ? "enhanced" : "full"; syncButtons(); draw(); }
   else if (k === "b" && st.meta.has_brightfield) { st.bf = !st.bf; syncButtons(); draw(); }
+  else if (["1", "2", "3"].includes(k) && st.cfg.identity) setChan(["reporter", "identity", "both"][+k - 1]);
   else if (k === "n" && !e.repeat) {
     const i = st.worms.findIndex(w => w.code === st.code);
     if (i + 1 < st.worms.length) openWorm(st.worms[i + 1].code);
@@ -1084,6 +1128,11 @@ async function start() {
       const cfg = await api("/api/config");
       st.projectId = cfg.project_id;
       st.cfg = cfg;
+      if (cfg.identity) {
+        $("[data-chan=reporter]").textContent = cfg.marker;
+        $("[data-chan=identity]").textContent = cfg.identity.label;
+        $("#chanKeys").classList.remove("hidden");
+      }
       buildForm();
     }
     await loadList();

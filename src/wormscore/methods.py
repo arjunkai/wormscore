@@ -139,6 +139,23 @@ def dim_sentence(cfg, dim_rows):
             f"{_or(cfg['scoring']['calls'][:-1])} fell below the cutoff (dim_check.csv, by settings group)."]
 
 
+def identity_sentence(cfg):
+    """How the identity channel was used, or nothing if the project has none."""
+    ident = cfg.get("identity")
+    if not ident:
+        return []
+    rep, lab = cfg["marker"]["label"], ident["label"]
+    where = (f"Suggested cell positions were found on the {lab} channel, and the {rep} reporter was measured in "
+             f"those regions, so cells were located without using the reporter being scored."
+             if ident["spots_from"] == "identity" else
+             f"Suggested cell positions were found on the {rep} reporter.")
+    missing = (f"Images without a {lab} channel were excluded." if ident["required"]
+               else f"Images without a {lab} channel were kept and scored on the {rep} reporter alone.")
+    return [f"A second marker, {lab}, labelled the cells independently of the {rep} reporter and could be shown "
+            f"during scoring alone or with the reporter; it was displayed with each image scaled on its own, so its "
+            f"brightness could not hint at the genotype, and it was never measured. {where} {missing}"]
+
+
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
               dim_rows=()):
@@ -180,7 +197,8 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         f"had been scored.",
         "",
         "**Measurement.** "
-        f"Each plane was median-filtered ({mc['median_filter_px']} x {mc['median_filter_px']} pixels). For each "
+        + "".join(x + " " for x in identity_sentence(cfg))
+        + f"Each plane was median-filtered ({mc['median_filter_px']} x {mc['median_filter_px']} pixels). For each "
         "scored region, background was the median of a ring starting "
         f"{mc['background_ring_gap_um']} um outside the region and {mc['background_ring_width_um']} um wide, "
         "excluding other regions. Reported values are the background-subtracted mean in the sharpest plane "

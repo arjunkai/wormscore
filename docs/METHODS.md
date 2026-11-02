@@ -45,6 +45,21 @@ From metadata only:
 
 If not exactly one channel matches, the marker is UNRESOLVED and the image is excluded.
 
+**Other fluorescent proteins** (since 1.0.0). `"marker": {"preset": "mCherry"}` replaces the GFP
+settings with those of another protein: GFP, mNeonGreen, YFP, mCherry, TagRFP, mScarlet, mKate2 or BFP.
+Each preset gives the laser lines that excite it, where a Leica detection band starts, an emission range
+for files that record one (Nikon, Olympus), the dye and channel names microscopes write for it, and its
+display color, from FPbase peaks (for example mCherry 587/610 nm: lasers 561, 587 or 594 nm, band
+starting 575 to 625 nm, emission 595 to 645 nm). Any field given next to the preset overrides it. Without
+a preset the GFP settings above are used exactly as before, so GFP projects build the same blind set.
+
+**Identity channel** (optional, since 1.0.0). `"identity": {"preset": "mCherry"}` names a second
+marker that labels the cells independently of the reporter being scored, such as a pan-neuronal or
+cell-identity marker. It is found by the same rules, among the channels that are not the marker (the
+reporter is tested first, so a channel is never both); if two channels match, the one naming a
+configured dye is used, otherwise it is UNRESOLVED. One identity channel is supported; a multi-color
+identity system such as NeuroPAL is not.
+
 ## 3. Inclusion rules
 
 Decided before scoring and applied without regard to genotype. An image is used if its marker channel
@@ -52,7 +67,10 @@ was identified, its objective is at least `min_objective_magnification` (when th
 it has no more than `max_time_points`, and its z-stack covers at least `min_z_extent_um`
 ((planes - 1) x step). Images can also be left out by file name with a per-source `exclude` rule
 (`{"match": pattern, "reason": text}`), for example a plate found to carry a different reporter; the
-reason is written to `excluded.csv`. Such rules should be set before scoring. The same image saved inside two different files (identical pixels, found by a checksum of
+reason is written to `excluded.csv`. Such rules should be set before scoring. In a project with an
+identity channel, an image without one is excluded too (`identity.required`, default true), so every
+scored image had its cells found the same way; with `required: false` it is kept, scored on the reporter
+alone, and marked in the key (`identity_channel_used`). The same image saved inside two different files (identical pixels, found by a checksum of
 every pixel recorded at inventory) is coded only once; the other copy is listed in `excluded.csv`. An image is never excluded for having no fluorescent signal: a missing cell is
 a result. Images taken at the same stage position in the same file are treated as the same animal
 imaged again; only one is counted (by default the one with more planes; the scorer can change this
@@ -115,6 +133,15 @@ it, and regions are drawn on the projection or a plane. Images over 1.5 million 
 half size (each pixel the brightest of 2 x 2) to stay quick. Brightfield (middle plane, contrast-stretched per image) can be overlaid; it is
 never measured.
 
+**Identity channel.** Saved plane by plane and as a projection for display only, as 8-bit images,
+each image scaled on its own from the median of its projection (background) to its 99.9th percentile
+(`display.identity_contrast_percentiles`). It is scaled per image on purpose: it is only for finding
+the cell, and if its brightness differed between genotypes a fixed range could hint at the genotype;
+the scoring page receives no identity brightness numbers. The scorer can show the reporter, the identity
+channel or both (keys 1, 2 and 3), each in its own color, added together: the reporter in its preset's
+color (green for GFP) and the identity channel in magenta (or green when the reporter is magenta), so a
+cell with both looks white. The 3D view turns the reporter only.
+
 ## 6. Measurements
 
 Before measuring, each plane is median-filtered (3 x 3 pixels by default), so a single hot pixel or a
@@ -140,6 +167,14 @@ least 6 um apart are taken brightest first, and each is grown to every connected
 of its height above the local background (median of a ring 6 to 10 um away), within 8 um, keeping
 regions of at least 4 um^2 (full width at half maximum). Suggestions are measured too
 (`outputs/auto_measurements.csv`); they only point at places to look.
+
+With an identity channel (`identity.spots_from`, default `identity`), suggestions are found the same way
+on the identity channel's median-filtered projection, and the reporter is measured in those regions
+(column `spots_found_on`). Cells are then located without using the reporter being scored, so a dim or
+missing reporter cell is still found and measured, as recommended by Jost & Waters (2019): select regions
+on "a fluorescence channel or transmitted light image from which content of the experimental image cannot
+be deduced". The sharpest plane is still the plane where the reporter is brightest in the region.
+`spots_from: "reporter"` finds them on the reporter, as without an identity channel.
 
 ## 7. Questions asked of the scorer
 
@@ -252,5 +287,9 @@ Results tables use counted, usable images only, with the animal as the unit (one
 - One version per project: `log.md` records the wormscore version at every step. Updating between
   Build blind set and Unblind would put two versions in the Methods; the app warns before such an
   update and defaults to Not now.
+- Identity channel: no correction is made for bleed-through between channels or for the small depth
+  shift between colors (chromatic aberration). Acquire channels sequentially, image single-label
+  controls, and remember that gut autofluorescence shows in red too, so a suggestion on the identity
+  channel can still land on gut granules.
 - XML metadata is parsed with Python's standard library, which does not fetch external entities; only
   open files you trust.

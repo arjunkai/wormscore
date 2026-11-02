@@ -18,8 +18,10 @@ PX_UM, Z_UM, NZ, SIZE = 0.25, 1.0, 16, 384
 LEVELS = {"normal": 3000.0, "dim": 700.0, "missing": 0.0}
 
 
-def _worm(rng, cells):
-    """One simulated head: returns (marker stack, brightfield stack) as uint16 (z, y, x)."""
+def _worm(rng, cells, id_rng=None):
+    """One simulated head: returns (marker stack, brightfield stack) as uint16 (z, y, x), plus an
+    identity stack when id_rng is given: every cell at the same brightness whatever its marker level,
+    as a cell-identity marker would be. id_rng is separate, so the other stacks do not change."""
     yy, xx = np.mgrid[:SIZE, :SIZE].astype(float)
     angle = rng.uniform(0, np.pi)
     c, s = np.cos(angle), np.sin(angle)
@@ -36,6 +38,10 @@ def _worm(rng, cells):
     gut_img = ndimage.gaussian_filter(gut_img, 1.5) * 9
     marker += gut_img[None] * np.exp(-((zz - NZ / 2) ** 2) / 30)
     marker += body[None] * 60.0                                  # tissue autofluorescence
+    ident = None
+    if id_rng is not None:
+        ident = np.full((NZ, SIZE, SIZE), 100.0) + body[None] * 25.0
+        ident += 0.4 * gut_img[None] * np.exp(-((zz - NZ / 2) ** 2) / 30)   # gut shows a little in red too
 
     for k, level in enumerate(cells):
         cu = rng.uniform(-6, 2)                                  # um along the body
@@ -44,6 +50,8 @@ def _worm(rng, cells):
         r2 = (u - cu) ** 2 + (v - cv) ** 2
         soma = np.exp(-r2 / (2 * 1.4 ** 2))[None] * np.exp(-((zz - cz) ** 2) / (2 * 1.6 ** 2))
         marker += LEVELS[level] * soma
+        if ident is not None:
+            ident += 1800.0 * soma
         if level != "missing":                                   # faint dendrite toward the nose
             along = (u < cu - 2) & (u > -44) & (np.abs(v - cv * (u + 44) / (cu + 44)) < 0.4)
             marker += 0.15 * LEVELS[level] * along[None] * np.exp(-((zz - cz) ** 2) / 8)
@@ -51,14 +59,21 @@ def _worm(rng, cells):
     marker = rng.poisson(np.clip(marker, 0, None)).astype(np.float64)
     bf = 1800 + 600 * body + rng.normal(0, 60, (SIZE, SIZE))
     bf = np.repeat(bf[None], NZ, axis=0) + rng.normal(0, 30, (NZ, SIZE, SIZE))
-    return np.clip(marker, 0, 65535).astype(np.uint16), np.clip(bf, 0, 65535).astype(np.uint16)
+    out = np.clip(marker, 0, 65535).astype(np.uint16), np.clip(bf, 0, 65535).astype(np.uint16)
+    if ident is None:
+        return out
+    ident = id_rng.poisson(np.clip(ident, 0, None)).astype(np.float64)
+    return out + (np.clip(ident, 0, 65535).astype(np.uint16),)
 
 
-def make_demo(project, n_per_group=10, seed=7, log=print):
+def make_demo(project, n_per_group=10, seed=7, log=print, identity=False):
+    """identity=True adds an mCherry identity channel that marks every cell, whatever its GFP level,
+    and sets the project up to find cells on it."""
     project = Path(project)
     data = project / "data"
     data.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
+    id_rng = np.random.default_rng(seed + 1) if identity else None
     truth = []
     for group in ("control", "mutant"):
         for i in range(1, n_per_group + 1):
@@ -66,11 +81,15 @@ def make_demo(project, n_per_group=10, seed=7, log=print):
                 cells = ["normal", "normal"]
             else:
                 cells = list(rng.choice(["normal", "dim", "missing"], size=2, p=[0.4, 0.35, 0.25]))
-            marker, bf = _worm(rng, cells)
+            stacks = _worm(rng, cells, id_rng)
+            marker, bf = stacks[:2]
+            chans, names = [marker, bf], ["GFP", "Brightfield"]
+            if identity:
+                chans, names = [marker, stacks[2], bf], ["GFP", "mCherry", "Brightfield"]
             name = f"demo_{group}_{i:02d}.ome.tif"
-            tifffile.imwrite(data / name, np.stack([marker, bf]), photometric="minisblack", ome=True,
+            tifffile.imwrite(data / name, np.stack(chans), photometric="minisblack", ome=True,
                              metadata={"axes": "CZYX", "PhysicalSizeX": PX_UM, "PhysicalSizeY": PX_UM,
-                                       "PhysicalSizeZ": Z_UM, "Channel": {"Name": ["GFP", "Brightfield"]}})
+                                       "PhysicalSizeZ": Z_UM, "Channel": {"Name": names}})
             truth.append({"file": name, "genotype": group, "cell_1": cells[0], "cell_2": cells[1]})
     (data / "notes.txt").write_text("Simulated data made by 'wormscore demo'. Not real images.\n")
     with open(project / "demo_truth.csv", "w", newline="") as fh:
@@ -91,6 +110,9 @@ def make_demo(project, n_per_group=10, seed=7, log=print):
         },
         "unblinding": {"min_scored_worms": 5},
     }
+    if identity:
+        cfg["project_name"] = "Demo (simulated worms, GFP reporter + mCherry identity)"
+        cfg["identity"] = {"preset": "mCherry"}
     (project / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     log(f"Demo project with {2 * n_per_group} simulated worms written to {project}")
     return project

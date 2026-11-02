@@ -40,6 +40,13 @@ a `.companion.ome`), Nikon `.nd2`, Olympus FluoView `.oib` and `.oif`, and Image
 where you turn it on, because ImageJ files do not record which channel is which). Channel identity
 (marker vs brightfield) is read from metadata, never guessed.
 
+**Not GFP?** Set `"marker": {"preset": "mCherry"}` (or mNeonGreen, YFP, TagRFP, mScarlet, mKate2,
+BFP). **Have a second marker that labels the cell,** such as a pan-neuronal mCherry? Add
+`"identity": {"preset": "mCherry"}`: the scoring page can then show the reporter, the identity
+marker or both (keys 1, 2, 3), and suggested cells are found on the identity marker and the reporter is
+measured there, so a dim or missing reporter cell is still found. See
+[docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md) sections 2 and 6.
+
 ## Install
 
 **Windows, no Python needed:** click **Download for Windows** above (or get `wormscore-windows.zip`
@@ -91,6 +98,7 @@ wormscore app my_demo
 
 `demo` writes 20 simulated worm heads (controls with two normal cells; mutants with cells that are
 normal, dim or missing at random) and a `demo_truth.csv` you can check your calls against later.
+`wormscore demo my_demo --identity` adds an mCherry identity channel that marks every cell.
 In the app window, use **Try a demo...**, then the steps in order: **Scan data > Build blind set > Score**.
 
 **Real worms:** `wormscore demo my_demo --real` (or **Real worm images** in the app's demo dialog) downloads four

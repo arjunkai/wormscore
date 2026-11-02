@@ -64,40 +64,58 @@ def file_role(path):
 
 # ------------------------------------------------------------------ channel rules
 
-def marker_from_leica(ch, lut, cfg):
-    m = cfg["marker"]
-    if ch["detector"] and "trans" in ch["detector"].lower():
-        return "BF"
+# A channel is the marker (the reporter being scored) if it matches the "marker" settings, and the
+# identity channel if it does not but matches the optional "identity" settings. The reporter is
+# tested first, so a channel can never be both.
+
+def _leica_match(ch, lut, m):
     lines = {int(float(ln)) for ln, _ in ch["lasers"]}
     lo = float(ch["band"].split("-")[0]) if ch["band"] else 0
     b0, b1 = m["emission_band_start_nm"]
     lut_ok = not m.get("leica_lut") or lut == m["leica_lut"]
-    if lines & set(m["excitation_nm"]) and b0 <= lo <= b1 and lut_ok:
+    return bool(lines & set(m["excitation_nm"]) and b0 <= lo <= b1 and lut_ok)
+
+
+def marker_from_leica(ch, lut, cfg):
+    if ch["detector"] and "trans" in ch["detector"].lower():
+        return "BF"
+    if _leica_match(ch, lut, cfg["marker"]):
         return "MARKER"
+    if cfg.get("identity") and _leica_match(ch, lut, cfg["identity"]):
+        return "IDENTITY"
     return "OTHER"
+
+
+def _named_match(name, fluor, excitation, emission, m):
+    em = m.get("emission_nm")
+    return bool((fluor and fluor in m["dye_names"])
+                or any(name.upper().startswith(p.upper()) for p in m["channel_name_prefixes"])
+                or (excitation and int(float(excitation)) in m["excitation_nm"])
+                or (emission and em and em[0] <= float(emission) <= em[1]))
 
 
 def marker_from_named(name, fluor, excitation, transmitted, cfg, emission=None):
     """emission (nm) is used only if the marker settings give an emission_nm range."""
-    m = cfg["marker"]
     if transmitted or any(name.upper().startswith(p.upper()) for p in cfg["brightfield_channel_names"]):
         return "BF"
-    em = m.get("emission_nm")
-    if (fluor and fluor in m["dye_names"]) \
-            or any(name.upper().startswith(p.upper()) for p in m["channel_name_prefixes"]) \
-            or (excitation and int(float(excitation)) in m["excitation_nm"]) \
-            or (emission and em and em[0] <= float(emission) <= em[1]):
+    if _named_match(name, fluor, excitation, emission, cfg["marker"]):
         return "MARKER"
+    if cfg.get("identity") and _named_match(name, fluor, excitation, emission, cfg["identity"]):
+        return "IDENTITY"
     return "OTHER"
 
 
 def prefer_named_dye(roles, fluors, cfg):
     """Several channels can match the marker by laser line (for example a second fluorophore
-    excited at 488 nm). If exactly one of them names a configured dye, that one is the marker."""
-    hits = [i for i, r in enumerate(roles) if r == "MARKER"]
-    named = [i for i in hits if fluors[i] and fluors[i] in cfg["marker"]["dye_names"]]
-    if len(hits) > 1 and len(named) == 1:
-        return ["OTHER" if r == "MARKER" and i != named[0] else r for i, r in enumerate(roles)]
+    excited at 488 nm). If exactly one of them names a configured dye, that one is the marker.
+    The same rule picks the identity channel."""
+    for role, m in (("MARKER", cfg["marker"]), ("IDENTITY", cfg.get("identity"))):
+        if not m:
+            continue
+        hits = [i for i, r in enumerate(roles) if r == role]
+        named = [i for i in hits if fluors[i] and fluors[i] in m["dye_names"]]
+        if len(hits) > 1 and len(named) == 1:
+            roles = ["OTHER" if r == role and i != named[0] else r for i, r in enumerate(roles)]
     return roles
 
 
@@ -420,7 +438,7 @@ def olympus_images(path, cfg):
 
 # ------------------------------------------------------------------ ImageJ hyperstack TIFF
 
-IMAGEJ_ROLES = {"marker": "MARKER", "brightfield": "BF", "other": "OTHER"}
+IMAGEJ_ROLES = {"marker": "MARKER", "identity": "IDENTITY", "brightfield": "BF", "other": "OTHER"}
 
 
 def is_imagej_stack(path):

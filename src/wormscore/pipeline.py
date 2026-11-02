@@ -78,17 +78,30 @@ def software_versions():
 
 # ------------------------------------------------------------------ inventory
 
+def inventory_fields(cfg):
+    """The inventory columns; identity_channel only when an identity channel is configured, so other
+    projects' tables keep exactly their columns."""
+    if not cfg.get("identity"):
+        return INVENTORY_FIELDS
+    i = INVENTORY_FIELDS.index("bf_channel") + 1
+    return INVENTORY_FIELDS[:i] + ["identity_channel"] + INVENTORY_FIELDS[i:]
+
+
 def inventory(project, log=print, progress=None):
     project = Path(project)
     cfg = C.load(project)
+    ident = cfg.get("identity")
     manifest, images = R.scan(cfg, log=log, progress=progress)
     rows, by_pixels = [], {}
     for img in images:
         roles = img["channel_roles"]
         mi, bi = R.pick(roles, "MARKER"), R.pick(roles, "BF")
+        ii = R.pick(roles, "IDENTITY") if ident else None
         flags = list(img["flags"])
         if mi is None:
             flags.append(f"{cfg['marker']['label']} channel UNRESOLVED")
+        if ident and ii is None:
+            flags.append(f"{ident['label']} identity channel UNRESOLVED")
         if bi is None:
             flags.append("no brightfield channel identified")
         try:
@@ -104,6 +117,7 @@ def inventory(project, log=print, progress=None):
         rows.append({**{k: img.get(k, "") for k in INVENTORY_FIELDS},
                      "channel_names": "/".join(img["channel_names"]), "channel_roles": "/".join(roles),
                      "marker_channel": "" if mi is None else mi, "bf_channel": "" if bi is None else bi,
+                     **({"identity_channel": "" if ii is None else ii} if ident else {}),
                      "stage_x": "" if img["stage_x"] is None else round(img["stage_x"], 2),
                      "stage_y": "" if img["stage_y"] is None else round(img["stage_y"], 2),
                      "flags": flags, "reader_kind": rk[0], "reader_index": rk[2],
@@ -119,16 +133,20 @@ def inventory(project, log=print, progress=None):
     for r in rows:
         r["flags"] = "; ".join(r["flags"])
     write_csv(project / "outputs" / "manifest.csv", manifest)
-    write_csv(project / "outputs" / "inventory.csv", rows, INVENTORY_FIELDS)
+    write_csv(project / "outputs" / "inventory.csv", rows, inventory_fields(cfg))
     roles = Counter(m["role"] for m in manifest)
+    rule = ("Channel rule: marker = channel whose metadata matches the configured excitation line, emission "
+            "band, dye or channel name (and Leica LUT, if set); if several match, the one channel named by a "
+            "configured dye; brightfield = transmitted-light channel. Otherwise UNRESOLVED.")
+    if ident:
+        rule += (f" Identity channel ({ident['label']}) = a channel that is not the marker and matches the identity "
+                 "settings by the same rule.")
     append_log(project, "inventory", [
         f"Software: {json.dumps(software_versions())}",
         f"{len(manifest)} files scanned; roles: {dict(roles)}",
         f"{len(rows)} raw images listed in outputs/inventory.csv; "
         f"{sum(1 for r in rows if r['flags'])} with flags",
-        "Channel rule: marker = channel whose metadata matches the configured excitation line, emission "
-        "band, dye or channel name (and Leica LUT, if set); if several match, the one channel named by a "
-        "configured dye; brightfield = transmitted-light channel. Otherwise UNRESOLVED.",
+        rule,
     ])
     log(f"{len(manifest)} files, {len(rows)} raw images. See outputs/manifest.csv and outputs/inventory.csv.")
     return rows
@@ -149,6 +167,7 @@ def load_images(project):
             img[k] = float(r[k]) if r[k] != "" else None
         for k in ("marker_channel", "bf_channel"):
             img[k] = int(r[k]) if r[k] != "" else None
+        img["identity_channel"] = int(r["identity_channel"]) if r.get("identity_channel", "") != "" else None
         img["channel_roles"] = r["channel_roles"].split("/")
         img["_reader"] = (r["reader_kind"], r["local_path"], int(r["reader_index"]), r["reader_axes"])
         out.append(img)
@@ -163,6 +182,10 @@ def include_reason(img, cfg):
         return f"excluded by config rule '{rule['match']}': {rule.get('reason') or 'no reason given'}"
     if img["marker_channel"] is None:
         return f"{cfg['marker']['label']} channel could not be identified from metadata"
+    ident = cfg.get("identity")
+    if ident and ident["required"] and img.get("identity_channel") is None:
+        return (f"{ident['label']} identity channel could not be identified from metadata (identity.required is "
+                "true, so every scored image has its cells found the same way)")
     mag = re.search(r"(\d+)x", img["objective"] or "")
     if mag and int(mag.group(1)) < inc["min_objective_magnification"]:
         return f"objective is {img['objective']} (minimum {inc['min_objective_magnification']}x)"
@@ -347,6 +370,21 @@ def interaction_log_lines(cfg):
     return [PLAN_LOG + json.dumps(plan, sort_keys=True)] if plan else []
 
 
+def identity_log_lines(cfg):
+    """What the identity channel did, for log.md (nothing when none is configured)."""
+    ident = cfg.get("identity")
+    if not ident:
+        return []
+    lo, hi = cfg["display"]["identity_contrast_percentiles"]
+    where = (f"found on the {ident['label']} identity channel (median-filtered maximum projection) and the "
+             f"{cfg['marker']['label']} reporter measured in those regions" if ident["spots_from"] == "identity"
+             else f"found on the {cfg['marker']['label']} reporter, as without an identity channel")
+    return [f"Identity channel: {ident['label']}, shown during scoring for finding cells, never measured; displayed "
+            f"per image from the {lo}th to the {hi}th percentile of its maximum projection, so its brightness "
+            f"cannot hint at the genotype. Suggested cells {where}. Images without it: "
+            f"{'left out (identity.required)' if ident['required'] else 'kept, scored on the reporter alone'}."]
+
+
 def saturation_for(img, cfg):
     return cfg["saturation_value"].get(img["system"], 2 ** img["bits"] - 1)
 
@@ -409,6 +447,7 @@ def prepare(project, reassign=False, add=False, log=print):
         shutil.rmtree(blind)
     blind.mkdir(exist_ok=True)
     mc = cfg["measurement"]
+    ident = cfg.get("identity")
     auto_rows, key_rows, stats, pending = [], [], {}, []
     for n, s in enumerate(sorted(todo, key=lambda s: s["code"]), start=1):
         code, d = s["code"], blind / s["code"]
@@ -428,7 +467,26 @@ def prepare(project, reassign=False, add=False, log=print):
             bf_disp = M.brightfield_plane(R.read(s, s["bf_channel"]), cfg)
             Image.fromarray(bf_disp).save(d / "brightfield.png")
 
-        cands = M.candidate_spots(mip_f, px, cfg)
+        # Identity channel: saved for display only (8-bit, scaled per image), and, with spots_from
+        # "identity", the place where suggested cells are found. The reporter is then measured in
+        # those regions, so a dim or missing reporter cell is still found and measured.
+        spot_mip = mip_f
+        has_identity = ident is not None and s.get("identity_channel") is not None
+        if has_identity:
+            iraw = R.read(s, s["identity_channel"])
+            if iraw.shape != raw.shape:
+                raise SystemExit(f"{s['relative_path']} {s['location_in_file']}: the {ident['label']} identity channel "
+                                 f"has shape {iraw.shape}, the marker {raw.shape}.")
+            iplanes, imip = M.identity_display(iraw, cfg)
+            (d / "identity").mkdir()
+            for z in range(iplanes.shape[0]):
+                Image.fromarray(iplanes[z]).save(d / "identity" / f"z{z:02d}.png")
+            Image.fromarray(imip).save(d / "identity_mip.png")
+            if ident["spots_from"] == "identity":
+                spot_mip = M.median_filter_stack(iraw, mc["median_filter_px"]).max(0)
+            del iraw, iplanes, imip
+
+        cands = M.candidate_spots(spot_mip, px, cfg)
         exclude = np.zeros(mip.shape, bool)
         for c in cands:
             exclude |= c["mask"]
@@ -436,7 +494,9 @@ def prepare(project, reassign=False, add=False, log=print):
         for rank, c in enumerate(cands, start=1):
             m = M.measure_region(raw, filt, c["mask"], exclude, px, sat, cfg)
             auto_rows.append({"code": code, "candidate": rank, "y_px": c["y"], "x_px": c["x"],
-                              "prominence": round(c["prominence"], 1), **m})
+                              "prominence": round(c["prominence"], 1),
+                              **({"spots_found_on": ident["label"] if has_identity and ident["spots_from"] == "identity"
+                                  else cfg["marker"]["label"]} if ident else {}), **m})
             ys, xs = np.nonzero(c["mask"])
             cand_meta.append({"rank": rank, "y": c["y"], "x": c["x"],
                               "r": float(max(np.hypot(ys - c["y"], xs - c["x"]).max(), 2.0)),
@@ -463,6 +523,10 @@ def prepare(project, reassign=False, add=False, log=print):
         # mip and brightfield are already saved as PNGs (16-bit packing is lossless), so only
         # the paths are kept: holding every image in memory until the end ran out of RAM
         # on projects with many large images.
+        if ident and not has_identity:
+            flags.append({"id": "no_identity", "text": f"No {ident['label']} channel was recorded for this image, so "
+                          f"it shows the {cfg['marker']['label']} channel only."})
+        s["_has_identity"] = has_identity
         pending.append((s, d, flags, cand_meta, others, raw.shape, sat))
 
         extra = {}
@@ -481,6 +545,7 @@ def prepare(project, reassign=False, add=False, log=print):
             "acquired": s["acquired"], "stage_x_um": "" if s["stage_x"] is None else round(s["stage_x"], 1),
             "stage_y_um": "" if s["stage_y"] is None else round(s["stage_y"], 1),
             "same_field_group": s["field_group"], "counted_by_default": s["counted_by_default"],
+            **({"identity_channel_used": has_identity} if ident else {}),
             **({"added_on": s["added_on"]} if add else {}), **extra,
         })
         log(f"{code} ({n}/{len(todo)})")
@@ -518,6 +583,8 @@ def prepare(project, reassign=False, add=False, log=print):
                 "full_range": r["full"], "enhanced_range": r["enhanced"], "saturation_value": sat,
                 "flags": flags, "candidates": cand_meta, "same_field_as": others,
                 "counted_by_default": s["counted_by_default"]}
+        if ident:      # only in projects with an identity channel, so other blind sets stay byte-identical
+            meta["has_identity"] = s["_has_identity"]
         (d / "meta.json").write_text(json.dumps(meta, indent=1))
 
     # Hidden repeats: the original's files under the repeat's code. Originals were picked so
@@ -555,7 +622,7 @@ def prepare(project, reassign=False, add=False, log=print):
             "Images added after scoring began can be recognised as a later batch by the scorer; if a batch is "
             "one genotype, blinding is weaker for it.",
             f"Display ranges: {json.dumps(ranges)}",
-        ] + interaction_log_lines(cfg), cfg)
+        ] + identity_log_lines(cfg) + interaction_log_lines(cfg), cfg)
         log(f"Added {len(todo)} images {added}; {len(images)} images in blind/ in total.")
         return ranges
     n_counted = sum(s["counted_by_default"] for s in images)
@@ -572,7 +639,7 @@ def prepare(project, reassign=False, add=False, log=print):
         "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
         f"Settings groups: {len(letters)} (key/settings_groups.csv).",
         f"Display ranges: {json.dumps(ranges)}",
-    ] + interaction_log_lines(cfg), cfg)
+    ] + identity_log_lines(cfg) + interaction_log_lines(cfg), cfg)
     log(f"{len(images)} images in blind/ {per_system}" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
         + f"; {len(excluded)} excluded.")
     return ranges

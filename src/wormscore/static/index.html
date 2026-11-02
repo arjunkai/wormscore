@@ -39,6 +39,9 @@
         <button data-range="full" title="Full detector range, same for every image from this microscope">Standard</button>
         <button data-range="enhanced" class="on" title="Background to typical bright spot, same for every image from this microscope">Enhanced</button>
       </div>
+      <div class="seg hidden" id="chanSeg" role="group" aria-label="Channel">
+        <button data-chan="reporter" title="The reporter being scored">Reporter</button><button data-chan="identity" title="The identity marker, for finding the cell">Identity</button><button data-chan="both">Both</button>
+      </div>
       <label class="chk"><input id="bfToggle" type="checkbox"> Brightfield</label>
       <div class="seg" role="group" aria-label="Zoom">
         <button data-zoom="1" class="on">1x</button><button data-zoom="2">2x</button><button data-zoom="3">3x</button>
@@ -46,7 +49,7 @@
     </div>
     <div id="canvasWrap"><canvas id="cv" role="img" aria-label="Image"></canvas></div>
     <div id="loadErr" class="load-err hidden" role="alert"><span id="loadErrText"></span><button id="loadErrRetry" type="button" class="primary">Try again</button></div>
-    <div class="hint">Keys: left/right = plane (turn in 3D), P = projection/planes, D = 3D, E = range, B = brightfield, N = next image, <span class="mod">Ctrl</span>+Enter = save and go to the next unscored image (skips marking cells)</div>
+    <div class="hint">Keys: left/right = plane (turn in 3D), P = projection/planes, D = 3D, E = range, B = brightfield, <span id="chanKeys" class="hidden">1/2/3 = reporter/identity/both, </span>N = next image, <span class="mod">Ctrl</span>+Enter = save and go to the next unscored image (skips marking cells)</div>
   </section>
 
   <aside id="panel">
