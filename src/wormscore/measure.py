@@ -64,7 +64,8 @@ def candidate_spots(mip_filtered, px_um, cfg):
     """Automatic suggestions for where a cell body might be. Never a decision.
 
     1. Smooth the median-filtered projection with a Gaussian about the size of a soma.
-    2. Local maxima at least min_separation_um apart are possible cells, brightest first.
+    2. Local maxima (each the brightest point of the min_separation_um square around it, so maxima
+       about half that distance apart are kept) are possible cells, brightest first.
     3. Around each maximum, the local background is the median of a ring (spot_ring_um).
     4. The region is every connected pixel at or above half of the way from the
        background to the peak (full width at half maximum), within max_radius_um.

@@ -247,7 +247,8 @@ def unblind(project, finished=False, anyway=False, log=print):
     if ia:
         pooled = ia["outcome"] in cross
         lines.append("")
-        lines.append(f"Genetic interaction ({ia['model']} model, {alt} binomial test, outcome: {ia['outcome']}"
+        tname = "likelihood-ratio" if ia.get("test") == "likelihood_ratio" else "binomial"
+        lines.append(f"Genetic interaction ({ia['model']} model, {alt} {tname} test, outcome: {ia['outcome']}"
                      + (", genotypes pooled over microscopes" if pooled else ", within each microscope")
                      + "; outputs/unblinded/interaction_test.csv):")
         if not run:
@@ -283,7 +284,7 @@ def unblind(project, finished=False, anyway=False, log=print):
         for x in rel:
             lines.append(f"  {x['measure']}: {x['same_answer']}/{x['pairs']} same ({x['percent_agreement']}%), "
                          f"kappa {x['kappa'] if x['kappa'] != '' else 'undefined'} ({x['kappa_type']})")
-    dims = []
+    dims, dim_skipped = [], 0
     if C.dim_cutoff(cfg):
         dims = stats.dim_check(counted, cfg)
         lines.append("")
@@ -294,6 +295,10 @@ def unblind(project, finished=False, anyway=False, log=print):
             lines.append(f"  group {x['settings_group']} {x['call'] or '(no call)'}: {x['below_cutoff']} of "
                          f"{x['neurons_measured']} below the cutoff; signal/noise median {x['signal_to_noise_median']} "
                          f"[{x['signal_to_noise_min']}-{x['signal_to_noise_max']}]")
+        dim_skipped = stats.dim_check_skipped(counted, cfg)
+        if dim_skipped:
+            lines.append(f"  {dim_skipped} drawn region{'s' if dim_skipped != 1 else ''} could not be checked: "
+                         "the background ring had no measurable noise (robust SD 0).")
         if not dims:
             lines.append("  none (no drawn regions with a measured background)")
     if status.startswith("NO"):
@@ -323,7 +328,8 @@ def unblind(project, finished=False, anyway=False, log=print):
         project, cfg, len(key_orig), len(excluded), history, len(scores), tests,
         outcome_tests=outcome_tests, interaction_tests=itests,
         added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key_orig) if d).items()),
-        key_rows=key_orig, excluded_rows=excluded, reliability=rel, n_repeats=len(pairs), dim_rows=dims),
+        key_rows=key_orig, excluded_rows=excluded, reliability=rel, n_repeats=len(pairs), dim_rows=dims,
+        dim_skipped=dim_skipped),
         encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [

@@ -120,7 +120,8 @@ with two fixed ranges per microscope, the same for every image from that microsc
 - **Standard:** 0 to the detector maximum (for example 255 for 8-bit, 65535 for 16-bit).
 - **Enhanced:** from the median, over images, of each image's median projection value (typical
   background) to the median, over images, of each image's 99.9th percentile (typical bright spot).
-  Computed once over all included images of both genotypes.
+  Computed once over all included images of both genotypes from that microscope, so it depends on which
+  images are in the set; images added later to an existing key keep their microscope's range.
 
 Images are drawn at a common physical scale (`display_um_per_px`) so microscope zoom does not change
 apparent cell size. A **3D** view turns the stack about the vertical axis (-60 to +60 degrees in
@@ -162,8 +163,9 @@ one-pixel scan streak cannot become a peak. For each region:
 | background_sd_best_plane | only when `unblinding.dim_cutoff_sd` is set: background noise, the robust SD (1.4826 x median absolute deviation) of the ring pixels in the sharpest plane |
 
 Regions come from the scorer (drawn circle or outline, or an accepted suggestion). Suggestions are
-found automatically: the filtered projection is smoothed with a Gaussian (1.5 um), local maxima at
-least 6 um apart are taken brightest first, and each is grown to every connected pixel at or above half
+found automatically: the filtered projection is smoothed with a Gaussian (1.5 um), local maxima (each
+the brightest point of the 6 um square around it, so maxima about 3 um or more apart are kept) are
+taken brightest first, and each is grown to every connected pixel at or above half
 of its height above the local background (median of a ring 6 to 10 um away), within 8 um, keeping
 regions of at least 4 um^2 (full width at half maximum). Suggestions are measured too
 (`outputs/auto_measurements.csv`); they only point at places to look.
@@ -224,7 +226,14 @@ Results tables use counted, usable images only, with the animal as the unit (one
   (Bonferroni if more than one). A double above the expected share is consistent with the genes acting
   redundantly; this is a statistical statement, not proof of mechanism. The expected value treats P1
   and P2 as exact and ignores their sampling error, so the test is anti-conservative when the single
-  mutant groups are small. `outcome` chooses the calls (default) or a `question_outcomes` name.
+  mutant groups are small: in simulations with 30 animals per genotype and no interaction, it was
+  significant at 0.05 in about 7 to 19% of runs. `interaction.test: "likelihood_ratio"` (recommended
+  for new projects; part of the analysis plan) instead fits the three genotypes together: under the
+  model the double's share is the model's function of P1 and P2, fitted with them by maximum likelihood,
+  and the likelihood ratio G is compared with chi-square on 1 degree of freedom (for a one-sided
+  alternative, the signed square root of G with the normal distribution). It allows for the singles'
+  sampling error and stayed near 5% in the same simulations. The table then has `likelihood_ratio_g`
+  and `p_likelihood_ratio_*`. `outcome` chooses the calls (default) or a `question_outcomes` name.
   The model is part of the analysis plan that `prepare` records and unblinding checks (below), so
   nobody can try all three models after seeing results.
 - **Optional analysis settings** (all in `unblinding`, all off by default):
@@ -255,6 +264,10 @@ Results tables use counted, usable images only, with the animal as the unit (one
     noise. A "normal" or "dim" call below the cutoff is a cell that could not be told from background
     by this measure; review it, but calls are never changed by numbers. Neurons called missing have no
     region and are not in this table. Compare only within a settings group. Part of the analysis plan.
+    It is a contrast-to-noise visibility check (is the cell distinguishable from its own surroundings),
+    not a comparison with control brightness. It needs drawn regions: outline every visible neuron if you
+    set it. Regions whose ring has no measurable noise (robust SD 0, common in 8-bit or low-count images)
+    cannot be checked; the summary counts them.
 - **Scorer consistency** (when the project has hidden repeats): `reliability.csv` gives, over the pairs
   where both the repeat and its original were scored, percent agreement and Cohen's kappa for: usable or
   not; animal affected (primary, and secondary if set); each neuron's call (linear-weighted kappa over the
@@ -262,7 +275,13 @@ Results tables use counted, usable images only, with the animal as the unit (one
   by the recorded side when both images name each neuron's side, otherwise by number. Kappa is undefined
   when every answer is the same. With few pairs, kappa is imprecise; kappa below 0.60 is usually
   considered inadequate ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)). The same scorer seeing an
-  image twice measures consistency, not agreement between people.
+  image twice measures consistency, not agreement between people. When most animals get the same answer
+  (for example few affected animals), kappa can be low even with high agreement ([Feinstein & Cicchetti
+  1990](https://doi.org/10.1016/0895-4356(90)90158-L)); report percent agreement with it. Optional, in
+  `reliability`: `extra_statistics: true` adds a 95% bootstrap interval for kappa (pairs resampled 2,000
+  times, fixed seed), PABAK and Gwet's AC1 (both from exact agreement); `call_weights` sets the kappa
+  weights for neuron calls: `linear` (default, for ordered calls such as normal, dim, missing),
+  `quadratic`, or `none` (for calls that are not ordered).
 - **Analysis plan lock.** When any of the settings above, `question_outcomes` or `interaction` is set,
   `prepare` writes the whole analysis plan (both definitions of affected, comparisons, direction,
   cross-microscope measures, interaction model, dim cutoff) to `log.md`. Unblinding compares the current settings with

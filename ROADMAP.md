@@ -38,6 +38,12 @@ each is off by default, so a project that does not turn it on works exactly as i
 
 ## Recently shipped
 
+- 1.1.0: checks from a review of the measurement and statistics methods. An optional likelihood-ratio
+  test for genetic interaction (`interaction.test`), which allows for the sampling error of the single
+  mutants (the binomial test, still the default, finds an interaction too often with small groups);
+  optional extra agreement statistics for hidden repeats (kappa interval, PABAK, Gwet's AC1) and a
+  choice of kappa weights; the measured dim check now counts regions it cannot use, and the Methods
+  text says so when no region was outlined. Clearer docs on suggested-cell spacing and display ranges.
 - 1.0.0: presets for fluorescent proteins beyond GFP (mNeonGreen, YFP, mCherry, TagRFP, mScarlet,
   mKate2, BFP) and an optional identity channel: a second marker that shows where the cell is. The
   scoring page shows the reporter, the identity marker or both (keys 1, 2, 3), and suggested cells are

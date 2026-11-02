@@ -7,4 +7,4 @@ import os
 for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS"):
     os.environ.setdefault(_var, "1")
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

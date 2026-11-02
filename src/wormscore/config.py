@@ -122,7 +122,10 @@ DEFAULTS = {
     # not_visible_calls are not assessed; animals with no assessed neuron are left out.
     # unclear: "exclude_neuron" drops a neuron with an unclear answer, "exclude_animal" drops the animal.
     # interaction (optional): {"single_a": genotype, "single_b": genotype, "double": genotype,
-    #   "model": "product" | "additive" | "min", "outcome": "calls" or a question_outcomes name}.
+    #   "model": "product" | "additive" | "min", "outcome": "calls" or a question_outcomes name,
+    #   "test": "binomial" (default) | "likelihood_ratio"}. The binomial test treats the singles'
+    #   shares as exact, so with small groups it finds an interaction too often when there is none;
+    #   likelihood_ratio fits all three genotypes and allows for that (recommended for new projects).
     # Chosen before scoring; prepare records it in log.md and unblinding tests only that model.
     # secondary_defect_calls (optional): a second "affected" definition (for example dim or
     #   missing), reported with 95% intervals within each microscope only; tested (Fisher's
@@ -149,6 +152,9 @@ DEFAULTS = {
     # Hidden repeats: this share of each genotype's images (at least one) is shown a second time
     # under a new code, mixed in with the rest, to measure how consistently one person scores.
     # Repeats are never counted in results; unblinding compares them with their originals. 0 = off.
+    # Optional: "extra_statistics": true adds a 95% bootstrap interval for kappa, PABAK and Gwet's AC1
+    # (useful when most animals get the same answer, where kappa can be low despite high agreement);
+    # "call_weights": "linear" (default), "quadratic" or "none" (for calls that are not ordered).
     "reliability": {"repeat_fraction": 0.0},
 
     # Used only for the Methods text written at unblinding. Left empty, it says [name].
@@ -312,6 +318,7 @@ def exclude_rule_for(cfg, source_name, rel_path):
 
 
 INTERACTION_MODELS = ("product", "additive", "min")
+INTERACTION_TESTS = ("binomial", "likelihood_ratio")
 
 
 def interaction(cfg):
@@ -378,6 +385,8 @@ def check(cfg):
             raise SystemExit("interaction: outcome must be 'calls' or a question_outcomes name.")
         if ia.get("expected_direction", "") not in ("", "higher", "lower"):
             raise SystemExit("interaction: expected_direction must be 'higher', 'lower' or left out.")
+        if ia.get("test", "binomial") not in INTERACTION_TESTS:
+            raise SystemExit(f"interaction: test must be one of {', '.join(INTERACTION_TESTS)} (default binomial).")
     for key in ("defect_calls",):
         if set(sc[key]) - set(sc["calls"]):
             raise SystemExit(f"scoring.{key}: {sorted(set(sc[key]) - set(sc['calls']))} are not in scoring.calls.")
@@ -433,6 +442,14 @@ def check(cfg):
             raise SystemExit(f"identity: unknown setting(s) {sorted(unknown)}.")
         if ident.get("label", "").lower() == cfg["marker"]["label"].lower():
             raise SystemExit("identity and marker have the same label; give the identity channel its own \"label\".")
+    rel = cfg["reliability"]
+    unknown = set(rel) - {"repeat_fraction", "extra_statistics", "call_weights"}
+    if unknown:
+        raise SystemExit(f"reliability: unknown setting(s) {sorted(unknown)}.")
+    if not isinstance(rel.get("extra_statistics", False), bool):
+        raise SystemExit("reliability.extra_statistics must be true or false.")
+    if rel.get("call_weights", "linear") not in ("linear", "quadratic", "none"):
+        raise SystemExit("reliability.call_weights must be linear (default), quadratic or none.")
     f = cfg["reliability"]["repeat_fraction"]
     if isinstance(f, bool) or not isinstance(f, (int, float)) or not 0 <= f <= 0.5:
         raise SystemExit("reliability.repeat_fraction must be between 0 and 0.5 (0 = off).")

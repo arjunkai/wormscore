@@ -58,9 +58,14 @@ def interaction_sentence(cfg, interaction_tests):
            and all(t.get("set_before_scoring") == "yes" for t in interaction_tests) else "[state when the model was chosen]")
     out = [f"Genetic interaction was tested with the {ia['model']} model (Mani et al. 2008, PNAS 105:3461), "
            f"{pre}. The {what} expected in {ia['double']} was {FORMULAS[ia['model']]}, where P1 and P2 are the "
-           f"observed shares in {ia['single_a']} and {ia['single_b']}. The observed share was compared with this "
-           f"value by a {alt} one-sample binomial test, {_where(cfg, ia['outcome'])}. "
-           "The expected value treats P1 and P2 as exact and ignores their sampling error."]
+           f"observed shares in {ia['single_a']} and {ia['single_b']}. "
+           + (f"The model was tested by a {alt} likelihood-ratio test (1 degree of freedom) that fits the three "
+              f"genotypes together, so the sampling error of P1 and P2 is taken into account, "
+              f"{_where(cfg, ia['outcome'])}."
+              if ia.get("test") == "likelihood_ratio" else
+              f"The observed share was compared with this value by a {alt} one-sample binomial test, "
+              f"{_where(cfg, ia['outcome'])}. The expected value treats P1 and P2 as exact and ignores their "
+              "sampling error.")]
     if ia["expected_direction"]:
         out.append(f"The hypothesis counted as supported only if the observed share was significantly "
                    f"{ia['expected_direction']} than expected"
@@ -121,22 +126,36 @@ def reliability_sentences(cfg, n_repeats, reliability):
              + (f", {'weighted ' if r['kappa_type'] != 'unweighted' else ''}kappa {r['kappa']}" if r["kappa"] != "" else "")
              + ")" for r in reliability if r["pairs"]]
     stat = [("Agreement between each repeat and its original (same scorer), as percent agreement and Cohen's "
-             "kappa (linear weights for ordered answers): " + "; ".join(parts) + ". With this few pairs, kappa "
-             "is imprecise.") if parts else "[No repeat was scored together with its original.]"]
+             + ("kappa (linear weights for ordered answers): " if cfg["reliability"].get("call_weights", "linear") == "linear"
+                else "kappa (" + ("quadratic weights for neuron calls, linear weights for cells seen"
+                                  if cfg["reliability"]["call_weights"] == "quadratic" else
+                                  "no weights for neuron calls, linear weights for cells seen") + "): ")
+             + "; ".join(parts) + ". With this few pairs, kappa "
+             "is imprecise."
+             + (" Because kappa can be low when most animals get the same answer, 95% bootstrap intervals for "
+                "kappa, PABAK and Gwet's AC1 are also given in reliability.csv."
+                if cfg["reliability"].get("extra_statistics") else "")) if parts
+            else "[No repeat was scored together with its original.]"]
     return [blind], stat
 
 
-def dim_sentence(cfg, dim_rows):
+def dim_sentence(cfg, dim_rows, skipped=0):
     k = C.dim_cutoff(cfg)
     if not k:
         return []
     below = sum(r["below_cutoff"] for r in dim_rows if r["call"] in cfg["scoring"]["calls"][:-1])
     n = sum(r["neurons_measured"] for r in dim_rows if r["call"] in cfg["scoring"]["calls"][:-1])
-    return [f"Before scoring, a measured cutoff was recorded: a drawn region was above background if its "
+    rule = (f"Before scoring, a measured cutoff was recorded: a drawn region was above background if its "
             f"background-subtracted mean in the sharpest plane was at least {k} times the background noise "
-            "(1.4826 times the median absolute deviation of the ring in that plane). Calls were made by eye and "
+            "(1.4826 times the median absolute deviation of the ring in that plane). ")
+    if not n:
+        return [rule + f"No neuron called {_or(cfg['scoring']['calls'][:-1])} was outlined with a measured "
+                "background, so this check could not be made; calls were made by eye."]
+    return [rule + "Calls were made by eye and "
             f"not changed; afterwards, {below} of {n} measured neurons called "
-            f"{_or(cfg['scoring']['calls'][:-1])} fell below the cutoff (dim_check.csv, by settings group)."]
+            f"{_or(cfg['scoring']['calls'][:-1])} fell below the cutoff (dim_check.csv, by settings group)."
+            + (f" {skipped} outlined region{'s' if skipped != 1 else ''} with no measurable background noise "
+               "could not be checked." if skipped else "")]
 
 
 def identity_sentence(cfg):
@@ -158,7 +177,7 @@ def identity_sentence(cfg):
 
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
-              dim_rows=()):
+              dim_rows=(), dim_skipped=0):
     """added: (date, number of images) for each batch added to an existing key.
     key_rows, excluded_rows: for the table of images per genotype and microscope.
     reliability, n_repeats: agreement of hidden repeats. dim_rows: the measured check of calls."""
@@ -204,7 +223,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "excluding other regions. Reported values are the background-subtracted mean in the sharpest plane "
         "and the background-subtracted sum over all planes; saturated pixels were counted. Brightness was "
         "compared only between images taken on the same microscope with the same settings."
-        + "".join(" " + x for x in dim_sentence(cfg, dim_rows)),
+        + "".join(" " + x for x in dim_sentence(cfg, dim_rows, dim_skipped)),
         "",
         "**Statistics.** "
         "Each animal was one image and the unit of analysis. Penetrance was the share of animals with at "

@@ -10,7 +10,8 @@ from collections import Counter, defaultdict
 from itertools import combinations
 from statistics import median
 
-from scipy.stats import binomtest, fisher_exact
+from scipy.optimize import minimize
+from scipy.stats import binomtest, chi2, fisher_exact, norm
 
 ROI_COLS = ("area_um2", "mean_best_minus_bg", "stack_sum_minus_bg", "saturated_px_mip")
 POOLED = "all microscopes"
@@ -206,11 +207,44 @@ EXPECTED = {
 }
 
 
+def _loglik(k, n, p):
+    p = min(max(p, 1e-12), 1 - 1e-12)
+    return k * math.log(p) + (n - k) * math.log(1 - p)
+
+
+def likelihood_ratio_interaction(ka, na, kb, nb, kd, nd, model, alternative="two-sided"):
+    """Likelihood-ratio test of a genetic interaction model that fits all three genotypes at once,
+    so the sampling error of the two single-mutant shares is taken into account (the one-sample
+    binomial test treats them as exact, which makes it reject a true model too often).
+    H0: the double's share is EXPECTED[model](Pa, Pb), with Pa and Pb fitted together with it.
+    H1: three free shares. G = 2 (logL1 - logL0) is compared with chi-square, 1 df; for a
+    one-sided alternative the signed root of G is compared with the normal distribution.
+    Returns (G, p)."""
+    f = EXPECTED[model]
+    l1 = _loglik(ka, na, ka / na) + _loglik(kb, nb, kb / nb) + _loglik(kd, nd, kd / nd)
+
+    def neg(x):
+        a, b = (min(max(v, 0.0), 1.0) for v in x)
+        return -(_loglik(ka, na, a) + _loglik(kb, nb, b) + _loglik(kd, nd, f(a, b)))
+    starts = [(ka / na, kb / nb)] + [(a, b) for a in (0.02, 0.3, 0.7) for b in (0.02, 0.3, 0.7)]
+    l0 = -min(minimize(neg, s, method="Powell", bounds=[(0, 1), (0, 1)],
+                       options={"xtol": 1e-10, "ftol": 1e-12}).fun for s in starts)
+    g = max(0.0, 2 * (l1 - l0))
+    if alternative == "two-sided":
+        return g, float(chi2.sf(g, 1))
+    diff = kd / nd - f(ka / na, kb / nb)
+    z = math.copysign(math.sqrt(g), diff) if diff else 0.0
+    return g, float(norm.sf(z) if alternative == "greater" else norm.cdf(z))
+
+
 def interaction_tests(pen, ia, alternative="two-sided"):
-    """One-sample binomial test of the observed double-mutant penetrance against the value the
-    chosen model expects from the two singles, within each "system" (microscope, or all
-    microscopes for a pooled table) that has all three genotypes. Bonferroni if more than one
-    qualifies. alternative "greater": is the double above the expected value?"""
+    """Test of the observed double-mutant penetrance against the value the chosen model expects
+    from the two singles, within each "system" (microscope, or all microscopes for a pooled table)
+    that has all three genotypes. Bonferroni if more than one qualifies. alternative "greater":
+    is the double above the expected value? ia["test"]: "binomial" (default; one-sample binomial
+    test against the expected value, treating the singles' shares as exact) or "likelihood_ratio"
+    (fits all three genotypes, see likelihood_ratio_interaction)."""
+    test = ia.get("test", "binomial")
     by_system = defaultdict(dict)
     for row in pen:
         if row["animals"]:
@@ -223,7 +257,11 @@ def interaction_tests(pen, ia, alternative="two-sided"):
         pa, pb = a["animals_any_affected"] / a["animals"], b["animals_any_affected"] / b["animals"]
         expected = EXPECTED[ia["model"]](pa, pb)
         k, n = d["animals_any_affected"], d["animals"]
-        p = binomtest(k, n, expected, alternative=alternative).pvalue
+        if test == "likelihood_ratio":
+            g, p = likelihood_ratio_interaction(a["animals_any_affected"], a["animals"], b["animals_any_affected"],
+                                                b["animals"], k, n, ia["model"], alternative)
+        else:
+            p = binomtest(k, n, expected, alternative=alternative).pvalue
         tests.append({
             "system": system, "outcome": ia["outcome"], "model": ia["model"],
             "single_a": ia["single_a"], "single_a_affected": f"{a['animals_any_affected']}/{a['animals']}",
@@ -231,7 +269,8 @@ def interaction_tests(pen, ia, alternative="two-sided"):
             "double": ia["double"], "double_affected": f"{k}/{n}",
             "expected_double_pct": round(100 * expected, 1), "observed_double_pct": round(100 * k / n, 1),
             "observed_vs_expected": "higher" if k / n > expected else "lower" if k / n < expected else "equal",
-            p_column("binomial", alternative): float(f"{p:.4g}"),
+            **({"likelihood_ratio_g": float(f"{g:.4g}")} if test == "likelihood_ratio" else {}),
+            p_column(test, alternative): float(f"{p:.4g}"),
             "p_bonferroni": float(f"{min(1.0, p * len(found)):.4g}"), "n_tests": len(found),
             **({"microscopes_single_a": a["microscopes"], "microscopes_single_b": b["microscopes"],
                 "microscopes_double": d["microscopes"], "warning": cross_warning(a, b, d)} if "microscopes" in d else {})})
@@ -240,29 +279,70 @@ def interaction_tests(pen, ia, alternative="two-sided"):
 
 # ------------------------------------------------------------- scorer consistency (hidden repeats)
 
+def _weight(weighted, k):
+    """Agreement weight for category indexes i, j. weighted: True or "linear" (one step apart is
+    partial agreement), "quadratic", or False / "none" (only the same answer agrees)."""
+    if k > 2 and weighted in (True, "linear"):
+        return lambda i, j: 1 - abs(i - j) / (k - 1)
+    if k > 2 and weighted == "quadratic":
+        return lambda i, j: 1 - ((i - j) / (k - 1)) ** 2
+    return lambda i, j: float(i == j)
+
+
 def kappa(pairs, categories, weighted=False):
     """Cohen's kappa for (first, second) pairs of answers. weighted: linear weights for ordered
-    categories (one step apart counts as partial agreement). '' if undefined (no pairs, or every
-    answer the same, so chance agreement is already complete)."""
+    categories (one step apart counts as partial agreement), or "quadratic" / "none". '' if
+    undefined (no pairs, or every answer the same, so chance agreement is already complete)."""
     pairs = [(a, b) for a, b in pairs if a in categories and b in categories]
     n, k = len(pairs), len(categories)
     if not n:
         return ""
     idx = {c: i for i, c in enumerate(categories)}
-    w = (lambda i, j: 1 - abs(i - j) / (k - 1)) if weighted and k > 2 else (lambda i, j: float(i == j))
+    w = _weight(weighted, k)
     po = sum(w(idx[a], idx[b]) for a, b in pairs) / n
     ca, cb = Counter(a for a, _ in pairs), Counter(b for _, b in pairs)
     pe = sum(ca[x] * cb[y] * w(idx[x], idx[y]) for x in categories for y in categories) / n ** 2
     return round((po - pe) / (1 - pe), 3) if pe < 1 else ""
 
 
-def agreement_row(measure, pairs, categories, weighted=False):
+def kappa_type(weighted, k):
+    if k > 2 and weighted in (True, "linear"):
+        return "linear-weighted"
+    return "quadratic-weighted" if k > 2 and weighted == "quadratic" else "unweighted"
+
+
+def extra_agreement(pairs, categories, weighted=False, draws=2000, seed=0):
+    """Optional statistics that help read kappa when one answer is much more common than the
+    others (then kappa can be low even with high agreement; Feinstein & Cicchetti 1990):
+    a 95% bootstrap interval for kappa (pairs resampled, fixed seed so it is reproducible),
+    PABAK (prevalence-adjusted bias-adjusted kappa, from exact agreement) and Gwet's AC1."""
+    import random
+    n, k = len(pairs), len(categories)
+    out = {"kappa_ci95_low": "", "kappa_ci95_high": "", "pabak": "", "gwet_ac1": ""}
+    if not n or k < 2:
+        return out
+    po = sum(a == b for a, b in pairs) / n
+    out["pabak"] = round((k * po - 1) / (k - 1), 3)
+    share = {c: (sum(a == c for a, _ in pairs) + sum(b == c for _, b in pairs)) / (2 * n) for c in categories}
+    pe = sum(p * (1 - p) for p in share.values()) / (k - 1)
+    out["gwet_ac1"] = round((po - pe) / (1 - pe), 3) if pe < 1 else ""
+    rng = random.Random(seed)
+    boot = [kappa([pairs[rng.randrange(n)] for _ in range(n)], categories, weighted) for _ in range(draws)]
+    boot = sorted(x for x in boot if x != "")
+    if len(boot) >= 0.9 * draws:      # undefined in too many resamples: no interval
+        out["kappa_ci95_low"] = boot[int(0.025 * (len(boot) - 1))]
+        out["kappa_ci95_high"] = boot[int(round(0.975 * (len(boot) - 1)))]
+    return out
+
+
+def agreement_row(measure, pairs, categories, weighted=False, extra=False):
     pairs = [(a, b) for a, b in pairs if a in categories and b in categories]
     same = sum(a == b for a, b in pairs)
     return {"measure": measure, "pairs": len(pairs), "same_answer": same,
             "percent_agreement": round(100 * same / len(pairs), 1) if pairs else "",
             "kappa": kappa(pairs, categories, weighted),
-            "kappa_type": "linear-weighted" if weighted and len(categories) > 2 else "unweighted"}
+            "kappa_type": kappa_type(weighted, len(categories)),
+            **(extra_agreement(pairs, categories, weighted) if extra else {})}
 
 
 def matched_neurons(a, b, cfg):
@@ -280,9 +360,11 @@ def reliability(pairs, cfg):
     """Agreement between each hidden repeat and its original, both scored by the same person.
     pairs: (original row, repeat row) from merged.csv, both scored."""
     sc, un = cfg["scoring"], cfg["unblinding"]
+    rel = cfg.get("reliability", {})
+    ex, cw = bool(rel.get("extra_statistics")), rel.get("call_weights", "linear")
     n = len(sc["neurons"])
     rows = [agreement_row("usable", [(a.get("score_usable"), b.get("score_usable")) for a, b in pairs],
-                          ["yes", "no"])]
+                          ["yes", "no"], extra=ex)]
     both = [(a, b) for a, b in pairs if a.get("score_usable") == "yes" and b.get("score_usable") == "yes"]
 
     def affected(r, defect):
@@ -290,21 +372,21 @@ def reliability(pairs, cfg):
         return "" if not all(calls) else ("yes" if any(c in defect for c in calls) else "no")
     rows.append(agreement_row("animal affected (primary)",
                               [(affected(a, sc["defect_calls"]), affected(b, sc["defect_calls"])) for a, b in both],
-                              ["no", "yes"]))
+                              ["no", "yes"], extra=ex))
     if un["secondary_defect_calls"]:
         d = un["secondary_defect_calls"]
         rows.append(agreement_row("animal affected (secondary)",
-                                  [(affected(a, d), affected(b, d)) for a, b in both], ["no", "yes"]))
+                                  [(affected(a, d), affected(b, d)) for a, b in both], ["no", "yes"], extra=ex))
     calls = []
     for a, b in both:
         for i, j in zip(range(1, n + 1), matched_neurons(a, b, cfg)):
             calls.append((a.get(f"score_n{i}_call", ""), b.get(f"score_n{j}_call", "")))
-    rows.append(agreement_row("neuron call", calls, sc["calls"], weighted=True))
+    rows.append(agreement_row("neuron call", calls, sc["calls"], weighted=cw, extra=ex))
     rows.append(agreement_row("cells seen", [(a.get("score_cells_seen"), b.get("score_cells_seen")) for a, b in both],
-                              sc["count_question"]["options"], weighted=True))
+                              sc["count_question"]["options"], weighted=True, extra=ex))
     for oc in un["question_outcomes"]:
         state = lambda r: animal_state([neuron_state(r, i, oc) for i in range(1, n + 1)], oc.get("unclear", "exclude_neuron"))
-        rows.append(agreement_row(oc["name"], [(state(a), state(b)) for a, b in both], ["normal", "defect"]))
+        rows.append(agreement_row(oc["name"], [(state(a), state(b)) for a, b in both], ["normal", "defect"], extra=ex))
     return rows
 
 
@@ -332,3 +414,23 @@ def dim_check(rows, cfg):
                     "signal_to_noise_median": round(median(v), 2),
                     "signal_to_noise_min": round(min(v), 2), "signal_to_noise_max": round(max(v), 2)})
     return out
+
+
+def dim_check_skipped(rows, cfg):
+    """Drawn regions dim_check could not use: a measured mean but no usable background noise
+    (a ring with zero spread, common in 8-bit or low-count images). They are counted so they are
+    not left out silently."""
+    skipped = 0
+    for r in rows:
+        for i in range(1, len(cfg["scoring"]["neurons"]) + 1):
+            mean, sd = r.get(f"n{i}_roi_mean_best_minus_bg", ""), r.get(f"n{i}_roi_background_sd_best_plane", "")
+            try:
+                m = float(mean)
+            except (TypeError, ValueError):
+                continue
+            try:
+                ok = m == m and float(m / float(sd)) == float(m / float(sd))
+            except (TypeError, ValueError, ZeroDivisionError):
+                ok = False
+            skipped += m == m and not ok
+    return skipped
