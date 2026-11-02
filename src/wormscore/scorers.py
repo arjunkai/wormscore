@@ -49,8 +49,43 @@ def form_hash(cfg):
 
 
 def folder_hashes(folder):
-    return {p.relative_to(folder).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted(Path(folder).rglob("*")) if p.is_file()}
+    """SHA-256 of every file under folder. A link (symlink or junction) anywhere is refused, so a
+    returned package can never make wormscore read or copy files from outside it."""
+    out, folder = {}, Path(folder)
+    root = folder.resolve()
+    for p in sorted(folder.rglob("*")):
+        junction = getattr(p, "is_junction", lambda: False)()
+        if p.is_symlink() or junction or p.resolve() != root / p.relative_to(folder):
+            raise SystemExit(f"The package contains a link ({p.name}); it cannot be used.")
+        if p.is_file():
+            out[p.relative_to(folder).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
+    return out
+
+
+# Files of a scorer's scoring/ folder that are brought back; nothing else is copied.
+RETURNED = ("scores.csv", "score_history.csv", "scores.json", "rois.json", "roi_measurements.json",
+            "roi_measurements.csv")
+
+
+def check_answers(rows, cfg):
+    """Every column and answer in a returned scores.csv must come from the scoring form, so a
+    changed file cannot slip other text (or spreadsheet formulas) into the results."""
+    from .server import score_fields
+    sc = cfg["scoring"]
+    fields = set(score_fields(cfg))
+    allowed = {"usable": {"yes", "no", ""}, "count_this_image": {"yes", "no", ""},
+               "cells_seen": set(sc["count_question"]["options"]) | {""}}
+    for i in range(1, len(sc["neurons"]) + 1):
+        allowed[f"n{i}_call"] = set(sc["calls"]) | {""}
+        for q in sc["neuron_questions"]:
+            allowed[f"n{i}_{q['id']}"] = set(q["options"]) | {""}
+    for r in rows:
+        unknown = set(r) - fields
+        if unknown:
+            raise SystemExit(f"The package's scores.csv has columns the scoring form does not: {sorted(unknown)[:3]}.")
+        for k, ok in allowed.items():
+            if r.get(k, "") not in ok:
+                raise SystemExit(f"The package's scores.csv has an answer that is not on the form ({k} of {r.get('code')}).")
 
 
 def scorer_ids(project):
@@ -186,14 +221,24 @@ def import_scores(project, package, log=print):
     src = package / "scoring"
     if not (src / "scores.csv").is_file():
         raise SystemExit("The package has no scores yet (scoring/scores.csv is missing).")
+    if (src.is_symlink() or not src.is_dir() or (src / "scores.csv").is_symlink()
+            or not (src / "scores.csv").is_file()):
+        raise SystemExit("The package's scoring folder is not a plain folder with scores.csv in it.")
     rows = read_csv(src / "scores.csv")
+    check_answers(rows, cfg)
     extra = sorted({r["code"] for r in rows} - set(rec["order"]))
     if extra:
         raise SystemExit(f"The package's scores include codes it never had: {', '.join(extra[:5])}.")
     dest = own / "scoring"
     if dest.exists():
         shutil.rmtree(dest)
-    shutil.copytree(src, dest)
+    dest.mkdir()
+    for name in RETURNED:
+        f = src / name
+        if f.is_symlink():
+            raise SystemExit(f"The package's {name} is a link; it cannot be used.")
+        if f.is_file():
+            shutil.copyfile(f, dest / name)
     append_log(project, f"second-scorer scores imported ({sid})", [
         f"Scorer: {rec['scorer']}. {len(rows)} of {len(rec['order'])} package images scored. "
         "Checked: same package, scoring form and images. Stored in scorers/{sid}/scoring/; "
@@ -207,6 +252,7 @@ def between_scorers(project, rows, cfg):
     scored (repeats are left out so no image counts twice). rows: merged.csv rows (primary).
     Returns (agreement rows, disagreement rows, descriptions)."""
     from . import stats
+    from .server import safe_cell
     project = Path(project)
     by_code = {r["code"]: r for r in rows if not r.get("repeat_of") and r.get("score_saved")}
     agree, differ, about = [], [], []
@@ -228,8 +274,9 @@ def between_scorers(project, rows, cfg):
                      [(f"neuron {i} call", f"score_n{i}_call") for i in range(1, n + 1)]
             for label, f in fields:
                 if a.get(f, "") != b.get(f, ""):
-                    differ.append({"second_scorer": rec["scorer"], "code": a["code"], "answer": label,
-                                   "primary": a.get(f, ""), "second": b.get(f, "")})
+                    differ.append({k: safe_cell(v) for k, v in {
+                        "second_scorer": rec["scorer"], "code": a["code"], "answer": label,
+                        "primary": a.get(f, ""), "second": b.get(f, "")}.items()})
         saved = sorted(v.get("score_saved", "") for v in second.values() if v.get("score_saved"))
         about.append({"scorer": rec["scorer"], "id": sid, "made": rec["made"], "fraction": rec["fraction"],
                       "n_package": len(rec["originals"]), "n_pairs": len(pairs),
