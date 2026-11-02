@@ -72,6 +72,12 @@ default browser on macOS and Linux).
 
 ### Updates
 
+wormscore is young and new versions come out often. Each new feature is off until you turn it on,
+so a project that does not use it scores, measures and reports exactly as before, and every version
+stays downloadable from the [Releases page](https://github.com/arjunkai/wormscore/releases) so an
+analysis can be rerun on the version it used. For a study, keep one version from building the blind
+set to unblinding (the app reminds you), and cite that version.
+
 From 0.8.0 the downloaded app (Windows and Mac) checks for a new version when it starts. If there is
 one, a banner shows what is new with **Update and restart**, **Not now** and **Skip this version**.
 Update downloads the zip for your computer, checks it against the SHA-256 checksum GitHub lists for
