@@ -218,6 +218,7 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 
 .main { overflow-y: auto; padding: 28px clamp(18px, 4vw, 48px) 40px; }
 .wrap { max-width: 900px; margin: 0 auto; }
+#psTitle:focus { outline: none; }   /* focused only so the keyboard starts at the top of the page */
 .wrap:has(.sf-cols) { max-width: 1180px; }   /* Project settings with the score form: room for the editor and the preview side by side */
 
 /* ---------------------------------------------------------------- project header */

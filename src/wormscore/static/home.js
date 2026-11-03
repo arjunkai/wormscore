@@ -249,7 +249,7 @@ function renderMain(d) {
     stepCard(1, s1, "Scan data", "List every file and image and identify channels from metadata.",
       needFolders ? "First tell wormscore where your images are and how file names show the genotype."
         : scanned ? `${plural(p.scanned, "raw image")} found. Scan again if you added files.` : null,
-      [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: openProjectSettings }, "Set image folders...") : null,
+      [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
         scanned ? "Scan again" : "Scan data")]),
     stepCard(2, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan and score form in log.md.",
@@ -280,7 +280,7 @@ function renderMain(d) {
       h("div", {}, h("h2", {}, p.name || "Project"), h("div", { class: "p-path" }, breakable(p.path))),
       h("div", { class: "p-tools" },
         h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"),
-        h("button", { class: "btn", "data-k": "settings", disabled: !p.has_config || busy, onclick: openProjectSettings }, "Project settings..."))),
+        h("button", { class: "btn", "data-k": "settings", disabled: !p.has_config || busy, onclick: () => openProjectSettings() }, "Project settings..."))),
     !p.has_config ? h("div", { class: "banner" }, "This folder has no config.json. Open another project or make a new one.") : null,
     p.config_error ? h("div", { class: "banner" }, "config.json needs a fix before the next step:\n" + p.config_error) : null,
     busy && !runningHere ? h("div", { class: "banner" }, `"${job.title}" is running for another project.`) : null,
@@ -824,15 +824,22 @@ async function openProjectSettings(section) {
   st.settingsOpen = path;
   const page = h("div", { class: "wrap ps-page", onkeydown: e => { if (e.key === "Escape") leave(); } },
     h("div", { class: "p-head" },
-      h("div", {}, h("h2", {}, "Project settings"), h("div", { class: "p-path" }, breakable(path)))),
+      h("div", {}, h("h2", { id: "psTitle", tabindex: "-1" }, "Project settings"), h("div", { class: "p-path" }, breakable(path)))),
     box,
     h("div", { class: "ps-foot" }, err, h("span", { class: "grow" }),
       h("button", { class: "btn subtle", onclick: () => leave() }, "Cancel"),
       h("button", { class: "primary", onclick: save }, "Save")));
   $("#main").replaceChildren(page);
   $("#main").scrollTop = 0;
+  // Only a new project starts in its name box (cursor at the end). Otherwise the page opens
+  // without typing into anything, so the name cannot be changed by accident.
   if (section === "form") $("#sfHead")?.scrollIntoView();
-  else $("#psName")?.focus();
+  else if (section === "new") {
+    const name = $("#psName");
+    name?.focus();
+    name?.setSelectionRange(name.value.length, name.value.length);
+  } else if (section === "folders") $("#srcPath0")?.focus();
+  else $("#psTitle")?.focus({ preventScroll: true });
 }
 
 // ---------------------------------------------------------------- updates
@@ -1092,7 +1099,7 @@ async function sideAction(which) {
     return act("/api/demo", { real: real === "real" });
   }
   const r = await act(`/api/${which}`, {});
-  if (r?.settings) openProjectSettings();      // a new project starts with its image folders
+  if (r?.settings) openProjectSettings("new");      // a new project starts with its name and image folders
 }
 
 async function scan() {
