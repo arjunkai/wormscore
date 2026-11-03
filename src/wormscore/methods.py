@@ -195,9 +195,26 @@ def identity_sentence(cfg):
             f"brightness could not hint at the genotype, and it was never measured. {where} {missing}"]
 
 
+def form_sentences(cfg, form_status):
+    """The primary outcome and whether the score form was locked (nothing for older forms that match)."""
+    out = []
+    primary = cfg["unblinding"].get("primary_outcome")
+    if form_status == "changed":
+        out.append("The score form was changed after scoring began, so no statistical test was run and only "
+                   "descriptive results are reported.")
+    elif form_status.startswith("NO"):
+        out.append("[The score form was not recorded in the project log before scoring began; say how the "
+                   "questions were fixed in advance.]")
+    if primary:
+        name = "the neuron calls" if primary == "calls" else f"\"{primary}\""
+        out.append(f"The primary outcome, named before scoring and recorded with the score form, was {name}; "
+                   "all other tests are secondary.")
+    return out
+
+
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
-              dim_rows=(), dim_skipped=0, second_scorers=(), between=()):
+              dim_rows=(), dim_skipped=0, second_scorers=(), between=(), form_status="yes"):
     """added: (date, number of images) for each batch added to an existing key.
     key_rows, excluded_rows: for the table of images per genotype and microscope.
     reliability, n_repeats: agreement of hidden repeats. dim_rows: the measured check of calls."""
@@ -255,7 +272,8 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
            "interaction model) was recorded in the project log before scoring began."
            if C.analysis_plan(cfg) and all(t.get("set_before_scoring") == "yes"
                                            for t in list(tests) + list(interaction_tests)) and
-           (tests or interaction_tests) else ""),
+           (tests or interaction_tests) else "")
+        + "".join(" " + x for x in form_sentences(cfg, form_status)),
         "",
         *([f"**Limitations.** {' '.join(cfg['unblinding']['methods_notes'])}", ""]
           if cfg["unblinding"].get("methods_notes") else []),

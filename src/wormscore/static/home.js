@@ -26,6 +26,8 @@ const ICONS = {
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 };
 function icon(name, size = 16) {
@@ -250,10 +252,14 @@ function renderMain(d) {
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: openProjectSettings }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
         scanned ? "Scan again" : "Scan data")]),
-    stepCard(2, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan in log.md.",
+    stepCard(2, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan and score form in log.md.",
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
       [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
-        !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")]),
+        !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")],
+      // what the scorer will answer can change until the first score, so it is offered here
+      !p.scoring_started && !building && ok ? h("div", { class: "s-fact" }, "Questions the scorer answers: ",
+        h("button", { class: "linkish", "data-k": "form", disabled: busy, onclick: () => openProjectSettings("form") }, "check the score form"),
+        ". It locks at the first score.") : null),
     stepCard(3, s3, "Score", "Score each coded image in the scoring window. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
       [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },
@@ -388,6 +394,193 @@ function packageView(p, job) {
         p.coded ? h("div", { class: "mini" }, h("div", { style: `width:${Math.min(100, 100 * p.scored / p.coded)}%` })) : null)));
 }
 
+// ---------------------------------------------------------------- scoring form (in Project settings)
+
+// The form as the scoring page reads it (config.json "scoring"), from the builder's answers.
+function formForPreview(m) {
+  return {
+    neurons: m.neurons.length ? m.neurons.map((n, i) => n || `Neuron ${i + 1}`) : ["Neuron 1"],
+    calls: m.calls.map(c => c.text || "(call)"),
+    sides: m.sides ? ["left", "right"] : [],
+    count_question: { label: m.count.label || "(count question)", options: m.count.options },
+    neuron_questions: m.questions.map((q, i) => ({
+      id: `p${i}`, label: q.label || "(question)", required: q.required, skip_when_calls: q.skip_when,
+      options: [...(q.type === "yesno" ? ["yes", "no"] : q.options), ...(q.cant_tell ? [q.cant_tell] : [])],
+    })),
+    rules: m.rules,
+  };
+}
+
+const splitList = text => text.split(",").map(s => s.trim()).filter(Boolean);
+const splitLines = text => text.split("\n").map(s => s.trim()).filter(Boolean);
+const answersOf = q => q.type === "yesno" ? ["yes", "no"] : q.options;
+
+// The Scoring form section: an editor on the left, a live preview on the right. Returns the
+// element and payload(), which is null when the form cannot be changed here.
+function formSection(info) {
+  const m = structuredClone(info.model);
+  const off = !!(info.locked || info.readonly);
+  const edit = h("div", { class: "sf-edit" });
+  const prev = h("div", { class: "sf-prev" });
+  const root = h("div", { class: "sf" });
+
+  const move = (arr, j, d) => {
+    const k = j + d;
+    if (k < 0 || k >= arr.length) return;
+    [arr[j], arr[k]] = [arr[k], arr[j]];
+    drawAll();
+  };
+  const tools = (arr, j, what, min = 0) => off ? null : h("span", { class: "sf-tools" },
+    h("button", { class: "ghost icon sm", title: "Move up", "aria-label": `Move ${what} up`, disabled: j === 0, onclick: () => move(arr, j, -1) }, icon("up", 14)),
+    h("button", { class: "ghost icon sm", title: "Move down", "aria-label": `Move ${what} down`, disabled: j === arr.length - 1, onclick: () => move(arr, j, 1) }, icon("down", 14)),
+    h("button", { class: "ghost icon sm", title: "Remove", "aria-label": `Remove ${what}`, disabled: arr.length <= min,
+      onclick: () => { arr.splice(j, 1); drawAll(); } }, icon("close", 14)));
+  const text = (value, set, attrs = {}) => h("input", { type: "text", class: "f-input", value: value ?? "", autocomplete: "off",
+    disabled: off, ...attrs, oninput: e => { set(e.target.value); drawPreview(); } });
+  const check = (checked, label, set, attrs = {}) => h("label", { class: "sf-check" },
+    h("input", { type: "checkbox", checked: !!checked, disabled: off, ...attrs, onchange: e => { set(e.target.checked); drawAll(); } }), label);
+  const outcomes = () => [...new Set(m.questions.map(q => q.outcome).filter(Boolean))];
+
+  const neuronsCard = () => h("div", { class: "s-card sf-card" },
+    h("div", { class: "f-label" }, "Neurons in each image"),
+    h("div", { class: "f-help" }, "Each one gets its own call and questions, in this order."),
+    m.neurons.map((n, j) => h("div", { class: "sf-row" },
+      text(n, v => { m.neurons[j] = v; }, { "aria-label": `Neuron ${j + 1} name` }), tools(m.neurons, j, `neuron ${j + 1}`, 1))),
+    off || m.neurons.length >= 8 ? null : h("button", { class: "btn subtle add",
+      onclick: () => { m.neurons.push(`Neuron ${m.neurons.length + 1}`); drawAll(); } }, "Add neuron"),
+    check(m.sides, "Also ask which side each neuron is on (left / right)", v => { m.sides = v; }));
+
+  const callsCard = () => h("div", { class: "s-card sf-card" },
+    h("div", { class: "f-label" }, "Call for each neuron"),
+    h("div", { class: "f-help" }, "Tick the calls that count as a defect. Keep them in order from normal to not seen: "
+      + "the last call means the neuron was not seen."),
+    m.calls.map((c, j) => h("div", { class: "sf-row" },
+      text(c.text, v => {
+        for (const q of m.questions) q.skip_when = q.skip_when.map(s => s === c.text ? v : s);
+        c.text = v;
+      }, { "aria-label": `Call ${j + 1}`, onchange: () => drawAll() }),
+      h("label", { class: "sf-check tight" }, h("input", { type: "checkbox", checked: c.defect, disabled: off,
+        onchange: e => { c.defect = e.target.checked; drawAll(); } }), "defect"),
+      tools(m.calls, j, `call ${j + 1}`, 2))),
+    off ? null : h("button", { class: "btn subtle add", onclick: () => {
+      m.calls.splice(Math.max(m.calls.length - 1, 0), 0, { text: "", defect: true });
+      drawAll();
+    } }, "Add call"));
+
+  const questionCard = (q, j) => {
+    const answers = answersOf(q);
+    return h("div", { class: "sf-q" },
+      h("div", { class: "sf-row" }, h("span", { class: "sf-num" }, `${j + 1}`),
+        text(q.label, v => { q.label = v; }, { placeholder: "The question, e.g. Axon reaches the nerve ring?", "aria-label": `Question ${j + 1}` }),
+        tools(m.questions, j, `question ${j + 1}`)),
+      h("div", { class: "sf-grid" },
+        h("span", { class: "sf-k" }, "Answers"),
+        h("div", { class: "sf-v" },
+          h("div", { class: "sf-opts", role: "radiogroup", "aria-label": `Question ${j + 1}: answer type` },
+            ["yesno", "choice"].map(t => h("label", { class: "sf-check" },
+              h("input", { type: "radio", name: `sfType${j}`, checked: q.type === t, disabled: off,
+                onchange: () => {
+                  q.type = t;
+                  if (t === "choice" && !q.options.length) q.options = ["yes", "no"];
+                  q.defect = q.defect.filter(d => answersOf(q).includes(d));
+                  drawAll();
+                } }),
+              t === "yesno" ? "Yes / No" : "Choice"))),
+          q.type === "choice" ? text(q.options.join(", "), v => { q.options = splitList(v); },
+            { placeholder: "Answers, separated by commas", "aria-label": `Question ${j + 1}: answers`,
+              onchange: () => { q.defect = q.defect.filter(d => q.options.includes(d)); drawAll(); } }) : null,
+          check(!!q.cant_tell, "Add a “can't tell” answer (that neuron is left out of the results)",
+            v => { q.cant_tell = v ? "can't tell" : ""; })),
+        h("span", { class: "sf-k" }, "Defect if"),
+        h("div", { class: "sf-v sf-opts" }, answers.map(a => check(q.defect.includes(a), a,
+          v => { q.defect = answers.filter(x => x === a ? v : q.defect.includes(x)); }))),
+        h("span", { class: "sf-k" }, "Skip when"),
+        h("div", { class: "sf-v sf-opts" }, m.calls.map(c => check(q.skip_when.includes(c.text), `call is ${c.text || "(call)"}`,
+          v => { q.skip_when = m.calls.map(x => x.text).filter(x => x === c.text ? v : q.skip_when.includes(x)); }))),
+        h("span", { class: "sf-k" }, "Outcome"),
+        h("div", { class: "sf-v" },
+          text(q.outcome, v => { q.outcome = v; }, { placeholder: "Not tested (answers only recorded)", list: "sfOutcomes",
+            "aria-label": `Question ${j + 1}: outcome name`, onchange: () => drawAll() }),
+          check(q.required, "Required (Save waits until it is answered)", v => { q.required = v; }))));
+  };
+
+  const questionsCard = () => h("div", { class: "s-card sf-card" },
+    h("div", { class: "f-label" }, "Extra questions for each neuron"),
+    h("div", { class: "f-help" }, "Questions with the same outcome name are combined: the animal has that defect if any "
+      + "neuron has a defect answer. Each outcome is compared between genotypes with Fisher's exact test."),
+    h("datalist", { id: "sfOutcomes" }, outcomes().map(o => h("option", { value: o }))),
+    m.questions.length ? m.questions.map(questionCard) : h("div", { class: "f-help sf-none" }, "None. The call is the only answer for each neuron."),
+    m.questions.length > info.warn_questions ? h("div", { class: "pv warn" },
+      `${m.questions.length} questions per neuron. More than ${info.warn_questions} makes scoring slower and less consistent.`) : null,
+    off || m.questions.length >= info.max_questions ? null : h("button", { class: "btn subtle add", onclick: () => {
+      const last = m.calls.at(-1)?.text;
+      m.questions.push({ id: null, label: "", type: "yesno", options: [], cant_tell: "can't tell", defect: ["no"],
+        required: true, skip_when: last ? [last] : [], outcome: "" });
+      drawAll();
+      $$(".sf-q").at(-1)?.querySelector("input")?.focus();
+    } }, "Add question"));
+
+  const resultsCard = () => {
+    const names = outcomes();
+    if (m.primary && m.primary !== "calls" && !names.includes(m.primary)) m.primary = "";
+    return h("div", { class: "s-card sf-card" },
+      h("label", { class: "f-label", for: "sfPrimary" }, "Primary outcome"),
+      h("div", { class: "f-help" }, "Name the one result the study is about before scoring starts. The results "
+        + "and Methods then label it primary and every other test secondary."),
+      h("select", { id: "sfPrimary", class: "f-input sf-select", disabled: off, onchange: e => { m.primary = e.target.value; } },
+        [["", "Not named"], ["calls", "Neuron calls (affected if any neuron's call is a defect)"], ...names.map(n => [n, n])]
+          .map(([v, l]) => h("option", { value: v, selected: m.primary === v }, l))));
+  };
+
+  const moreCard = () => h("details", { class: "s-card sf-card sf-more" },
+    h("summary", {}, "Count question, rules and unusable reasons"),
+    h("label", { class: "f-label", for: "sfCount" }, "Count question (one per image)"),
+    text(m.count.label, v => { m.count.label = v; }, { id: "sfCount" }),
+    text(m.count.options.join(", "), v => { m.count.options = splitList(v); }, { placeholder: "Answers, separated by commas", "aria-label": "Count answers" }),
+    h("label", { class: "f-label", for: "sfRules" }, "Rules shown above the form, one per line"),
+    h("textarea", { id: "sfRules", class: "f-input", rows: 4, disabled: off,
+      oninput: e => { m.rules = splitLines(e.target.value); drawPreview(); } }, m.rules.join("\n")),
+    h("label", { class: "f-label", for: "sfReasons" }, "Reasons an image is not usable, one per line"),
+    h("textarea", { id: "sfReasons", class: "f-input", rows: 4, disabled: off,
+      oninput: e => { m.unusable_reasons = splitLines(e.target.value); } }, m.unusable_reasons.join("\n")));
+
+  const start = () => off ? null : h("div", { class: "sf-start" }, h("span", { class: "f-help" }, "Start from:"),
+    info.presets.map(p => h("button", { class: "btn subtle", title: p.desc, onclick: async () => {
+      const go = await ask(`Start from ${p.title}?`, `${p.desc}\nThis replaces the form below. Nothing is saved until you press Save.`,
+        [{ value: true, label: "Replace the form" }]);
+      if (!go) return;
+      try { Object.assign(m, (await api("/api/project-settings", { action: "preset", preset: p.id })).model); drawAll(); }
+      catch (e) { toast(e.message); }
+    } }, p.title)));
+
+  const drawPreview = () => {
+    const sc = formForPreview(m);
+    const f = h("form", { class: "sf-form", "aria-label": "Preview of the score form", onsubmit: e => e.preventDefault(),
+      onchange: e => { if (/^n\d+_call$/.test(e.target.name)) wsForm.syncSkips(f, sc); } },
+      sc.rules.length ? h("ul", { class: "sf-rules" }, sc.rules.map(r => h("li", {}, r))) : null,
+      h("fieldset", {}, h("legend", {}, sc.count_question.label), h("div", {}, wsForm.radios(h, "cells_seen", sc.count_question.options))),
+      ...wsForm.neurons(h, sc));
+    wsForm.syncSkips(f, sc);
+    prev.replaceChildren(h("div", { class: "sf-prev-head" }, h("span", { class: "f-label" }, "Preview"),
+      h("span", { class: "f-help" }, "What the scorer answers for each image. Click a call to see the skips.")), f);
+  };
+  const drawAll = () => {
+    const active = document.activeElement;
+    const focus = active && edit.contains(active) ? active.getAttribute("aria-label") : null;
+    edit.replaceChildren(...[start(), neuronsCard(), callsCard(), questionsCard(), resultsCard(), moreCard()].filter(Boolean));
+    if (focus) edit.querySelector(`[aria-label="${CSS.escape(focus)}"]`)?.focus();
+    drawPreview();
+  };
+  root.replaceChildren(...[
+    info.locked ? h("div", { class: "sf-lock" }, h("span", { class: "chip wait" }, "Locked"),
+      h("span", {}, `${info.locked} It was recorded in log.md and is what unblinding checks. To change it, start a new blind set.`)) : null,
+    info.readonly && !info.locked ? h("div", { class: "banner" }, `This form uses a setting the builder cannot show (${info.readonly}). `
+      + "It is shown read-only here; change it in config.json.") : null,
+    h("div", { class: "sf-cols" }, edit, prev)].filter(Boolean));
+  drawAll();
+  return { el: root, payload: () => off ? null : m };
+}
+
 // ---------------------------------------------------------------- project settings
 
 const blankSource = () => ({ name: "", path: "", original_path: "", genotypes: [{ match: "", genotype: "" }],
@@ -404,7 +597,7 @@ function previewText(pv, scanned) {
     + (pv.left_out ? `; ${pv.left_out} left out` : "") + (unknown ? `. ${unknown} match no rule.` : "")];
 }
 
-async function openProjectSettings() {
+async function openProjectSettings(section) {
   let cur;
   try { cur = await api("/api/project-settings", { action: "load" }); }
   catch (e) {
@@ -416,7 +609,9 @@ async function openProjectSettings() {
   const model = { project_name: cur.project_name, sources: cur.sources.map((s, i) => ({ ...s, from: i })) };
   if (!model.sources.length) model.sources.push(blankSource());
   const locked = cur.locked;
-  const payload = () => ({ project_name: model.project_name, sources: model.sources });
+  const form = formSection(cur.form);
+  const payload = () => ({ project_name: model.project_name, sources: model.sources,
+    ...(form.payload() ? { form: form.payload() } : {}) });
   const box = h("div", { class: "settings ps" });
   const err = h("div", { class: "m-err", role: "alert", hidden: true });
   let pvTimer = null, previews = [];
@@ -485,9 +680,10 @@ async function openProjectSettings() {
       h("h4", {}, "Image folders"),
       ...cards,
       h("button", { class: "btn add-src", onclick: () => { model.sources.push(blankSource()); draw("src"); } }, "Add image folder"),
-      h("h4", {}, "Other settings"),
-      h("div", { class: "s-card" }, sRow("Marker, scoring form and statistics", "Set in config.json for now. A form builder is coming.",
-        h("button", { class: "btn", onclick: () => leave("config") }, "Edit config.json"))));
+      h("h4", { id: "sfHead" }, "Scoring form"),
+      form.el,
+      h("div", { class: "f-help sf-config" }, "The marker, statistics and other settings are in config.json: ",
+        h("button", { class: "linkish", onclick: () => leave("config") }, "edit config.json"), "."));
     if (focusLast === "src") $$(".ps .src").at(-1)?.querySelector("input")?.focus();
     else if (focusLast) [...document.querySelectorAll(".ps .rules")].find(r => r.contains(document.activeElement))?.querySelector(".rule:last-of-type input")?.focus();
   };
@@ -502,13 +698,15 @@ async function openProjectSettings() {
     render();
   };
   const save = async () => {
-    try { await api("/api/project-settings", { action: "save", ...payload() }); }
+    let r;
+    try { r = await api("/api/project-settings", { action: "save", ...payload() }); }
     catch (e) {
       err.textContent = e.message;
       err.hidden = false;
       return;
     }
-    toast(scanned ? "Saved. Run Scan data again so the new folders and rules are used." : "Saved. Next: Scan data.", "ok");
+    toast(r.form_changed ? "Saved. The score form is recorded in log.md and locks at the first score."
+      : scanned ? "Saved. Run Scan data again so the new folders and rules are used." : "Saved. Next: Scan data.", "ok");
     leave();
     refresh(true);
   };
@@ -523,7 +721,8 @@ async function openProjectSettings() {
       h("button", { class: "primary", onclick: save }, "Save")));
   $("#main").replaceChildren(page);
   $("#main").scrollTop = 0;
-  $("#psName")?.focus();
+  if (section === "form") $("#sfHead")?.scrollIntoView();
+  else $("#psName")?.focus();
 }
 
 // ---------------------------------------------------------------- updates

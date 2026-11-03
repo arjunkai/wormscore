@@ -201,6 +201,19 @@ be deduced". The sharpest plane is still the plane where the reporter is brighte
 
 ## 7. Questions asked of the scorer
 
+The score form (set on the Project settings page or in `config.json`) asks, for each image: whether it
+is usable (and if not, why), the count question, and for each neuron its call, optionally its side, and
+any extra questions. Extra questions are yes/no or a choice; a required question must be answered before
+the score can be saved, and a question can be skipped (hidden, saved empty) when the neuron's call is one
+the question's outcome leaves out, such as "not seen". Answers are stored as their text.
+
+The form is recorded in `log.md` ("Score form set before scoring") when it is saved in the app, when the
+blind set is built and when the first score is saved. From the first score, or once a second-scorer
+package exists, the app does not let it change. The record covers what decides the stored answers and
+their analysis: neurons, calls, defect calls, sides, count answers, each question's id, answers, whether it
+is required and when it is skipped, the question outcomes and the primary outcome. Wording (question text,
+rules shown to the scorer, unusable reasons) is not part of it and may still be corrected.
+
 The app asks for confirmation when: an image shares a stage position with another (repeat); the
 brightest suggested spot is sharpest in the first or last plane; a suggested cell is saturated; or a
 horizontal scan-line artifact is present. Answers are saved with the score. Every save is also appended
@@ -319,6 +332,15 @@ Results tables use counted, usable images only, with the animal as the unit (one
   the last plan recorded before the first score was saved. If they differ, no test is run and every test
   file says why; descriptive tables are still written. If no plan was recorded before scoring, tests run
   but are marked `set_before_scoring = NO`.
+- **Score form lock.** Unblinding compares the current form with the last one recorded before the first
+  score (section 7). If it differs, no test is run, every test file says the form changed, and the
+  Methods draft says only descriptive results are reported. Projects built before 1.3.0 have no form
+  line; for them the full settings that Build wrote to `log.md` before the first score are used. If those
+  differ or are missing, tests run but are marked `form_recorded_before_scoring = NO` and the summary
+  warns.
+- **Primary outcome.** `unblinding.primary_outcome` (`calls` or a `question_outcomes` name, part of the
+  analysis plan) adds an `outcome_role` column (primary or secondary) to every test file, a line in the
+  summary and a Methods sentence. Bonferroni correction is still within each file.
 - `methods_text.md`: a draft Methods paragraph built from the project files: inclusion counts, the date
   codes were assigned (date of `key/seed.txt`), the scoring dates (`scoring/score_history.csv`), the
   unblinding date, measurement parameters and the tests run, plus a table of who knew the genotype at

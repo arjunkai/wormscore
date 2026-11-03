@@ -19,7 +19,7 @@ from pathlib import Path
 from . import config as C
 
 STATIC = Path(__file__).resolve().parent / "static"
-STATIC_FILES = {"app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8",
+STATIC_FILES = {"app.js": "text/javascript; charset=utf-8", "form.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8",
                 "icon.svg": "image/svg+xml",
                 "icon-192.png": "image/png", "icon-512.png": "image/png",
                 "manifest.webmanifest": "application/manifest+json"}
@@ -160,8 +160,16 @@ class Project:
 
     def save_score(self, code, body):
         check_writable(*(self.scoring / n for n in ("scores.json", "scores.csv", "score_history.csv")))
-        body["saved"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         scores = self.load("scores.json", {})
+        if not scores and not self.cfg.get("scorer_package"):
+            # The first score locks the form: record the one the scorer is answering, before the
+            # score's own time stamp, so unblinding can check nothing changed after it.
+            from .scoreform import record_first_score
+            try:
+                record_first_score(self.path, self.cfg)
+            except OSError:
+                pass
+        body["saved"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         scores[code] = body
         self.save("scores.json", scores)
         self.set_draft(code, None)

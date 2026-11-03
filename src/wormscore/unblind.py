@@ -11,7 +11,7 @@ from pathlib import Path
 from statistics import median
 
 from . import config as C
-from . import methods, stats
+from . import methods, scoreform, stats
 from .pipeline import INTERACTION_LOG, PLAN_LOG, append_log, read_csv, write_csv
 
 
@@ -154,9 +154,15 @@ def unblind(project, finished=False, anyway=False, log=print):
     comps = [tuple(c) for c in un["comparisons"]]
     history = opt(project / "scoring" / "score_history.csv")
     status = plan_status(project, cfg, history)
-    run = status != "changed"
-    stop_note = ("NOT RUN: the analysis plan in config.json differs from the one recorded in log.md before "
-                 "scoring began. Restore it to run the planned tests.")
+    fstatus = scoreform.form_status(project, cfg, history)
+    run = status != "changed" and fstatus != "changed"
+    stop_note = " ".join(
+        (["NOT RUN: the score form (neurons, answers, required or skipped questions, or what counts as a "
+          "defect) in config.json differs from the one recorded in log.md when scoring began. Only "
+          "descriptive tables are written; restore the form to run the planned tests."] if fstatus == "changed" else [])
+        + (["NOT RUN: the analysis plan in config.json differs from the one recorded in log.md before "
+            "scoring began. Restore it to run the planned tests."] if status == "changed" else []))
+    primary = un.get("primary_outcome") or ""
     notes = {src.get("name"): src["note"] for src in cfg["sources"] if src.get("note")}
 
     def sources(genotype, system):
@@ -170,6 +176,12 @@ def unblind(project, finished=False, anyway=False, log=print):
                 t["sources_a"], t["sources_b"] = sources(t[a], t["system"]), sources(t[b], t["system"])
             if status:
                 t["set_before_scoring"] = status
+            if fstatus.startswith("NO"):
+                t["form_recorded_before_scoring"] = "NO"
+            if primary:
+                measure = t.get("outcome", C.interaction(cfg).get("outcome", "calls") if a == "single_a" else "calls")
+                first = t.get("definition", "primary") == "primary"
+                t["outcome_role"] = "primary" if measure == primary and first else "secondary"
         return rows
 
     pen = stats.penetrance(counted, cfg)
@@ -318,6 +330,17 @@ def unblind(project, finished=False, anyway=False, log=print):
     if status.startswith("NO"):
         lines.append("")
         lines.append("WARNING: the analysis plan was not recorded in log.md before scoring began.")
+    if fstatus.startswith("NO"):
+        lines.append("")
+        lines.append(f"WARNING: the score form was not recorded in log.md before scoring began ({fstatus[4:-1]}); "
+                     "tests were run and are marked form_recorded_before_scoring = NO.")
+    elif fstatus == "changed":
+        lines.append("")
+        lines.append("WARNING: the score form changed after scoring began, so no test was run.")
+    if primary:
+        lines.append("")
+        lines.append(f"Primary outcome (named before scoring): {primary}. Every other test is secondary "
+                     "(outcome_role column).")
     if notes:
         lines.append("")
         lines += [f"* {name}: {note}" for name, note in sorted(notes.items())]
@@ -346,7 +369,7 @@ def unblind(project, finished=False, anyway=False, log=print):
         outcome_tests=outcome_tests, interaction_tests=itests,
         added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key_orig) if d).items()),
         key_rows=key_orig, excluded_rows=excluded, reliability=rel, n_repeats=len(pairs), dim_rows=dims,
-        dim_skipped=dim_skipped, second_scorers=second, between=between),
+        dim_skipped=dim_skipped, second_scorers=second, between=between, form_status=fstatus),
         encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [

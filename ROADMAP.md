@@ -9,14 +9,11 @@ reports exactly as before.
 
 ## Planned
 
-- **Score form builder (next).** Make your own set of scoring questions in the app instead of editing
-  `config.json`: start from a preset (cell fate, axon guidance, neurodegeneration, dendrite
-  length, counts and position) or a blank form; choose each question's answer type (choice,
-  yes/no, ordered scale, count), whether it is asked per neuron, per left/right cell or per
-  animal, which answers count as a defect, and simple conditions ("only if the axon is
-  visible"); pick one main outcome; see the score panel as the scorer will. The form is locked
-  and recorded in the log at Build blind set, and each answer type gets its test at unblinding
-  (Fisher's exact for choices, a rank test for scales and counts).
+- **Score form builder, part 2.** Ordered scales (for example a 0 to 6 degeneration score) and counts,
+  each with a rank test (Mann-Whitney, Bonferroni-corrected) and Methods text; questions per left/right
+  cell and per animal; presets for neurodegeneration, dendrite length, and counts and position; a short
+  definition for each answer, shown while scoring. Answer types are offered only once their test ships,
+  so nobody collects answers that cannot be analysed.
 - **Reference images for "dim".** An optional panel of reference images the scorer can compare against.
 - **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
   several identity channels (for multi-color systems such as NeuroPAL).
@@ -37,6 +34,11 @@ each is off by default, so a project that does not turn it on works exactly as i
 
 ## Recently shipped
 
+- 1.3.0: the score form builder. The **Scoring form** section of Project settings sets the neurons,
+  calls, extra yes/no and choice questions (defect answers, "can't tell", required, skipped for some
+  calls), outcomes and a primary outcome, with presets and a live preview of the score panel. The form
+  is written to the log and locks at the first score; a form changed by hand afterwards stops the tests
+  at unblinding. Existing projects give identical results.
 - 1.2.0: a second scorer. **Make a package** gives another person a random share of each genotype's
   coded images, with no key, file names or analysis plan, in a new order; **Import scores** checks the
   package came back unchanged and keeps the answers apart from yours. Unblinding adds agreement

@@ -124,7 +124,23 @@ The images are not part of this repository.
    images and write the genotype rules (a pattern such as `*ctrl*` and the genotype it means). The page
    counts how the rules sort the scanned images, so a typo shows before you build anything. Images can be
    left out by pattern there too. Images do not need converting: wormscore reads the microscope files
-   as they are. Other settings (neuron names, marker, statistics) are in `config.json`; see
+   as they are. The **Scoring form** section of the same page sets what the scorer answers for each
+   image, with a live preview of the score panel:
+   - start from **Fate reporter** (each neuron normal / dim / missing, the default), **Axon guidance**
+     (yes/no questions about the axon) or **Blank**;
+   - name the neurons and the calls, and tick which calls count as a defect;
+   - add yes/no or choice questions for each neuron, with the answers that count as a defect, an
+     optional "can't tell" answer, whether the question is required, and calls for which it is skipped
+     (for example "not seen");
+   - give questions an outcome name: questions with the same name are combined (the animal has that
+     defect if any neuron has a defect answer) and each outcome gets Fisher's exact tests at unblinding;
+   - name one **primary outcome**; the results and Methods then call every other test secondary.
+
+   Every save of the form is written to `log.md`, and the form **locks at the first score** (or once a
+   second-scorer package exists), so the questions cannot change while you score. If `config.json` is
+   edited by hand afterwards, unblinding runs no test and says why. Ordered scales and counts with a
+   rank test are planned (see the [roadmap](ROADMAP.md)). The marker and statistics settings are still
+   in `config.json`; see
    [`examples/config_example.json`](https://github.com/arjunkai/wormscore/blob/main/examples/config_example.json).
    From the command line: `wormscore init C:\projects\my_project`, then edit `config.json`. Once
    scoring has started, the folders and rules that built the blind set are locked; you can still add a

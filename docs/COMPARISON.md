@@ -82,6 +82,9 @@ evidence that people struggle with it, and what wormscore does.
   primary scorer on its own; there is no Krippendorff's alpha for three or more scorers, no consensus
   or adjudication step, and no ICC for the two scorers' drawn regions. Kappa below 0.60 is considered
   inadequate ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)).
+- **Yes/no and choice answers only.** Since 1.3.0 the score form is built in the app, but only answer
+  types that already have a test are offered: no ordered scales (such as a 0 to 6 degeneration score),
+  no counts with a group test, and no per-animal questions besides the count question. These are planned.
 - **Max projections in some measures.** `mean_mip` and `peak_filtered` use the maximum-intensity
   projection, which "shouldn't be used for intensity quantification" according to
   [Culley et al., "Made to measure" (preprint)](https://arxiv.org/abs/2302.01657) (also
@@ -122,7 +125,7 @@ From image.sc, Reddit and GitHub (collected October 2026):
 - TIFF exports lose the z-step ([image.sc 42830](https://forum.image.sc/t/nd2-to-tiff-with-correct-voxel-depth/42830));
   wormscore avoids this by reading raw files but cannot recover it from TIFFs that lack it.
 - Faint cells are hard to call yes/no ([image.sc 120964](https://forum.image.sc/t/quantification-of-yeast-golgi-protein-colocalization-with-known-golgi-protein-sec7/120964));
-  wormscore offers "dim", but no "uncertain" by default (it can be added in `config.json`).
+  wormscore offers "dim", but no "uncertain" by default (it can be added as a call in Project settings).
 
 We found almost no community discussion of rater reliability in worm scoring, and no direct reviews
 of the Blind Analysis Tools plugin; ResearchGate, Bluesky and X could not be searched.

@@ -179,13 +179,7 @@ function loadValues(url, w, h, packed = true) {
   });
 }
 
-function radios(name, options) {
-  return options.map(o => h("label", {}, h("input", { type: "radio", name, value: o }), ` ${o}`));
-}
-
-function select(name, placeholder, options) {
-  return h("select", { name }, h("option", { value: "" }, placeholder), options.map(o => h("option", {}, o)));
-}
+const radios = (name, options) => wsForm.radios(h, name, options);
 
 function buildForm() {
   const sc = st.cfg.scoring;
@@ -196,17 +190,8 @@ function buildForm() {
   $("#countLabel").textContent = sc.count_question.label;
   $("#countOptions").replaceChildren(...radios("cells_seen", sc.count_question.options));
 
-  const neurons = sc.neurons.map((name, i) => {
-    const n = i + 1;
-    st.colors[name] = PALETTE[i % PALETTE.length];
-    return h("fieldset", { class: `neuron n${n}` },
-      h("legend", {}, name),
-      h("div", { class: "calls" }, radios(`n${n}_call`, sc.calls)),
-      sc.sides.length ? h("select", { name: `n${n}_side` }, h("option", { value: "unknown" }, "side unknown"),
-        sc.sides.map(s => h("option", {}, s))) : null,
-      sc.neuron_questions.map(q => select(`n${n}_${q.id}`, q.label, q.options)));
-  });
-  $("#neurons").replaceChildren(...neurons);
+  sc.neurons.forEach((name, i) => { st.colors[name] = PALETTE[i % PALETTE.length]; });
+  $("#neurons").replaceChildren(...wsForm.neurons(h, sc));    // form.js, shared with the form preview
 
   st.colors.background = BG_COLOR;
   const labels = [...sc.neurons, "background"];
@@ -842,6 +827,7 @@ function fillForm() {
   saveMessage(st.score ? `Saved ${st.score.saved}` : "");
   markAvailable(!!st.score);
   syncUsable();
+  wsForm.syncSkips(f, st.cfg.scoring);
 }
 
 // The reason only applies to an unusable image; the cell questions only to a usable one.
@@ -866,6 +852,7 @@ $("#scoreForm").addEventListener("input", e => {
   st.formRev = (st.formRev || 0) + 1;
   saveMessage(st.connected === false ? `Unsaved changes (${LOST}; they stay in this window)` : "Unsaved changes");
   if (e.target.name === "usable") syncUsable();
+  if (/^n\d+_call$/.test(e.target.name)) wsForm.syncSkips(e.currentTarget, st.cfg.scoring);
   clearTimeout(st.draftTimer);
   st.draftTimer = setTimeout(saveDraft, 600);
 });
@@ -902,6 +889,8 @@ $("#scoreForm").addEventListener("submit", async e => {
     if (!v.cells_seen) need("count the cell bodies", box("cells_seen"));
     const open = [...Array(n)].map((_, i) => i + 1).filter(i => !v[`n${i}_call`]);
     if (open.length) need(`score all ${n} neurons`, ...open.map(i => box(`n${i}_call`)));
+    const req = wsForm.missingRequired(v, st.cfg.scoring).filter(i => !open.includes(i));
+    if (req.length) need("answer the questions marked *", ...req.map(i => box(`n${i}_call`)));
     if (!v.confidence) need("pick a confidence", box("confidence"));
   }
   markMissing(places);

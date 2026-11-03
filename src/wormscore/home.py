@@ -23,7 +23,7 @@ from . import update as U
 from .server import CODE, LOCAL_HOSTS, STATIC, LocalServer, heavy_imports
 
 SETTINGS = Path.home() / ".wormscore.json"
-HOME_FILES = {"home.js": "text/javascript; charset=utf-8", "home.css": "text/css; charset=utf-8",
+HOME_FILES = {"home.js": "text/javascript; charset=utf-8", "form.js": "text/javascript; charset=utf-8", "home.css": "text/css; charset=utf-8",
               "icon.svg": "image/svg+xml",
               "icon-192.png": "image/png", "icon-512.png": "image/png",
               "manifest.webmanifest": "application/manifest+json"}
@@ -880,6 +880,9 @@ class HomeApp:
                 return {"ok": True, **editconfig.current(p)}
             if action == "preview":
                 return editconfig.preview(p, body)
+            if action == "preset":
+                from .scoreform import preset_model
+                return {"ok": True, "model": preset_model(body.get("preset"))}
             if action == "save":
                 if self.job.running:
                     raise ValueError("A step is still running. Save when it is done.")

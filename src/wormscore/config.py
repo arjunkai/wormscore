@@ -96,6 +96,9 @@ DEFAULTS = {
         "defect_calls": ["dim", "missing"],
         "sides": ["left", "right"],
         "count_question": {"label": "Marker-positive cell bodies seen", "options": ["0", "1", "2", "3+"]},
+        # neuron_questions: [{"id", "label", "options"}], asked for each neuron. Optional (1.3.0, set by
+        # the score form builder): "required": true, and "skip_when_calls": calls for which the question
+        # is hidden and left empty (it must match not_visible_calls of the outcome that uses it).
         "neuron_questions": [],
         "unusable_reasons": [
             "wrong region of the animal",
@@ -143,6 +146,8 @@ DEFAULTS = {
     #   "above the cutoff" if its background-subtracted mean in the sharpest plane is at least this
     #   many times the background noise (robust SD of the ring). Calls are never changed by it.
     #   Part of the analysis plan; 0 = off.
+    # primary_outcome (optional, 1.3.0): "calls" or a question_outcomes name, named before scoring;
+    #   the results label it primary and every other test secondary. Part of the analysis plan.
     # cross_microscope_reason and methods_notes (optional) only add text to methods_text.md.
     "unblinding": {"min_scored_worms": 30, "reference_genotype": "", "question_outcomes": [],
                    "interaction": {}, "secondary_defect_calls": [], "test_secondary": False,
@@ -340,8 +345,11 @@ def analysis_plan(cfg):
                                             "defect_calls": cfg["scoring"]["defect_calls"]}
     if un["dim_cutoff_sd"]:      # only when set, so plans recorded before it existed still match
         plan["dim_cutoff_sd"] = un["dim_cutoff_sd"]
+    if un.get("primary_outcome"):        # 1.3.0; same rule
+        plan["primary_outcome"] = un["primary_outcome"]
     used = un["secondary_defect_calls"] or un["allow_cross_microscope"] or un["comparisons"] \
-        or un["alternative"] != "two-sided" or un["interaction"] or un["question_outcomes"] or un["dim_cutoff_sd"]
+        or un["alternative"] != "two-sided" or un["interaction"] or un["question_outcomes"] or un["dim_cutoff_sd"] \
+        or un.get("primary_outcome")
     return plan if used else {}
 
 
@@ -372,8 +380,20 @@ def check(cfg):
             unknown -= set(questions[qid]["options"])
             if unknown:
                 raise SystemExit(f"question_outcomes '{name}': {sorted(unknown)} are not options of question {qid!r}.")
+            skipped = set(questions[qid].get("skip_when_calls") or []) - set(oc.get("not_visible_calls", ["missing"]))
+            if skipped:
+                raise SystemExit(f"question_outcomes '{name}': question {qid!r} is skipped when the call is "
+                                 f"{sorted(skipped)}, so not_visible_calls must include those calls.")
         if oc.get("unclear", "exclude_neuron") not in ("exclude_neuron", "exclude_animal"):
             raise SystemExit(f"question_outcomes '{name}': 'unclear' must be exclude_neuron or exclude_animal.")
+    for q in sc["neuron_questions"]:
+        if not isinstance(q.get("required", False), bool):
+            raise SystemExit(f"neuron question {q.get('id')!r}: required must be true or false.")
+        skip = q.get("skip_when_calls", [])
+        if not isinstance(skip, list) or set(skip) - set(sc["calls"]):
+            raise SystemExit(f"neuron question {q.get('id')!r}: skip_when_calls must be a list of scoring.calls.")
+    if un.get("primary_outcome", "") not in ["", "calls"] + names:
+        raise SystemExit("primary_outcome must be 'calls' or a question_outcomes name.")
     ia = un["interaction"]
     if ia:
         for k in ("single_a", "single_b", "double"):

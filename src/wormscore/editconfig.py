@@ -38,8 +38,9 @@ def current(project):
     for s in raw.get("sources", []):
         sources.append({k: s.get(k, [] if k in ("genotypes", "exclude") else "") for k in FIELDS}
                        | {"default_genotype": s.get("default_genotype", "UNKNOWN")})
+    from . import scoreform
     return {"project_name": raw.get("project_name", ""), "sources": sources,
-            "locked": len(sources) if scoring_started(project) else 0}
+            "locked": len(sources) if scoring_started(project) else 0, "form": scoreform.current(project)}
 
 
 def _text(v, what, required=True):
@@ -138,19 +139,62 @@ def _origin(body, i, n_old):
     return frm if isinstance(frm, int) and not isinstance(frm, bool) and 0 <= frm < n_old else None
 
 
-def save(project, body):
-    project = Path(project)
-    raw = merged(project, body)
+def form_change(project, old_raw, raw, form):
+    """raw with the score form from the builder applied, or raw unchanged if the form was not
+    changed. Refused once the form is locked, or if the builder cannot show this form."""
+    from . import scoreform as S
+    if form is None:
+        return raw, False
+    old_cfg = S._cfg_from_raw(old_raw)
+    new = S.clean(form)
     try:
-        cfg = C.merge(C.DEFAULTS, raw)
-        cfg["identity"] = C.resolve_identity(raw.get("identity"))
-        if isinstance(raw.get("marker"), dict) and raw["marker"].get("preset"):
-            cfg["marker"] = C.resolve_marker(raw["marker"])
+        same = new == S.clean(S.to_model_cfg(old_cfg))
+    except ValueError:
+        same = False
+    if same:
+        return raw, False
+    why = S.locked(project)
+    if why:
+        raise ValueError(f"{why} The form was not changed; only the other settings can be saved.")
+    if S.unsupported(old_cfg):
+        raise ValueError("This form uses settings the builder cannot show. Change it in config.json.")
+    return S.apply(raw, form), True
+
+
+def save(project, body):
+    from . import scoreform as S
+    from .pipeline import append_log
+    project = Path(project)
+    old_raw = _raw(project)
+    raw = merged(project, body)
+    raw, form_changed = form_change(project, old_raw, raw, body.get("form"))
+    try:
+        cfg = S._cfg_from_raw(raw)
         C.check(cfg)
     except SystemExit as exc:
         raise ValueError(f"config.json would not be valid: {exc}")
-    (project / "config.json").write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
-    return {"ok": True}
+    if raw == old_raw:
+        return {"ok": True, "changed": False}
+    write(project, raw)
+    if form_changed:
+        append_log(project, "score form saved in Project settings",
+                   ["Saved before the first score; the last form recorded before the first score is the one "
+                    "unblinding checks."] + S.form_log_lines(cfg))
+    return {"ok": True, "changed": True, "form_changed": form_changed}
+
+
+def write(project, raw):
+    """Back up config.json to config_backups/, then replace it in one step, so a crash while
+    writing cannot leave half a file."""
+    import datetime as dt
+    import shutil
+    path = Path(project) / "config.json"
+    backups = path.parent / "config_backups"
+    backups.mkdir(exist_ok=True)
+    shutil.copy2(path, backups / f"config-{dt.datetime.now():%Y%m%d-%H%M%S-%f}.json")
+    tmp = path.with_name("config.json.tmp")
+    tmp.write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
 
 
 def preview(project, body):

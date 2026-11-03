@@ -142,6 +142,12 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
 .tabs button:disabled, .tabs button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 .hidden { display: none !important; }
+[hidden] { display: none !important; }
+/* an extra question: its text, then the answers on the same line */
+fieldset label.nq { display: flex; margin: 8px 0 0; gap: 10px; line-height: 1.4; cursor: default; }
+.nq-text { flex: 1; min-width: 0; color: var(--muted); }
+.nq-req { color: var(--warn); }
+fieldset .nq select { display: block; width: auto; max-width: 55%; margin: 0; flex: none; }
 
 fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 10px; padding: 8px 10px 10px; }
 /* the section's own border changes colour, so it keeps the gap around its title */
