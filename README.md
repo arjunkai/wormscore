@@ -127,19 +127,31 @@ The images are not part of this repository.
    as they are. The **Scoring form** section of the same page sets what the scorer answers for each
    image, with a live preview of the score panel:
    - start from **Fate reporter** (each neuron normal / dim / missing, the default), **Axon guidance**
-     (yes/no questions about the axon) or **Blank**;
+     (yes/no questions about the axon), **Neurodegeneration** (each dendrite scored 0 to 6),
+     **Dendrite length** (full / partial / short) or **Blank**;
    - name the neurons and the calls, and tick which calls count as a defect;
-   - add yes/no or choice questions for each neuron, with the answers that count as a defect, an
-     optional "can't tell" answer, whether the question is required, and calls for which it is skipped
-     (for example "not seen");
-   - give questions an outcome name: questions with the same name are combined (the animal has that
-     defect if any neuron has a defect answer) and each outcome gets Fisher's exact tests at unblinding;
+   - add questions, each asked **for each neuron** or **once per animal**, with an optional
+     "can't tell" answer (never counted as an answer: that neuron or animal is left out), whether it is
+     required, and calls for which it is skipped (for example "not seen"). Four answer types:
+     - **Yes / No** and **Choice**: tick the answers that count as a defect. Questions with the same
+       outcome name are combined (the animal has that defect if any answer is a defect), and each
+       outcome gets Fisher's exact tests at unblinding;
+     - **Scale**: levels in order, best first and worst last (for example 0 to 6, or full / partial /
+       short);
+     - **Count**: whole numbers from a lowest to a highest, the last optionally "that many or more"
+       (for example 0 to 5+).
+
+     A scale or count with an outcome name is tested on its own. Each animal gets one value: for a
+     question asked for each neuron, the **worst neuron** (default) or the mean of the assessed neurons
+     for a scale, and the total (default) or the mean per neuron for a count. Genotypes are compared
+     with the **Mann-Whitney test** on those values, with an exact permutation p-value (correct with
+     the many ties short scales have). An optional **cutoff** (for example "4 or worse") also gives
+     the share of animals at or past it, tested with Fisher's exact test;
    - name one **primary outcome**; the results and Methods then call every other test secondary.
 
    Every save of the form is written to `log.md`, and the form **locks at the first score** (or once a
    second-scorer package exists), so the questions cannot change while you score. If `config.json` is
-   edited by hand afterwards, unblinding runs no test and says why. Ordered scales and counts with a
-   rank test are planned (see the [roadmap](ROADMAP.md)). The marker and statistics settings are still
+   edited by hand afterwards, unblinding runs no test and says why. The marker and statistics settings are still
    in `config.json`; see
    [`examples/config_example.json`](https://github.com/arjunkai/wormscore/blob/main/examples/config_example.json).
    From the command line: `wormscore init C:\projects\my_project`, then edit `config.json`. Once
@@ -167,7 +179,11 @@ The images are not part of this repository.
    Bonferroni-corrected). Set `unblinding.reference_genotype` in `config.json` to test against a control.
    Optional, off unless set in `unblinding`: `question_outcomes` turns the per-neuron questions into
    the same penetrance and Fisher tables (for example "process defect" when a dendrite question is
-   answered "no"), and `interaction` tests a double mutant against the value two single mutants predict
+   answered "no"), `rank_outcomes` (set by the builder for scale and count questions) writes
+   `rank_outcomes.csv` (per genotype: animals, animals left out and why, median and quartiles, % at
+   each level or the mean, the share at the cutoff) and `rank_outcome_tests.csv` (Mann-Whitney with
+   the effect size: the chance a genotype_a animal scores worse than a genotype_b animal, and Cliff's
+   delta), and `interaction` tests a double mutant against the value two single mutants predict
    (Product model by default) with a binomial test. Also optional: a secondary definition of "affected"
    (descriptive, within one microscope), planned comparisons, one-sided tests, labelled sources,
    comparisons across microscopes for chosen measures (with warnings), and a measured background cutoff

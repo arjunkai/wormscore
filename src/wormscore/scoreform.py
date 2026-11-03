@@ -29,7 +29,9 @@ FORM_LOG = "Score form set before scoring: "
 MAX_TEXT = 200
 MAX_QUESTIONS = 12           # per neuron; the page warns above WARN_QUESTIONS
 WARN_QUESTIONS = 6
-TYPES = ("yesno", "choice")
+TYPES = ("yesno", "choice", "scale", "count")
+RANKED = ("scale", "count")
+MAX_LEVELS = 21              # answers on a scale, or numbers on a count
 
 
 # ------------------------------------------------------------------ record and lock
@@ -38,18 +40,26 @@ def form_record(cfg):
     """The structural part of the form: everything that decides what is stored and how it is
     analysed. Labels and rules text are left out, so a wording fix does not stop the tests."""
     sc, un = cfg["scoring"], cfg["unblinding"]
-    return {
+    # Keys added in 1.4.0 appear only when used, so a form recorded by 1.3.0 still matches.
+    extra = lambda q: {k: q[k] for k in ("type", "cant_tell") if q.get(k)}
+    rec = {
         "neurons": list(sc["neurons"]),
         "calls": list(sc["calls"]),
         "defect_calls": list(sc["defect_calls"]),
         "sides": list(sc["sides"]),
         "count_options": list(sc["count_question"]["options"]),
         "neuron_questions": [{"id": q["id"], "options": list(q["options"]), "required": bool(q.get("required")),
-                              "skip_when_calls": list(q.get("skip_when_calls") or [])}
+                              "skip_when_calls": list(q.get("skip_when_calls") or []), **extra(q)}
                              for q in sc["neuron_questions"]],
         "question_outcomes": copy.deepcopy(un["question_outcomes"]),
         "primary_outcome": un.get("primary_outcome") or "",
     }
+    if sc.get("animal_questions"):
+        rec["animal_questions"] = [{"id": q["id"], "options": list(q["options"]), "required": bool(q.get("required")),
+                                    **extra(q)} for q in sc["animal_questions"]]
+    if un.get("rank_outcomes"):
+        rec["rank_outcomes"] = copy.deepcopy(un["rank_outcomes"])
+    return rec
 
 
 def record_text(cfg):
@@ -143,6 +153,17 @@ PRESETS = {
         "desc": "Call each neuron, then yes/no questions about its axon. The animal has a process defect "
                 "if any neuron does; neurons not seen are not asked.",
     },
+    "degeneration": {
+        "title": "Neurodegeneration",
+        "desc": "Each neuron seen or not seen, then its dendrite scored 0 (normal) to 6 (over 75% lost), "
+                "giving the highest score that applies (after Bijwadia, Morton and Meyer 2021, JoVE 62894). "
+                "Each animal's value is its worst dendrite; groups are compared with the Mann-Whitney test.",
+    },
+    "dendrite": {
+        "title": "Dendrite length",
+        "desc": "Each neuron seen or not seen, then its dendrite called full, partial or short. Each animal's "
+                "value is its shortest dendrite; groups are compared with the Mann-Whitney test.",
+    },
     "blank": {
         "title": "Blank",
         "desc": "One neuron and a seen / not seen call. Add your own questions.",
@@ -168,6 +189,29 @@ def preset_model(name):
                            "cant_tell": "can't tell", "defect": ["yes"], "required": True,
                            "skip_when": ["not seen"], "outcome": "axon defect"} for qid, lab in qs]
         m["primary"] = "axon defect"
+    elif name in ("degeneration", "dendrite"):
+        m["calls"] = [{"text": "seen", "defect": False}, {"text": "not seen", "defect": True}]
+        if name == "degeneration":
+            levels = ["0 normal", "1 bends or kinks", "2 under 5 blebs", "3 5 to 10 blebs",
+                      "4 over 10 blebs or a break", "5 25 to 75% lost", "6 over 75% lost"]
+            m["rules"] = ["Seen: the cell body is visible. Not seen: no cell body in any plane.",
+                          "Score the whole dendrite and give the highest score that applies.",
+                          "Blebs are round swellings along the dendrite; a break is a gap in it.",
+                          "Lost: the share of the dendrite's normal length that is missing.",
+                          "Score each neuron separately. The animal is the unit for statistics."]
+            label, qid, outcome = "Dendrite score", "dendrite_score", "dendrite score"
+        else:
+            levels = ["full", "partial", "short"]
+            m["rules"] = ["Seen: the cell body is visible. Not seen: no cell body in any plane.",
+                          "Full: the dendrite reaches the nose tip.",
+                          "Partial: it ends past the halfway point between the cell body and the nose tip.",
+                          "Short: it ends before the halfway point.",
+                          "Score each neuron separately. The animal is the unit for statistics."]
+            label, qid, outcome = "Dendrite length", "dendrite_length", "dendrite length"
+        m["questions"] = [{"id": qid, "label": label, "type": "scale", "ask": "neuron", "options": levels,
+                           "count": None, "cant_tell": "can't tell", "defect": [], "required": True,
+                           "skip_when": ["not seen"], "outcome": outcome, "rollup": "worst", "cutoff": ""}]
+        m["primary"] = outcome
     elif name == "blank":
         m["neurons"] = ["Neuron 1"]
         m["calls"] = [{"text": "seen", "defect": False}, {"text": "not seen", "defect": True}]
@@ -193,19 +237,32 @@ def _cfg_from_raw(raw):
 
 def unsupported(cfg):
     """Why the builder cannot show this form faithfully (then it is shown read-only), or ""."""
+    from . import ranks
     sc, un = cfg["scoring"], cfg["unblinding"]
+    aqs = sc.get("animal_questions") or []
     seen = {}
     for oc in un["question_outcomes"]:
         for qid in oc.get("questions", []):
             if qid in seen:
                 return f"question {qid!r} is used in two outcomes ({seen[qid]!r} and {oc.get('name')!r})"
             seen[qid] = oc.get("name")
-    qs = {q["id"]: q for q in sc["neuron_questions"]}
+    for ro in un.get("rank_outcomes") or []:
+        qid = ro.get("question")
+        if qid in seen:
+            return f"question {qid!r} is used in two outcomes ({seen[qid]!r} and {ro.get('name')!r})"
+        seen[qid] = ro.get("name")
+        if "unclear_answers" in ro or "unclear" in ro:
+            return f"outcome {ro.get('name')!r} sets its own unclear answers"
+    if any(not isinstance(q.get("options"), list) or not q.get("id") for q in sc["neuron_questions"] + aqs):
+        return "a question has no id or options"
+    qs = {q["id"]: q for q in sc["neuron_questions"] + aqs}
     for oc in un["question_outcomes"]:
         for qid in oc.get("questions", []):
             q = qs.get(qid)
             if q is None:
                 continue
+            if q.get("type") in RANKED:
+                return f"question {qid!r} is a {q['type']} used in a yes/no outcome"
             unclear = [o for o in q["options"] if o in oc.get("unclear_answers", [])]
             if len(unclear) > 1:
                 return f"question {qid!r} has more than one \"can't tell\" answer"
@@ -213,34 +270,68 @@ def unsupported(cfg):
                 return f"question {qid!r} has its \"can't tell\" answer before other answers"
             skip = q.get("skip_when_calls")
             nv = oc.get("not_visible_calls", ["missing"])
+            if q in aqs:
+                continue
             if skip is not None and sorted(skip) != sorted(nv):
                 return f"question {qid!r} is skipped for other calls than its outcome leaves out"
-    if any(not isinstance(q.get("options"), list) or not q.get("id") for q in sc["neuron_questions"]):
-        return "a question has no id or options"
+    for q in sc["neuron_questions"] + aqs:
+        if q.get("type") not in RANKED:
+            continue
+        opts = list(q["options"])
+        if q.get("cant_tell"):
+            if opts[-1] != q["cant_tell"]:
+                return f"question {q['id']!r} has its \"can't tell\" answer before other answers"
+            opts.pop()
+        if q["type"] == "count" and not ranks.count_levels_ok(opts):
+            return f"question {q['id']!r} has count answers the builder cannot show"
     return ""
+
+
+def _count_spec(opts):
+    """{"min", "max", "top"} of count answers such as 0, 1, 2, 3+ (top: the last means that many or more)."""
+    from . import ranks
+    if not ranks.count_levels_ok(opts):
+        return {"min": 0, "max": 5, "top": True}
+    return {"min": ranks.count_value(opts[0]), "max": ranks.count_value(opts[-1]), "top": opts[-1].endswith("+")}
+
+
+def count_options(spec):
+    lo, hi = spec["min"], spec["max"]
+    return [str(v) for v in range(lo, hi)] + [f"{hi}+" if spec["top"] else str(hi)]
+
+
+def _model_question(q, ask, owner, rank, calls):
+    oc, ro = owner.get(q["id"]), rank.get(q["id"])
+    opts = list(q["options"])
+    cant = ""
+    if q.get("type") in RANKED:
+        typ = q["type"]
+        if q.get("cant_tell") and opts and opts[-1] == q["cant_tell"]:
+            cant = opts.pop()
+    else:
+        if oc and opts and opts[-1] in oc.get("unclear_answers", []):
+            cant = opts.pop()
+        typ = "yesno" if opts == ["yes", "no"] else "choice"
+    skip = q.get("skip_when_calls") if ask == "neuron" else []
+    if skip is None:
+        skip = [c for c in (oc.get("not_visible_calls", ["missing"]) if oc else []) if c in calls]
+    return {
+        "id": q["id"], "label": q.get("label", q["id"]), "type": typ, "ask": ask,
+        "options": opts if typ != "count" else [], "count": _count_spec(opts) if typ == "count" else None,
+        "cant_tell": cant,
+        "defect": [o for o in opts if oc and o in oc.get("defect_answers", [])],
+        "required": bool(q.get("required")), "skip_when": list(skip),
+        "outcome": (oc or ro or {}).get("name", ""),
+        "rollup": (ro.get("rollup") or "") if ro else "",
+        "cutoff": ("" if ro.get("cutoff") in (None, "") else str(ro["cutoff"])) if ro else "",
+    }
 
 
 def to_model_cfg(cfg):
     sc, un = cfg["scoring"], cfg["unblinding"]
     owner = {qid: oc for oc in un["question_outcomes"] for qid in oc.get("questions", [])}
-    questions = []
-    for q in sc["neuron_questions"]:
-        oc = owner.get(q["id"])
-        opts = list(q["options"])
-        cant = ""
-        if oc and opts and opts[-1] in oc.get("unclear_answers", []):
-            cant = opts.pop()
-        skip = q.get("skip_when_calls")
-        if skip is None:
-            skip = [c for c in (oc.get("not_visible_calls", ["missing"]) if oc else []) if c in sc["calls"]]
-        questions.append({
-            "id": q["id"], "label": q.get("label", q["id"]),
-            "type": "yesno" if opts == ["yes", "no"] else "choice",
-            "options": opts, "cant_tell": cant,
-            "defect": [o for o in opts if oc and o in oc.get("defect_answers", [])],
-            "required": bool(q.get("required")), "skip_when": list(skip),
-            "outcome": oc.get("name", "") if oc else "",
-        })
+    rank = {ro["question"]: ro for ro in un.get("rank_outcomes") or [] if isinstance(ro, dict) and "question" in ro}
+    questions = [_model_question(q, "neuron", owner, rank, sc["calls"]) for q in sc["neuron_questions"]]         + [_model_question(q, "animal", owner, rank, sc["calls"]) for q in sc.get("animal_questions") or []]
     return {
         "neurons": list(sc["neurons"]),
         "calls": [{"text": c, "defect": c in sc["defect_calls"]} for c in sc["calls"]],
@@ -259,7 +350,7 @@ def current(project):
     why = unsupported(cfg)
     return {"model": to_model_cfg(cfg), "locked": locked(project), "readonly": why,
             "presets": [{"id": k, **v} for k, v in PRESETS.items()],
-            "warn_questions": WARN_QUESTIONS, "max_questions": MAX_QUESTIONS}
+            "warn_questions": WARN_QUESTIONS, "max_questions": MAX_QUESTIONS, "max_levels": MAX_LEVELS}
 
 
 def _text(v, what, required=True, limit=MAX_TEXT):
@@ -297,6 +388,78 @@ def _new_id(label, taken):
     return qid
 
 
+def _clean_question(q, i, calls, taken, ids):
+    """One question from the builder, checked."""
+    if not isinstance(q, dict):
+        raise ValueError(f"Question {i} is not filled in.")
+    label = _text(q.get("label"), f"Question {i}: the question")
+    where = f"Question \"{label}\""
+    typ = q.get("type")
+    if typ not in TYPES:
+        raise ValueError(f"{where}: pick Yes / No, Choice, Scale or Count.")
+    ask = q.get("ask") or "neuron"
+    if ask not in ("neuron", "animal"):
+        raise ValueError(f"{where}: ask it for each neuron or once per animal.")
+    qid = q.get("id") if isinstance(q.get("id"), str) and re.fullmatch(r"[a-z][a-z0-9_]{0,40}", q["id"]) else None
+    if qid is None or qid in ids:
+        qid = _new_id(label, taken | set(ids))
+    ids.append(qid)
+    count = None
+    if typ == "yesno":
+        opts = ["yes", "no"]
+    elif typ == "count":
+        spec = q.get("count") if isinstance(q.get("count"), dict) else {}
+        try:
+            lo, hi = int(spec.get("min")), int(spec.get("max"))
+        except (TypeError, ValueError):
+            raise ValueError(f"{where}: give the lowest and highest count as whole numbers.")
+        if lo < 0 or hi <= lo:
+            raise ValueError(f"{where}: the highest count must be above the lowest, and the lowest 0 or more.")
+        if hi - lo + 1 > MAX_LEVELS:
+            raise ValueError(f"{where}: at most {MAX_LEVELS} counts. Use a last answer such as "
+                             f"\"{lo + MAX_LEVELS - 1}+\" for that many or more.")
+        count = {"min": lo, "max": hi, "top": bool(spec.get("top"))}
+        opts = count_options(count)
+    else:
+        what = "level" if typ == "scale" else "answer"
+        opts = _texts(q.get("options"), f"{where}: {what}", 2)
+        if typ == "scale" and len(opts) > MAX_LEVELS:
+            raise ValueError(f"{where}: at most {MAX_LEVELS} levels.")
+    cant = _text(q.get("cant_tell") or "", f"{where}: the can't tell answer", required=False)
+    if cant and cant.lower() in [o.lower() for o in opts]:
+        raise ValueError(f"{where}: the can't tell answer is also one of the answers.")
+    ranked = typ in RANKED
+    dfx = [] if ranked else (q.get("defect") or [])
+    if not isinstance(dfx, list) or any(d not in opts for d in dfx):
+        raise ValueError(f"{where}: a defect answer is not one of its answers.")
+    outcome = _text(q.get("outcome") or "", f"{where}: the outcome name", required=False, limit=60)
+    if outcome and not ranked and not dfx:
+        raise ValueError(f"{where}: tick the answers that count as a defect, or set it to not analysed.")
+    if outcome.lower() == "calls":
+        raise ValueError(f"{where}: the outcome cannot be called \"calls\".")
+    skip = (q.get("skip_when") or []) if ask == "neuron" else []
+    if not isinstance(skip, list) or any(s not in calls for s in skip):
+        raise ValueError(f"{where}: a skip call is not one of the calls.")
+    if not isinstance(q.get("required", False), bool):
+        raise ValueError(f"{where}: required must be true or false.")
+    rollup, cutoff = "", ""
+    if ranked and outcome and ask == "neuron":
+        from . import ranks
+        rollup = q.get("rollup") or ranks.DEFAULT_ROLLUP[typ]
+        if rollup not in ranks.ROLLUPS[typ]:
+            raise ValueError(f"{where}: pick how the neurons make one value per animal.")
+    if ranked and outcome and q.get("cutoff") not in (None, ""):
+        cutoff = str(q["cutoff"])
+        if typ == "scale" and (cutoff not in opts or cutoff == opts[0]):
+            raise ValueError(f"{where}: the cutoff must be one of the levels after the first.")
+        if typ == "count" and (not cutoff.isdigit() or int(cutoff) < 1):
+            raise ValueError(f"{where}: the cutoff must be a whole number of 1 or more.")
+    return {"id": qid, "label": label, "type": typ, "ask": ask, "options": opts if typ != "count" else [],
+            "count": count, "all_options": opts, "cant_tell": cant,
+            "defect": [o for o in opts if o in dfx], "required": q.get("required", False),
+            "skip_when": [c for c in calls if c in skip], "outcome": outcome, "rollup": rollup, "cutoff": cutoff}
+
+
 def clean(model):
     """The builder's answers, checked. Returns a cleaned model with ids filled in."""
     if not isinstance(model, dict):
@@ -314,53 +477,32 @@ def clean(model):
     count = model.get("count") if isinstance(model.get("count"), dict) else {}
     count = {"label": _text(count.get("label"), "The count question"),
              "options": _texts(count.get("options"), "Count answer", 2)}
-    questions, taken, ids = [], set(), []
     qs = model.get("questions") or []
     if not isinstance(qs, list):
         raise ValueError("Questions: expected a list.")
-    if len(qs) > MAX_QUESTIONS:
-        raise ValueError(f"At most {MAX_QUESTIONS} questions per neuron.")
+    for kind in ("neuron", "animal"):
+        n = sum(1 for q in qs if isinstance(q, dict) and (q.get("ask") or "neuron") == kind)
+        if n > MAX_QUESTIONS:
+            raise ValueError(f"At most {MAX_QUESTIONS} questions {'per neuron' if kind == 'neuron' else 'per animal'}.")
+    taken, ids = set(), []
     for q in qs:
         if isinstance(q, dict) and isinstance(q.get("id"), str) and re.fullmatch(r"[a-z][a-z0-9_]{0,40}", q["id"]):
             taken.add(q["id"])
-    for i, q in enumerate(qs, 1):
-        if not isinstance(q, dict):
-            raise ValueError(f"Question {i} is not filled in.")
-        label = _text(q.get("label"), f"Question {i}: the question")
-        where = f"Question \"{label}\""
-        typ = q.get("type")
-        if typ not in TYPES:
-            raise ValueError(f"{where}: pick Yes / No or Choice.")
-        qid = q.get("id") if isinstance(q.get("id"), str) and re.fullmatch(r"[a-z][a-z0-9_]{0,40}", q["id"]) else None
-        if qid is None or qid in ids:
-            qid = _new_id(label, taken | set(ids))
-        ids.append(qid)
-        opts = ["yes", "no"] if typ == "yesno" else _texts(q.get("options"), f"{where}: answer", 2)
-        cant = _text(q.get("cant_tell") or "", f"{where}: the can't tell answer", required=False)
-        if cant and cant.lower() in [o.lower() for o in opts]:
-            raise ValueError(f"{where}: the can't tell answer is also one of the answers.")
-        dfx = q.get("defect") or []
-        if not isinstance(dfx, list) or any(d not in opts for d in dfx):
-            raise ValueError(f"{where}: a defect answer is not one of its answers.")
-        outcome = _text(q.get("outcome") or "", f"{where}: the outcome name", required=False, limit=60)
-        if outcome and not dfx:
-            raise ValueError(f"{where}: tick the answers that count as a defect, or set it to not analysed.")
-        if outcome.lower() == "calls":
-            raise ValueError(f"{where}: the outcome cannot be called \"calls\".")
-        skip = q.get("skip_when") or []
-        if not isinstance(skip, list) or any(s not in calls for s in skip):
-            raise ValueError(f"{where}: a skip call is not one of the calls.")
-        if not isinstance(q.get("required", False), bool):
-            raise ValueError(f"{where}: required must be true or false.")
-        questions.append({"id": qid, "label": label, "type": typ, "options": opts, "cant_tell": cant,
-                          "defect": [o for o in opts if o in dfx], "required": q.get("required", False),
-                          "skip_when": [c for c in calls if c in skip], "outcome": outcome})
+    questions = [_clean_question(q, i, calls, taken, ids) for i, q in enumerate(qs, 1)]
     names = []
     for q in questions:
         if q["outcome"] and q["outcome"] not in names:
             names.append(q["outcome"])
     for name in names:
         group = [q for q in questions if q["outcome"] == name]
+        if any(q["type"] in RANKED for q in group):
+            if len(group) > 1:
+                raise ValueError(f"Outcome \"{name}\": a scale or count question is tested on its own, so give it "
+                                 "an outcome name no other question uses.")
+            continue
+        if len({q["ask"] for q in group}) > 1:
+            raise ValueError(f"Outcome \"{name}\": combine questions asked for each neuron, or questions asked "
+                             "once per animal, not both.")
         if len({tuple(q["skip_when"]) for q in group}) > 1:
             raise ValueError(f"Outcome \"{name}\": its questions must be skipped for the same calls, "
                              "because the outcome leaves those neurons out.")
@@ -381,6 +523,19 @@ def clean(model):
             "unusable_reasons": reasons, "rules": rules}
 
 
+def _config_question(q, old):
+    """The config.json entry of one cleaned question; keys the builder does not manage are kept."""
+    keep = {k: v for k, v in old.items()
+            if k not in ("id", "label", "options", "required", "skip_when_calls", "type", "cant_tell")}
+    ranked = q["type"] in RANKED
+    return {"id": q["id"], "label": q["label"],
+            **({"type": q["type"]} if ranked else {}),
+            "options": q["all_options"] + ([q["cant_tell"]] if q["cant_tell"] else []),
+            **({"cant_tell": q["cant_tell"]} if ranked and q["cant_tell"] else {}),
+            **({"required": True} if q["required"] else {}),
+            **({"skip_when_calls": q["skip_when"]} if q["skip_when"] else {}), **keep}
+
+
 def apply(raw, model):
     """The new raw config.json with the form from the builder. Keys the builder does not manage are
     kept; a key is only written when it differs from the default or was already in config.json, so
@@ -388,8 +543,8 @@ def apply(raw, model):
     m = clean(model)
     out = copy.deepcopy(raw)
     old_cfg = _cfg_from_raw(raw)
-    d_sc, d_un = C.DEFAULTS["scoring"], C.DEFAULTS["unblinding"]
-    old_q = {q["id"]: q for q in old_cfg["scoring"]["neuron_questions"]}
+    d_sc = C.DEFAULTS["scoring"]
+    old_q = {q["id"]: q for q in old_cfg["scoring"]["neuron_questions"] + (old_cfg["scoring"].get("animal_questions") or [])}
     calls = [c["text"] for c in m["calls"]]
     new_sc = {
         "neurons": m["neurons"],
@@ -397,21 +552,19 @@ def apply(raw, model):
         "defect_calls": [c["text"] for c in m["calls"] if c["defect"]],
         "sides": (old_cfg["scoring"]["sides"] or d_sc["sides"]) if m["sides"] else [],
         "count_question": {**old_cfg["scoring"]["count_question"], **m["count"]},
-        "neuron_questions": [],
+        "neuron_questions": [_config_question(q, old_q.get(q["id"], {})) for q in m["questions"] if q["ask"] == "neuron"],
         "unusable_reasons": m["unusable_reasons"],
         "rules": m["rules"],
     }
-    for q in m["questions"]:
-        entry = {k: v for k, v in old_q.get(q["id"], {}).items()
-                 if k not in ("id", "label", "options", "required", "skip_when_calls")}
-        entry = {"id": q["id"], "label": q["label"], "options": q["options"] + ([q["cant_tell"]] if q["cant_tell"] else []),
-                 **({"required": True} if q["required"] else {}),
-                 **({"skip_when_calls": q["skip_when"]} if q["skip_when"] else {}), **entry}
-        new_sc["neuron_questions"].append(entry)
+    animal = [_config_question(q, old_q.get(q["id"], {})) for q in m["questions"] if q["ask"] == "animal"]
     old_oc = {oc.get("name"): oc for oc in old_cfg["unblinding"]["question_outcomes"]}
-    outcomes = []
+    outcomes, ranked = [], []
     for q in m["questions"]:
         if not q["outcome"]:
+            continue
+        if q["type"] in RANKED:
+            ranked.append({"name": q["outcome"], "question": q["id"], **({"rollup": q["rollup"]} if q["rollup"] else {}),
+                           **({"cutoff": int(q["cutoff"]) if q["type"] == "count" else q["cutoff"]} if q["cutoff"] else {})})
             continue
         oc = next((o for o in outcomes if o["name"] == q["outcome"]), None)
         if oc is None:
@@ -439,11 +592,15 @@ def apply(raw, model):
     for k, v in new_sc.items():
         if k in raw_sc or v != d_sc[k]:
             raw_sc[k] = v
+    if animal or "animal_questions" in raw_sc:
+        raw_sc["animal_questions"] = animal
     if raw_sc:
         out["scoring"] = raw_sc
     raw_un = dict(out.get("unblinding") or {})
     if outcomes or "question_outcomes" in raw_un:
         raw_un["question_outcomes"] = outcomes
+    if ranked or "rank_outcomes" in raw_un:
+        raw_un["rank_outcomes"] = ranked
     if m["primary"]:
         raw_un["primary_outcome"] = m["primary"]
     else:

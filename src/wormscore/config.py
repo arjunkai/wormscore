@@ -148,6 +148,15 @@ DEFAULTS = {
     #   Part of the analysis plan; 0 = off.
     # primary_outcome (optional, 1.3.0): "calls" or a question_outcomes name, named before scoring;
     #   the results label it primary and every other test secondary. Part of the analysis plan.
+    # rank_outcomes (optional, 1.4.0; not in these defaults so older plans still match): ordered
+    #   scale and count questions (scoring.neuron_questions or scoring.animal_questions with
+    #   "type": "scale" or "count"), each reduced to one value per animal and compared with the
+    #   Mann-Whitney test (permutation p). See ranks.py:
+    #   [{"name", "question", "rollup": "worst" | "mean" (scale), "sum" | "mean_per_neuron" (count),
+    #     "cutoff" (optional), "unclear_answers": ["can't tell"], "unclear": "exclude_neuron"}]
+    # scoring.animal_questions (optional, 1.4.0): questions asked once per image instead of for each
+    #   neuron, saved as a_<id>; usable in question_outcomes (not mixed with neuron questions) and
+    #   rank_outcomes.
     # cross_microscope_reason and methods_notes (optional) only add text to methods_text.md.
     "unblinding": {"min_scored_worms": 30, "reference_genotype": "", "question_outcomes": [],
                    "interaction": {}, "secondary_defect_calls": [], "test_secondary": False,
@@ -347,9 +356,11 @@ def analysis_plan(cfg):
         plan["dim_cutoff_sd"] = un["dim_cutoff_sd"]
     if un.get("primary_outcome"):        # 1.3.0; same rule
         plan["primary_outcome"] = un["primary_outcome"]
+    if un.get("rank_outcomes"):          # 1.4.0; same rule
+        plan["rank_outcomes"] = un["rank_outcomes"]
     used = un["secondary_defect_calls"] or un["allow_cross_microscope"] or un["comparisons"] \
         or un["alternative"] != "two-sided" or un["interaction"] or un["question_outcomes"] or un["dim_cutoff_sd"] \
-        or un.get("primary_outcome")
+        or un.get("primary_outcome") or un.get("rank_outcomes")
     return plan if used else {}
 
 
@@ -364,7 +375,9 @@ def repeat_fraction(cfg):
 def check(cfg):
     """Stop with a plain message if the optional results settings do not fit the scoring setup."""
     un, sc = cfg["unblinding"], cfg["scoring"]
+    animal_ids = {q.get("id") for q in sc.get("animal_questions") or [] if isinstance(q, dict)}
     questions = {q["id"]: q for q in sc["neuron_questions"]}
+    questions.update({q["id"]: q for q in sc.get("animal_questions") or [] if isinstance(q, dict) and "id" in q})
     names = []
     for oc in un["question_outcomes"]:
         name = oc.get("name", "")
@@ -373,9 +386,12 @@ def check(cfg):
         names.append(name)
         if not oc.get("questions") or not oc.get("defect_answers"):
             raise SystemExit(f"question_outcomes '{name}': set 'questions' and 'defect_answers'.")
+        if len({q in animal_ids for q in oc["questions"]}) > 1:
+            raise SystemExit(f"question_outcomes '{name}': combine either neuron questions or animal questions, not both.")
         for qid in oc["questions"]:
             if qid not in questions:
-                raise SystemExit(f"question_outcomes '{name}': no neuron question with id {qid!r} in scoring.neuron_questions.")
+                raise SystemExit(f"question_outcomes '{name}': no neuron question or animal question with id {qid!r} "
+                                 "in scoring.neuron_questions or scoring.animal_questions.")
             unknown = set(oc["defect_answers"]) | set(oc.get("unclear_answers", []))
             unknown -= set(questions[qid]["options"])
             if unknown:
@@ -386,14 +402,16 @@ def check(cfg):
                                  f"{sorted(skipped)}, so not_visible_calls must include those calls.")
         if oc.get("unclear", "exclude_neuron") not in ("exclude_neuron", "exclude_animal"):
             raise SystemExit(f"question_outcomes '{name}': 'unclear' must be exclude_neuron or exclude_animal.")
+    from . import ranks
+    rank_names = ranks.check(cfg, names)
     for q in sc["neuron_questions"]:
         if not isinstance(q.get("required", False), bool):
             raise SystemExit(f"neuron question {q.get('id')!r}: required must be true or false.")
         skip = q.get("skip_when_calls", [])
         if not isinstance(skip, list) or set(skip) - set(sc["calls"]):
             raise SystemExit(f"neuron question {q.get('id')!r}: skip_when_calls must be a list of scoring.calls.")
-    if un.get("primary_outcome", "") not in ["", "calls"] + names:
-        raise SystemExit("primary_outcome must be 'calls' or a question_outcomes name.")
+    if un.get("primary_outcome", "") not in ["", "calls"] + names + rank_names:
+        raise SystemExit("primary_outcome must be 'calls', a question_outcomes name or a rank_outcomes name.")
     ia = un["interaction"]
     if ia:
         for k in ("single_a", "single_b", "double"):
@@ -401,6 +419,9 @@ def check(cfg):
                 raise SystemExit(f"interaction: set '{k}' to a genotype name.")
         if ia.get("model", "product") not in INTERACTION_MODELS:
             raise SystemExit(f"interaction: model must be one of {', '.join(INTERACTION_MODELS)}.")
+        if ia.get("outcome", "calls") in rank_names:
+            raise SystemExit("interaction: the interaction test needs a share of affected animals, so it cannot use "
+                             "a scale or count outcome (rank_outcomes).")
         if ia.get("outcome", "calls") not in ["calls"] + names:
             raise SystemExit("interaction: outcome must be 'calls' or a question_outcomes name.")
         if ia.get("expected_direction", "") not in ("", "higher", "lower"):
@@ -416,6 +437,9 @@ def check(cfg):
     for m in un["allow_cross_microscope"]:
         if m == "secondary":
             raise SystemExit("allow_cross_microscope: the secondary measure is compared only within one microscope.")
+        if m in rank_names:
+            raise SystemExit(f"allow_cross_microscope: {m!r} is a scale or count outcome; those are compared only "
+                             "within one microscope.")
         if m not in ["calls"] + names:
             raise SystemExit(f"allow_cross_microscope: {m!r} is not 'calls' or a question_outcomes name.")
     if un["alternative"] not in ALTERNATIVES:

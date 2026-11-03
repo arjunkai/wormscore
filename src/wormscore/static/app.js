@@ -192,6 +192,7 @@ function buildForm() {
 
   sc.neurons.forEach((name, i) => { st.colors[name] = PALETTE[i % PALETTE.length]; });
   $("#neurons").replaceChildren(...wsForm.neurons(h, sc));    // form.js, shared with the form preview
+  $("#animalQs").replaceChildren(...wsForm.animal(h, sc));
 
   st.colors.background = BG_COLOR;
   const labels = [...sc.neurons, "background"];
@@ -837,6 +838,7 @@ function syncUsable() {
   if (usable !== "no") $("#reasonSelect").value = "";
   $("#countField").classList.toggle("hidden", usable === "no");
   $("#neurons").classList.toggle("hidden", usable === "no");
+  $("#animalQs").classList.toggle("hidden", usable === "no");
 }
 
 // Sections still missing an answer when Save was pressed are outlined until they are answered.
@@ -869,7 +871,7 @@ $("#scoreForm").addEventListener("submit", async e => {
   const v = Object.fromEntries([...fd.entries()].filter(([k]) => !k.startsWith("flag_")));
   if (v.usable === "no") {
     // answers about cells do not apply to an unusable image, so they are not saved
-    for (const k of Object.keys(v)) if (k === "cells_seen" || /^n\d+_/.test(k)) delete v[k];
+    for (const k of Object.keys(v)) if (k === "cells_seen" || /^(n\d+|a)_/.test(k)) delete v[k];
   }
   const flag_answers = {};
   for (const f of st.meta.flags) {
@@ -891,6 +893,7 @@ $("#scoreForm").addEventListener("submit", async e => {
     if (open.length) need(`score all ${n} neurons`, ...open.map(i => box(`n${i}_call`)));
     const req = wsForm.missingRequired(v, st.cfg.scoring).filter(i => !open.includes(i));
     if (req.length) need("answer the questions marked *", ...req.map(i => box(`n${i}_call`)));
+    if (wsForm.missingAnimal(v, st.cfg.scoring)) need("answer the questions about this animal marked *", $("#animalQs fieldset"));
     if (!v.confidence) need("pick a confidence", box("confidence"));
   }
   markMissing(places);

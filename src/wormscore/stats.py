@@ -53,8 +53,27 @@ def per_neuron_rows(rows, cfg):
                 "n_z": r["n_z"], "z_step_um": r["z_step_um"], "neuron": name, "call": call,
                 "affected": "" if not call else int(call in defect),
                 **{f"roi_{c}": r.get(f"n{i}_roi_{c}", "") for c in ROI_COLS},
-                **{oc["name"]: neuron_state(r, i, oc) for oc in cfg["unblinding"]["question_outcomes"]},
+                **{oc["name"]: (outcome_state(r, cfg, oc) if is_animal_outcome(cfg, oc) else neuron_state(r, i, oc))
+                   for oc in cfg["unblinding"]["question_outcomes"]},
+                **rank_columns(r, i, cfg),
             })
+    return out
+
+
+def rank_columns(row, i, cfg):
+    """For each rank outcome (1.4.0): the neuron's own answer and the animal's value, so figures
+    can show every neuron while the tests use one value per animal. Nothing if none is set."""
+    ros = cfg["unblinding"].get("rank_outcomes") or []
+    if not ros:
+        return {}
+    from . import ranks
+    out = {}
+    for ro in ros:
+        q, where = ranks.questions(cfg)[ro["question"]]
+        key = f"score_a_{q['id']}" if where == "animal" else f"score_n{i}_{q['id']}"
+        v, why = ranks.animal_value(row, cfg, ro)
+        out[ro["name"]] = row.get(key, "")
+        out[f"{ro['name']} (animal value)"] = ranks._num(v) if v is not None else f"left out: {why}"
     return out
 
 
@@ -105,15 +124,12 @@ def p_column(test, alternative):
     return f"p_{test}_two_sided" if alternative == "two-sided" else f"p_{test}_{alternative}"
 
 
-def fisher_tests(pen, reference="", comparisons=(), alternative="two-sided"):
-    """Fisher's exact test on animals with vs without an affected neuron, between rows of the
-    same "system" (one microscope, or all microscopes for a pooled table).
-    comparisons: the planned [genotype_a, genotype_b] pairs; otherwise every genotype against
-    the reference genotype if one is set, otherwise every pair. alternative "greater" tests
-    whether genotype_a is more often affected than genotype_b. Bonferroni: each p is multiplied
-    by the number of tests (max 1)."""
+def planned_pairs(table, reference="", comparisons=()):
+    """(system, row_a, row_b) for every comparison between rows of the same "system" that have
+    animals: the planned comparisons if given, otherwise each genotype against the reference if
+    one is set, otherwise every pair. Shared by Fisher's exact and the Mann-Whitney tests."""
     by_system = defaultdict(list)
-    for row in pen:
+    for row in table:
         if row["animals"]:
             by_system[row["system"]].append(row)
     pairs = []
@@ -127,6 +143,17 @@ def fisher_tests(pen, reference="", comparisons=(), alternative="two-sided"):
             pairs += [(system, ref[0], r) for r in rs if ref and r is not ref[0]]
         else:
             pairs += [(system, a, b) for a, b in combinations(rs, 2)]
+    return pairs
+
+
+def fisher_tests(pen, reference="", comparisons=(), alternative="two-sided"):
+    """Fisher's exact test on animals with vs without an affected neuron, between rows of the
+    same "system" (one microscope, or all microscopes for a pooled table).
+    comparisons: the planned [genotype_a, genotype_b] pairs; otherwise every genotype against
+    the reference genotype if one is set, otherwise every pair. alternative "greater" tests
+    whether genotype_a is more often affected than genotype_b. Bonferroni: each p is multiplied
+    by the number of tests (max 1)."""
+    pairs = planned_pairs(pen, reference, comparisons)
     tests = []
     for system, a, b in pairs:
         ya, yb = a["animals_any_affected"], b["animals_any_affected"]
@@ -173,15 +200,32 @@ def animal_state(states, unclear_rule):
     return "unclear" if "unclear" in states else "not_visible"
 
 
+def is_animal_outcome(cfg, oc):
+    """True if the outcome is built from questions asked once per animal (wormscore 1.4.0)."""
+    aq = {q["id"] for q in cfg["scoring"].get("animal_questions") or []}
+    return bool(oc["questions"]) and all(q in aq for q in oc["questions"])
+
+
+def outcome_state(row, cfg, oc):
+    """The animal under a question outcome: defect, normal, unclear, not_visible or incomplete."""
+    if is_animal_outcome(cfg, oc):
+        answers = [row.get(f"score_a_{q}", "") for q in oc["questions"]]
+        if any(a in oc["defect_answers"] for a in answers):
+            return "defect"
+        if "" in answers:
+            return "incomplete"
+        return "unclear" if any(a in oc.get("unclear_answers", []) for a in answers) else "normal"
+    n_neurons = len(cfg["scoring"]["neurons"])
+    states = [neuron_state(row, i, oc) for i in range(1, n_neurons + 1)]
+    return animal_state(states, oc.get("unclear", "exclude_neuron"))
+
+
 def outcome_table(rows, cfg, oc, pool=False):
     """Same layout as penetrance(): per microscope and genotype, animals assessed and defective,
     plus the animals left out and why. pool: one row per genotype over all microscopes."""
-    n_neurons = len(cfg["scoring"]["neurons"])
-    rule = oc.get("unclear", "exclude_neuron")
     groups = defaultdict(list)
     for r in rows:
-        states = [neuron_state(r, i, oc) for i in range(1, n_neurons + 1)]
-        groups[group_key(r, pool)].append(animal_state(states, rule))
+        groups[group_key(r, pool)].append(outcome_state(r, cfg, oc))
     table = []
     for (system, geno), animals in sorted(groups.items()):
         n = animals.count("defect") + animals.count("normal")
@@ -385,8 +429,18 @@ def reliability(pairs, cfg):
     rows.append(agreement_row("cells seen", [(a.get("score_cells_seen"), b.get("score_cells_seen")) for a, b in both],
                               sc["count_question"]["options"], weighted=True, extra=ex))
     for oc in un["question_outcomes"]:
-        state = lambda r: animal_state([neuron_state(r, i, oc) for i in range(1, n + 1)], oc.get("unclear", "exclude_neuron"))
-        rows.append(agreement_row(oc["name"], [(state(a), state(b)) for a, b in both], ["normal", "defect"], extra=ex))
+        rows.append(agreement_row(oc["name"], [(outcome_state(a, cfg, oc), outcome_state(b, cfg, oc)) for a, b in both],
+                                  ["normal", "defect"], extra=ex))
+    from . import ranks
+    for ro in un.get("rank_outcomes") or []:
+        # Scales whose animal value is a level: weighted kappa on that level. Counts and means are
+        # not categories, so they get no kappa here.
+        q, where = ranks.questions(cfg)[ro["question"]]
+        if q["type"] != ranks.SCALE or ranks.rollup(q, ro, where) == "mean":
+            continue
+        lv = ranks.levels(q, ro)
+        level = lambda r: (lambda v: "" if v[0] is None else lv[v[0]])(ranks.animal_value(r, cfg, ro))
+        rows.append(agreement_row(ro["name"], [(level(a), level(b)) for a, b in both], lv, weighted=True, extra=ex))
     return rows
 
 

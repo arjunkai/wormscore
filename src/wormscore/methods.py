@@ -10,6 +10,7 @@ from collections import Counter
 
 from . import __version__
 from . import config as C
+from . import ranks, stats
 
 
 def _date(path):
@@ -25,12 +26,20 @@ def _or(items):
 
 
 def outcome_sentences(cfg, outcome_tests):
-    labels = {q["id"]: q["label"] for q in cfg["scoring"]["neuron_questions"]}
+    sc = cfg["scoring"]
+    labels = {q["id"]: q.get("label", q["id"]) for q in sc["neuron_questions"] + (sc.get("animal_questions") or [])}
     out = []
     for oc in cfg["unblinding"]["question_outcomes"]:
         qs = " / ".join(f'"{labels[q]}"' for q in oc["questions"])
         unclear = oc.get("unclear_answers", [])
         n = sum(1 for t in outcome_tests if t["outcome"] == oc["name"])
+        if stats.is_animal_outcome(cfg, oc):
+            out.append(
+                f"For {oc['name']}, asked once per animal, an animal was defective if the answer to {qs} was "
+                f"{_or(oc['defect_answers'])}"
+                + (f"; an answer of {_or(unclear)} left the animal out" if unclear else "")
+                + f". Groups were compared by the same Fisher's exact tests (Bonferroni for {n} test{'s' if n != 1 else ''}).")
+            continue
         out.append(
             f"For {oc['name']}, a neuron was defective if the answer to {qs} was {_or(oc['defect_answers'])}; "
             f"neurons called {_or(oc.get('not_visible_calls', ['missing']))} were not assessed"
@@ -214,7 +223,7 @@ def form_sentences(cfg, form_status):
 
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
-              dim_rows=(), dim_skipped=0, second_scorers=(), between=(), form_status="yes"):
+              dim_rows=(), dim_skipped=0, second_scorers=(), between=(), form_status="yes", rank_tests=()):
     """added: (date, number of images) for each batch added to an existing key.
     key_rows, excluded_rows: for the table of images per genotype and microscope.
     reliability, n_repeats: agreement of hidden repeats. dim_rows: the measured check of calls."""
@@ -266,7 +275,8 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "Each animal was one image and the unit of analysis. Penetrance was the share of animals with at "
         "least one affected neuron. "
         + " ".join(definition_sentences(cfg) + [fisher_sentence(cfg, tests)]
-                   + outcome_sentences(cfg, outcome_tests) + interaction_sentence(cfg, interaction_tests)
+                   + outcome_sentences(cfg, outcome_tests) + ranks.methods_sentences(cfg, rank_tests)
+                   + interaction_sentence(cfg, interaction_tests)
                    + rel_stat + second_scorer_sentences(second_scorers, between))
         + (" The analysis plan (definitions, comparisons, test direction, cross-microscope measures and "
            "interaction model) was recorded in the project log before scoring began."

@@ -55,6 +55,7 @@ def score_fields(cfg):
         if sc["sides"]:
             fields.append(f"n{i}_side")
         fields += [f"n{i}_{q['id']}" for q in sc["neuron_questions"]]
+    fields += [f"a_{q['id']}" for q in sc.get("animal_questions") or []]      # 1.4.0: once per animal
     return fields + ["confidence", "display_preset_when_saved", "flag_answers", "notes"]
 
 

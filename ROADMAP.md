@@ -9,11 +9,8 @@ reports exactly as before.
 
 ## Planned
 
-- **Score form builder, part 2.** Ordered scales (for example a 0 to 6 degeneration score) and counts,
-  each with a rank test (Mann-Whitney, Bonferroni-corrected) and Methods text; questions per left/right
-  cell and per animal; presets for neurodegeneration, dendrite length, and counts and position; a short
-  definition for each answer, shown while scoring. Answer types are offered only once their test ships,
-  so nobody collects answers that cannot be analysed.
+- **Score form, later.** A short definition for each answer, shown while scoring; questions per
+  left/right cell; a counts-and-position preset.
 - **Reference images for "dim".** An optional panel of reference images the scorer can compare against.
 - **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
   several identity channels (for multi-color systems such as NeuroPAL).
@@ -34,6 +31,12 @@ each is off by default, so a project that does not turn it on works exactly as i
 
 ## Recently shipped
 
+- 1.4.0: scale and count questions. The builder adds **Scale** (levels in order, best first) and
+  **Count** answers, and any question can be asked for each neuron or once per animal. Each animal gets
+  one value (worst neuron by default), compared between genotypes with a Mann-Whitney test with an
+  exact permutation p-value and an effect size; an optional cutoff is also tested with Fisher's exact
+  test. New presets: Neurodegeneration (0 to 6) and Dendrite length. The builder and scoring page are
+  roomier. Existing projects give identical results.
 - 1.3.0: the score form builder. The **Scoring form** section of Project settings sets the neurons,
   calls, extra yes/no and choice questions (defect answers, "can't tell", required, skipped for some
   calls), outcomes and a primary outcome, with presets and a live preview of the score panel. The form

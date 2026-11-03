@@ -6,6 +6,7 @@
   --raised: #23272d;
   --hover: #2a2f36;
   --line: #31363d;
+  --line-strong: #434a53;
   --text: #e4e6e9;
   --muted: #959ca6;
   --faint: #8a919b;
@@ -37,6 +38,13 @@
   --text-xl: 18px;
   --text-2xl: 22px;
   --text-3xl: 26px;
+  /* spacing scale (4 px steps), shared with the scoring page */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -149,7 +157,7 @@ fieldset label.nq { display: flex; margin: 8px 0 0; gap: 10px; line-height: 1.4;
 .nq-req { color: var(--warn); }
 fieldset .nq select { display: block; width: auto; max-width: 55%; margin: 0; flex: none; }
 
-fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 10px; padding: 8px 10px 10px; }
+fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--space-md); padding: var(--space-sm) var(--space-md) var(--space-md); }
 /* the section's own border changes colour, so it keeps the gap around its title */
 fieldset.missing, .flag.missing { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
 legend { color: var(--muted); padding: 0 4px; font-size: var(--text-xs); }

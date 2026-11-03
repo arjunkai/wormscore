@@ -82,9 +82,11 @@ evidence that people struggle with it, and what wormscore does.
   primary scorer on its own; there is no Krippendorff's alpha for three or more scorers, no consensus
   or adjudication step, and no ICC for the two scorers' drawn regions. Kappa below 0.60 is considered
   inadequate ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)).
-- **Yes/no and choice answers only.** Since 1.3.0 the score form is built in the app, but only answer
-  types that already have a test are offered: no ordered scales (such as a 0 to 6 degeneration score),
-  no counts with a group test, and no per-animal questions besides the count question. These are planned.
+- **Simple rank tests only.** Since 1.4.0 ordered scales and counts are tested with a Mann-Whitney test
+  (exact permutation p-value) on one value per animal, and a cutoff can be tested with Fisher's exact
+  test. There is no Brunner-Munzel test, no t-test on counts, no proportional-odds, negative binomial or
+  mixed model (for example with animal as a random effect, or covariates), no questions per left/right
+  cell, and no short definition shown for each answer while scoring.
 - **Max projections in some measures.** `mean_mip` and `peak_filtered` use the maximum-intensity
   projection, which "shouldn't be used for intensity quantification" according to
   [Culley et al., "Made to measure" (preprint)](https://arxiv.org/abs/2302.01657) (also

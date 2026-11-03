@@ -52,6 +52,8 @@ def form_answers(cfg):
         allowed[f"n{i}_call"] = set(sc["calls"]) | {""}
         for q in sc["neuron_questions"]:
             allowed[f"n{i}_{q['id']}"] = set(q["options"]) | {""}
+    for q in sc.get("animal_questions") or []:
+        allowed[f"a_{q['id']}"] = set(q["options"]) | {""}
     return allowed
 
 

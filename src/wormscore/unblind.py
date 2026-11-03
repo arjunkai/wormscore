@@ -11,7 +11,7 @@ from pathlib import Path
 from statistics import median
 
 from . import config as C
-from . import methods, scoreform, stats
+from . import methods, ranks, scoreform, stats
 from .pipeline import INTERACTION_LOG, PLAN_LOG, append_log, read_csv, write_csv
 
 
@@ -257,6 +257,49 @@ def unblind(project, finished=False, anyway=False, log=print):
         if not run:
             lines.append("  " + stop_note)
 
+    rank_rows, rank_tests = [], []
+    for ro in un.get("rank_outcomes") or []:
+        q, where = ranks.questions(cfg)[ro["question"]]
+        table, values = ranks.outcome_table(counted, cfg, ro)
+        if notes:
+            for r in table:
+                r["sources"] = sources(r["genotype"], r["system"])
+        lvkey = ranks.level_key(q, ro)
+        if lvkey:
+            for r in table:
+                r["levels"] = lvkey
+        rank_rows += table
+        mw = mark(ranks.tests(table, values, ro, ref, comps, alt)) if run else []
+        cut = mark(ranks.cutoff_tests(table, ro, q, ref, comps, alt)) if run and ranks.cutoff_value(q, ro) is not None else []
+        rank_tests += mw + cut
+        lines.append("")
+        lines.append(f"{ro['name']}: {ranks.describe(ro, cfg)}; outputs/unblinded/rank_outcomes.csv"
+                     + (f" ({lvkey})" if lvkey else "") + ":")
+        for p in table:
+            left = ", ".join(f"{p['left_out_' + x]} {x.replace('_', ' ')}" for x in ranks.REASONS if p["left_out_" + x])
+            lines.append(f"  {p['system']} | {p['genotype']}: {p['animals']} animals, median {p['median']} "
+                         f"(IQR {p['q1']} to {p['q3']})" + (f", mean {p['mean']}" if "mean" in p else "")
+                         + (f", {p['animals_at_or_above_cutoff']} at {p['cutoff']} ({p['pct_at_or_above_cutoff']}%)"
+                            if "cutoff" in p else "") + (f"; left out: {left}" if left else ""))
+        if ranks.top_bin(q, ro):
+            lines.append(f"  Answers of {ranks.top_bin(q, ro)} are counted as {ranks.count_value(ranks.top_bin(q, ro))}"
+                         " (a lower bound).")
+        shares = [p["animals"] / (p["animals"] + sum(p["left_out_" + x] for x in ranks.REASONS))
+                  for p in table if p["animals"] + sum(p["left_out_" + x] for x in ranks.REASONS)]
+        if shares and max(shares) - min(shares) > 0.2:
+            lines.append("  WARNING: the share of animals left out differs by more than 20 points between groups; "
+                         "uneven exclusion can bias the comparison.")
+        for x in mw:
+            lines.append(f"  Mann-Whitney ({alt}, {x['p_method']} p): {x['system']} | {x['genotype_a']} (n={x['n_a']}) vs "
+                         f"{x['genotype_b']} (n={x['n_b']}): {x['genotype_a']} scores worse in "
+                         f"{round(100 * x['prob_a_worse'])}% of animal pairs (ties half), Cliff's delta "
+                         f"{x['cliffs_delta']}; {fmt_p(x)}" + (f"  [{x['note']}]" if x.get("note") else ""))
+        for x in cut:
+            lines.append(f"  Fisher ({alt}), {x['definition']}: {x['system']} | {x['genotype_a']} {x['a_affected']} vs "
+                         f"{x['genotype_b']} {x['b_affected']}: {fmt_p(x)}")
+        if not run:
+            lines.append("  " + stop_note)
+
     ia, itests, inote = C.interaction(cfg), [], ""
     if ia:
         pooled = ia["outcome"] in cross
@@ -353,6 +396,10 @@ def unblind(project, finished=False, anyway=False, log=print):
         write_csv(out / "question_outcomes.csv", outcome_rows or [{"note": "no usable counted images"}])
         write_csv(out / "question_outcome_tests.csv",
                   outcome_tests or [{"note": stop_note if not run else "no comparison possible"}])
+    if un.get("rank_outcomes"):
+        write_csv(out / "rank_outcomes.csv", rank_rows or [{"note": "no usable counted images"}])
+        write_csv(out / "rank_outcome_tests.csv",
+                  rank_tests or [{"note": stop_note if not run else "no comparison possible"}])
     if ia:
         write_csv(out / "interaction_test.csv", itests or [{"note": inote}])
     if pairs:
@@ -366,7 +413,7 @@ def unblind(project, finished=False, anyway=False, log=print):
     key_orig = [r for r in key.values() if not r.get("repeat_of")]
     (out / "methods_text.md").write_text(methods.statement(
         project, cfg, len(key_orig), len(excluded), history, len(scores), tests,
-        outcome_tests=outcome_tests, interaction_tests=itests,
+        outcome_tests=outcome_tests, interaction_tests=itests, rank_tests=rank_tests,
         added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key_orig) if d).items()),
         key_rows=key_orig, excluded_rows=excluded, reliability=rel, n_repeats=len(pairs), dim_rows=dims,
         dim_skipped=dim_skipped, second_scorers=second, between=between, form_status=fstatus),

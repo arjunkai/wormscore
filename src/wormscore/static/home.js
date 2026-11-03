@@ -398,22 +398,38 @@ function packageView(p, job) {
 
 // The form as the scoring page reads it (config.json "scoring"), from the builder's answers.
 function formForPreview(m) {
+  const asQ = (q, i) => ({
+    id: `p${i}`, label: q.label || "Untitled question", type: q.type, required: q.required,
+    skip_when_calls: q.ask === "animal" ? [] : q.skip_when,
+    options: [...answersOf(q), ...(q.cant_tell ? [q.cant_tell] : [])],
+  });
   return {
     neurons: m.neurons.length ? m.neurons.map((n, i) => n || `Neuron ${i + 1}`) : ["Neuron 1"],
     calls: m.calls.map(c => c.text || "(call)"),
     sides: m.sides ? ["left", "right"] : [],
     count_question: { label: m.count.label || "(count question)", options: m.count.options },
-    neuron_questions: m.questions.map((q, i) => ({
-      id: `p${i}`, label: q.label || "(question)", required: q.required, skip_when_calls: q.skip_when,
-      options: [...(q.type === "yesno" ? ["yes", "no"] : q.options), ...(q.cant_tell ? [q.cant_tell] : [])],
-    })),
+    neuron_questions: m.questions.map(asQ).filter((_, i) => m.questions[i].ask !== "animal"),
+    animal_questions: m.questions.map(asQ).filter((_, i) => m.questions[i].ask === "animal"),
     rules: m.rules,
   };
 }
 
 const splitList = text => text.split(",").map(s => s.trim()).filter(Boolean);
 const splitLines = text => text.split("\n").map(s => s.trim()).filter(Boolean);
-const answersOf = q => q.type === "yesno" ? ["yes", "no"] : q.options;
+// The answers a question offers (without "can't tell"): a count's are its numbers, the last may be "N+".
+function countAnswers(c) {
+  const lo = Number(c?.min), hi = Number(c?.max);
+  if (!Number.isInteger(lo) || !Number.isInteger(hi) || lo < 0 || hi <= lo || hi - lo > 40) return [];
+  return [...Array(hi - lo).keys()].map(k => String(lo + k)).concat(c.top ? `${hi}+` : String(hi));
+}
+const answersOf = q => q.type === "yesno" ? ["yes", "no"] : q.type === "count" ? countAnswers(q.count) : q.options;
+const RANKED = ["scale", "count"];
+const TYPE_NAMES = { yesno: "Yes / No", choice: "Choice", scale: "Scale", count: "Count" };
+const ROLLUP_NAMES = {
+  worst: "Worst neuron (the highest level of any neuron)", mean: "Mean level of the neurons that were assessed",
+  sum: "Total over the neurons", mean_per_neuron: "Mean per assessed neuron",
+};
+const ROLLUPS = { scale: ["worst", "mean"], count: ["sum", "mean_per_neuron"] };
 
 // The Scoring form section: an editor on the left, a live preview on the right. Returns the
 // element and payload(), which is null when the form cannot be changed here.
@@ -467,58 +483,118 @@ function formSection(info) {
       drawAll();
     } }, "Add call"));
 
+  const radioRow = (j, key, label, choices, current, pick) => h("div", { class: "sf-opts", role: "radiogroup", "aria-label": `Question ${j + 1}: ${label}` },
+    choices.map(([value, text]) => h("label", { class: "sf-check" },
+      h("input", { type: "radio", name: `sf${key}${j}`, checked: current === value, disabled: off,
+        onchange: () => { pick(value); drawAll(); } }), text)));
+
+  const setType = (q, t) => {
+    q.type = t;
+    if ((t === "choice" || t === "scale") && !q.options.length) q.options = t === "scale" ? ["none", "mild", "severe"] : ["yes", "no"];
+    if (t === "count" && !q.count) q.count = { min: 0, max: 5, top: true };
+    if (RANKED.includes(t)) {
+      q.defect = [];
+      if (!ROLLUPS[t].includes(q.rollup)) q.rollup = ROLLUPS[t][0];
+      q.cutoff = "";
+    } else {
+      q.defect = q.defect.filter(d => answersOf(q).includes(d));
+    }
+  };
+
+  const countInputs = (q, j) => {
+    const num = (key, label) => h("label", { class: "sf-inline" }, label,
+      h("input", { type: "number", class: "f-input sf-number", min: 0, max: 999, step: 1, value: q.count[key], disabled: off,
+        "aria-label": `Question ${j + 1}: ${label === "from" ? "lowest" : "highest"} count`,
+        oninput: e => { q.count[key] = e.target.value === "" ? "" : Number(e.target.value); drawPreview(); },
+        onchange: () => drawAll() }));
+    return h("div", { class: "sf-count" }, num("min", "from"), num("max", "to"),
+      check(q.count.top, `The last answer means that many or more (${q.count.max ?? "N"}+)`, v => { q.count.top = v; }));
+  };
+
+  // The cutoff, set before scoring: an animal at or past it is "affected", tested with Fisher's exact test.
+  const cutoffSelect = (q, j) => {
+    const answers = answersOf(q);
+    const choices = q.type === "scale" ? answers.slice(1).map(a => [a, `${a} or worse`])
+      : [...Array(Math.max(Number(q.count?.max) || 0, 1)).keys()].map(k => [String(k + 1), `${k + 1} or more`]);
+    if (q.cutoff && !choices.some(([v]) => v === q.cutoff)) q.cutoff = "";
+    return h("select", { class: "f-input sf-select", disabled: off, "aria-label": `Question ${j + 1}: cutoff`,
+      onchange: e => { q.cutoff = e.target.value; } },
+      [["", "No cutoff"], ...choices].map(([v, l]) => h("option", { value: v, selected: q.cutoff === v }, l)));
+  };
+
   const questionCard = (q, j) => {
     const answers = answersOf(q);
-    return h("div", { class: "sf-q" },
-      h("div", { class: "sf-row" }, h("span", { class: "sf-num" }, `${j + 1}`),
+    const ranked = RANKED.includes(q.type), perAnimal = q.ask === "animal";
+    const row = (label, ...body) => [h("span", { class: "sf-k" }, label), h("div", { class: "sf-v" }, ...body)];
+    return h("div", { class: "s-card sf-card sf-q" },
+      h("div", { class: "sf-row sf-q-head" }, h("span", { class: "sf-num" }, `${j + 1}`),
         text(q.label, v => { q.label = v; }, { placeholder: "The question, e.g. Axon reaches the nerve ring?", "aria-label": `Question ${j + 1}` }),
         tools(m.questions, j, `question ${j + 1}`)),
       h("div", { class: "sf-grid" },
-        h("span", { class: "sf-k" }, "Answers"),
-        h("div", { class: "sf-v" },
-          h("div", { class: "sf-opts", role: "radiogroup", "aria-label": `Question ${j + 1}: answer type` },
-            ["yesno", "choice"].map(t => h("label", { class: "sf-check" },
-              h("input", { type: "radio", name: `sfType${j}`, checked: q.type === t, disabled: off,
-                onchange: () => {
-                  q.type = t;
-                  if (t === "choice" && !q.options.length) q.options = ["yes", "no"];
-                  q.defect = q.defect.filter(d => answersOf(q).includes(d));
-                  drawAll();
-                } }),
-              t === "yesno" ? "Yes / No" : "Choice"))),
+        ...row("Asked", radioRow(j, "Ask", "asked", [["neuron", "For each neuron"], ["animal", "Once per animal"]], q.ask || "neuron",
+          v => { q.ask = v; if (v === "animal") { q.skip_when = []; q.rollup = ""; } else if (ranked && !q.rollup) q.rollup = ROLLUPS[q.type][0]; })),
+        ...row("Answers",
+          radioRow(j, "Type", "answer type", Object.entries(TYPE_NAMES), q.type, t => setType(q, t)),
           q.type === "choice" ? text(q.options.join(", "), v => { q.options = splitList(v); },
             { placeholder: "Answers, separated by commas", "aria-label": `Question ${j + 1}: answers`,
               onchange: () => { q.defect = q.defect.filter(d => q.options.includes(d)); drawAll(); } }) : null,
-          check(!!q.cant_tell, "Add a “can't tell” answer (that neuron is left out of the results)",
+          q.type === "scale" ? levelsEditor(q, j) : null,
+          q.type === "count" ? countInputs(q, j) : null,
+          check(!!q.cant_tell, `Add a “can't tell” answer (that ${perAnimal ? "animal" : "neuron"} is left out of the results)`,
             v => { q.cant_tell = v ? "can't tell" : ""; })),
-        h("span", { class: "sf-k" }, "Defect if"),
-        h("div", { class: "sf-v sf-opts" }, answers.map(a => check(q.defect.includes(a), a,
-          v => { q.defect = answers.filter(x => x === a ? v : q.defect.includes(x)); }))),
-        h("span", { class: "sf-k" }, "Skip when"),
-        h("div", { class: "sf-v sf-opts" }, m.calls.map(c => check(q.skip_when.includes(c.text), `call is ${c.text || "(call)"}`,
-          v => { q.skip_when = m.calls.map(x => x.text).filter(x => x === c.text ? v : q.skip_when.includes(x)); }))),
-        h("span", { class: "sf-k" }, "Outcome"),
-        h("div", { class: "sf-v" },
-          text(q.outcome, v => { q.outcome = v; }, { placeholder: "Not tested (answers only recorded)", list: "sfOutcomes",
+        ...(perAnimal ? [] : row("Skip when", h("div", { class: "sf-opts" }, m.calls.map(c => check(q.skip_when.includes(c.text), `call is ${c.text || "(call)"}`,
+          v => { q.skip_when = m.calls.map(x => x.text).filter(x => x === c.text ? v : q.skip_when.includes(x)); }))))),
+        ...row("", check(q.required, "Required (Save waits until it is answered)", v => { q.required = v; })),
+        h("div", { class: "sf-split", role: "presentation" }, "Analysis"),
+        ...row("Outcome",
+          text(q.outcome, v => { q.outcome = v; }, { placeholder: "Not tested (answers only recorded)", list: ranked ? null : "sfOutcomes",
             "aria-label": `Question ${j + 1}: outcome name`, onchange: () => drawAll() }),
-          check(q.required, "Required (Save waits until it is answered)", v => { q.required = v; }))));
+          h("div", { class: "f-help" }, !q.outcome ? "Name an outcome to test this question at unblinding."
+            : ranked ? "Tested on its own: one value per animal, Mann-Whitney test between genotypes."
+              : "Questions with the same outcome name are combined; Fisher's exact test between genotypes.")),
+        ...(ranked ? [] : row("Defect if", h("div", { class: "sf-opts" }, answers.map(a => check(q.defect.includes(a), a,
+          v => { q.defect = answers.filter(x => x === a ? v : q.defect.includes(x)); }))))),
+        ...(ranked && q.outcome && !perAnimal ? row("Per animal", h("select", { class: "f-input sf-select", disabled: off,
+          "aria-label": `Question ${j + 1}: value per animal`, onchange: e => { q.rollup = e.target.value; } },
+          ROLLUPS[q.type].map(r => h("option", { value: r, selected: (q.rollup || ROLLUPS[q.type][0]) === r }, ROLLUP_NAMES[r])))) : []),
+        ...(ranked && q.outcome ? row("Cutoff", cutoffSelect(q, j),
+          h("div", { class: "f-help" }, "Optional: the share of animals at or past it is also compared, with "
+            + "Fisher's exact test.")) : [])));
   };
 
-  const questionsCard = () => h("div", { class: "s-card sf-card" },
-    h("div", { class: "f-label" }, "Extra questions for each neuron"),
-    h("div", { class: "f-help" }, "Questions with the same outcome name are combined: the animal has that defect if any "
-      + "neuron has a defect answer. Each outcome is compared between genotypes with Fisher's exact test."),
-    h("datalist", { id: "sfOutcomes" }, outcomes().map(o => h("option", { value: o }))),
-    m.questions.length ? m.questions.map(questionCard) : h("div", { class: "f-help sf-none" }, "None. The call is the only answer for each neuron."),
-    m.questions.length > info.warn_questions ? h("div", { class: "pv warn" },
-      `${m.questions.length} questions per neuron. More than ${info.warn_questions} makes scoring slower and less consistent.`) : null,
-    off || m.questions.length >= info.max_questions ? null : h("button", { class: "btn subtle add", onclick: () => {
-      const last = m.calls.at(-1)?.text;
-      m.questions.push({ id: null, label: "", type: "yesno", options: [], cant_tell: "can't tell", defect: ["no"],
-        required: true, skip_when: last ? [last] : [], outcome: "" });
+  // A scale's levels, one per row, best at the top and worst at the bottom: the order is what the test compares.
+  const levelsEditor = (q, j) => h("div", { class: "sf-levels", role: "group", "aria-label": `Question ${j + 1}: levels, best first` },
+    q.options.map((lv, k) => h("div", { class: "sf-row" },
+      h("span", { class: "sf-end" }, k === 0 ? "best" : k === q.options.length - 1 ? "worst" : ""),
+      text(lv, v => { q.options[k] = v.trim(); }, { "aria-label": `Question ${j + 1}: level ${k + 1}`, onchange: () => drawAll() }),
+      tools(q.options, k, `level ${k + 1}`, 2))),
+    off || q.options.length >= info.max_levels ? null : h("button", { class: "btn subtle add sm", onclick: () => {
+      q.options.push("");
       drawAll();
-      $$(".sf-q").at(-1)?.querySelector("input")?.focus();
-    } }, "Add question"));
+      edit.querySelector(`[aria-label="Question ${j + 1}: level ${q.options.length}"]`)?.focus();
+    } }, "Add level"));
+
+  const questionsCard = () => {
+    const nNeuron = m.questions.filter(q => q.ask !== "animal").length;
+    const nAnimal = m.questions.length - nNeuron;
+    return h("section", { class: "sf-section", "aria-label": "Extra questions" },
+      h("div", { class: "sf-section-head" },
+        h("div", { class: "f-label" }, "Extra questions"),
+        h("div", { class: "f-help" }, "Asked for each neuron or once per animal. Yes / No and Choice answers can count as a "
+          + "defect; a Scale (levels in order) or a Count gives each animal a value.")),
+      h("datalist", { id: "sfOutcomes" }, outcomes().map(o => h("option", { value: o }))),
+      m.questions.length ? m.questions.map(questionCard) : h("div", { class: "f-help sf-none" }, "None. The call is the only answer for each neuron."),
+      nNeuron > info.warn_questions ? h("div", { class: "pv warn" },
+        `${nNeuron} questions per neuron. More than ${info.warn_questions} makes scoring slower and less consistent.`) : null,
+      off || (nNeuron >= info.max_questions && nAnimal >= info.max_questions) ? null : h("button", { class: "btn subtle add", onclick: () => {
+        const last = m.calls.at(-1)?.text;
+        m.questions.push({ id: null, label: "", type: "yesno", ask: nNeuron >= info.max_questions ? "animal" : "neuron",
+          options: [], count: null, cant_tell: "can't tell", defect: ["no"], required: true,
+          skip_when: last && nNeuron < info.max_questions ? [last] : [], outcome: "", rollup: "", cutoff: "" });
+        drawAll();
+        $$(".sf-q").at(-1)?.querySelector("input")?.focus();
+      } }, "Add question"));
+  };
 
   const resultsCard = () => {
     const names = outcomes();
@@ -528,7 +604,7 @@ function formSection(info) {
       h("div", { class: "f-help" }, "Name the one result the study is about before scoring starts. The results "
         + "and Methods then label it primary and every other test secondary."),
       h("select", { id: "sfPrimary", class: "f-input sf-select", disabled: off, onchange: e => { m.primary = e.target.value; } },
-        [["", "Not named"], ["calls", "Neuron calls (affected if any neuron's call is a defect)"], ...names.map(n => [n, n])]
+        [["", "Not named"], ["calls", "Neuron calls (any defect call)"], ...names.map(n => [n, n])]
           .map(([v, l]) => h("option", { value: v, selected: m.primary === v }, l))));
   };
 
@@ -559,17 +635,26 @@ function formSection(info) {
       onchange: e => { if (/^n\d+_call$/.test(e.target.name)) wsForm.syncSkips(f, sc); } },
       sc.rules.length ? h("ul", { class: "sf-rules" }, sc.rules.map(r => h("li", {}, r))) : null,
       h("fieldset", {}, h("legend", {}, sc.count_question.label), h("div", {}, wsForm.radios(h, "cells_seen", sc.count_question.options))),
-      ...wsForm.neurons(h, sc));
+      ...wsForm.neurons(h, sc), ...wsForm.animal(h, sc));
     wsForm.syncSkips(f, sc);
     prev.replaceChildren(h("div", { class: "sf-prev-head" }, h("span", { class: "f-label" }, "Preview"),
       h("span", { class: "f-help" }, "What the scorer answers for each image. Click a call to see the skips.")), f);
   };
+  // Redrawing removes the focused box, which can fire its change event again; that second call
+  // is skipped, and the redraw already shows its value.
+  let drawing = false;
   const drawAll = () => {
-    const active = document.activeElement;
-    const focus = active && edit.contains(active) ? active.getAttribute("aria-label") : null;
-    edit.replaceChildren(...[start(), neuronsCard(), callsCard(), questionsCard(), resultsCard(), moreCard()].filter(Boolean));
-    if (focus) edit.querySelector(`[aria-label="${CSS.escape(focus)}"]`)?.focus();
-    drawPreview();
+    if (drawing) return;
+    drawing = true;
+    try {
+      const active = document.activeElement;
+      const focus = active && edit.contains(active) ? active.getAttribute("aria-label") : null;
+      edit.replaceChildren(...[start(), neuronsCard(), callsCard(), questionsCard(), resultsCard(), moreCard()].filter(Boolean));
+      if (focus) edit.querySelector(`[aria-label="${CSS.escape(focus)}"]`)?.focus();
+      drawPreview();
+    } finally {
+      drawing = false;
+    }
   };
   root.replaceChildren(...[
     info.locked ? h("div", { class: "sf-lock" }, h("span", { class: "chip wait" }, "Locked"),

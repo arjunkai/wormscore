@@ -203,15 +203,21 @@ be deduced". The sharpest plane is still the plane where the reporter is brighte
 
 The score form (set on the Project settings page or in `config.json`) asks, for each image: whether it
 is usable (and if not, why), the count question, and for each neuron its call, optionally its side, and
-any extra questions. Extra questions are yes/no or a choice; a required question must be answered before
-the score can be saved, and a question can be skipped (hidden, saved empty) when the neuron's call is one
-the question's outcome leaves out, such as "not seen". Answers are stored as their text.
+any extra questions; since 1.4.0 a question can instead be asked once per animal (`scoring.animal_questions`,
+saved as `a_<id>`, shown under "This animal"). Extra questions are yes/no, a choice, an ordered scale (levels
+listed best first, worst last; `"type": "scale"`) or a count (whole numbers going up by one, the last
+optionally "N+" for N or more; `"type": "count"`). A scale or count may have a "can't tell" answer
+(`cant_tell`), which is never a level. A required question must be answered before the score can be saved,
+and a question for each neuron can be skipped (hidden, saved empty) when the neuron's call is one the
+question's outcome leaves out, such as "not seen". Answers are stored as their text.
 
 The form is recorded in `log.md` ("Score form set before scoring") when it is saved in the app, when the
 blind set is built and when the first score is saved. From the first score, or once a second-scorer
 package exists, the app does not let it change. The record covers what decides the stored answers and
 their analysis: neurons, calls, defect calls, sides, count answers, each question's id, answers, whether it
-is required and when it is skipped, the question outcomes and the primary outcome. Wording (question text,
+is required and when it is skipped, the question outcomes and the primary outcome; since 1.4.0 also each
+question's type and "can't tell" answer, the questions asked once per animal and the rank outcomes (these
+appear only when used, so forms recorded by 1.3.0 still match). Wording (question text,
 rules shown to the scorer, unusable reasons) is not part of it and may still be corrected.
 
 The app asks for confirmation when: an image shares a stage position with another (repeat); the
@@ -249,7 +255,43 @@ Results tables use counted, usable images only, with the animal as the unit (one
   neuron (`"unclear": "exclude_neuron"`, the default) or the whole animal (`"exclude_animal"`). An
   animal is defective if any assessed neuron is defective; animals with no assessed neuron are left out
   and counted in their own columns, as are animals with a question left unanswered. `per_neuron.csv`
-  gets one column per outcome with each neuron's state.
+  gets one column per outcome with each neuron's state. An outcome may instead combine questions asked
+  once per animal (not mixed with neuron questions): the animal is defective if any answer is a defect.
+- `rank_outcomes.csv` and `rank_outcome_tests.csv` (only if `unblinding.rank_outcomes` is set, 1.4.0):
+  ordered scale and count questions, each tested on its own. Each entry names the outcome, the question,
+  and for a question asked for each neuron how the neurons give one value per animal (the animal is the
+  unit; neurons are subsamples, [Lazic et al. 2018](https://doi.org/10.1371/journal.pbio.2005282)):
+  - scale: `worst` (default; the highest level of any neuron) or `mean` (mean level of the assessed
+    neurons, which treats levels as equally spaced);
+  - count: `sum` (default; the total over the neurons) or `mean_per_neuron`.
+
+  Levels are scored 0, 1, 2 ... in order; counts by their number, with "N+" counted as N (a lower
+  bound, said in the summary). `worst` and `sum` need every neuron assessed, because the worst of four
+  neurons tends to be higher than the worst of three; otherwise the animal is left out, except that an
+  animal whose assessed neuron already has the worst level counts under `worst`. "Can't tell" is never
+  a level: that neuron is unclear (under `mean`, `"unclear": "exclude_animal"` leaves out the animal
+  instead). Neurons skipped by their call are "not assessed", kept apart from unclear. An unanswered
+  question leaves the animal out as incomplete. `rank_outcomes.csv` gives, per microscope and genotype,
+  the animals with a value, the animals left out by reason, the median and quartiles (linear
+  interpolation, as Excel QUARTILE.INC), the % at each level (scales whose value is a level) or the mean
+  (counts), and the level key; the summary warns when the share left out differs by more than 20
+  points between groups. Genotypes are compared within each microscope, for the same pairs as Fisher's
+  test, with the Mann-Whitney (Wilcoxon rank-sum) statistic on the animal values. The p-value comes from
+  permuting the pooled midranks, so ties are handled correctly: exact (every rearrangement) when there
+  are at most 100,000 rearrangements, otherwise 100,000 random ones with seed 1404 (recorded in the
+  table). scipy's default for tied data is a normal approximation, which gave p-values about half the
+  correct size on short scales with many ties in checks made for this feature; GraphPad Prism also
+  reports exact p-values with ties. If every animal has the same value, p = 1. Bonferroni within each
+  outcome. Effect size: `prob_a_worse` = U / (n_a n_b), the chance that a random genotype_a animal scores
+  worse than a random genotype_b animal, ties counted half (Vargha and Delaney's A), and Cliff's delta
+  = 2A - 1. The test is about that probability, not about medians, which are often equal on short
+  scales. Normality is not tested because a rank test is used (ARRIVE 2.0 item 7b). An optional
+  `cutoff` (a level after the first for a scale, a number of 1 or more for a count), set before
+  scoring, also gives the share of animals at or past it, tested with Fisher's exact test (rows marked
+  with the cutoff in `definition`). `per_neuron.csv` gets each neuron's answer and the animal's value.
+  Rank outcomes cannot be used by `interaction` or `allow_cross_microscope`. Left out on purpose:
+  Brunner-Munzel (its p-values were far too small at 5 animals per group, and scipy has no permuted
+  version), t-tests on counts, and regression or mixed models.
 - `interaction_test.csv` (only if `unblinding.interaction` is set): a test of genetic interaction
   between two single mutants (P1, P2 = share of affected animals) and their double. The expected share
   in the double comes from one model, chosen before scoring (Mani et al. 2008, PNAS 105:3461, applied to
@@ -305,7 +347,8 @@ Results tables use counted, usable images only, with the animal as the unit (one
 - **Scorer consistency** (when the project has hidden repeats): `reliability.csv` gives, over the pairs
   where both the repeat and its original were scored, percent agreement and Cohen's kappa for: usable or
   not; animal affected (primary, and secondary if set); each neuron's call (linear-weighted kappa over the
-  ordered calls); cells seen (linear-weighted); and each `question_outcomes` measure. Neurons are matched
+  ordered calls); cells seen (linear-weighted); each `question_outcomes` measure; and each scale rank
+  outcome whose animal value is a level (linear-weighted). Neurons are matched
   by the recorded side when both images name each neuron's side, otherwise by number. Kappa is undefined
   when every answer is the same. With few pairs, kappa is imprecise; kappa below 0.60 is usually
   considered inadequate ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)). The same scorer seeing an
@@ -326,7 +369,7 @@ Results tables use counted, usable images only, with the animal as the unit (one
   draft says how many images the second scorer scored, the share, when, and that they scored blind,
   without the key, in a different order and without seeing the first scorer's answers (and, if they
   scored after the primary analysis was unblinded, says so).
-- **Analysis plan lock.** When any of the settings above, `question_outcomes` or `interaction` is set,
+- **Analysis plan lock.** When any of the settings above, `question_outcomes`, `rank_outcomes` or `interaction` is set,
   `prepare` writes the whole analysis plan (both definitions of affected, comparisons, direction,
   cross-microscope measures, interaction model, dim cutoff) to `log.md`. Unblinding compares the current settings with
   the last plan recorded before the first score was saved. If they differ, no test is run and every test
@@ -338,7 +381,7 @@ Results tables use counted, usable images only, with the animal as the unit (one
   line; for them the full settings that Build wrote to `log.md` before the first score are used. If those
   differ or are missing, tests run but are marked `form_recorded_before_scoring = NO` and the summary
   warns.
-- **Primary outcome.** `unblinding.primary_outcome` (`calls` or a `question_outcomes` name, part of the
+- **Primary outcome.** `unblinding.primary_outcome` (`calls`, a `question_outcomes` name or a `rank_outcomes` name, part of the
   analysis plan) adds an `outcome_role` column (primary or secondary) to every test file, a line in the
   summary and a Methods sentence. Bonferroni correction is still within each file.
 - `methods_text.md`: a draft Methods paragraph built from the project files: inclusion counts, the date
