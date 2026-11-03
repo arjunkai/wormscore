@@ -117,7 +117,7 @@ The images are not part of this repository.
 
 ## Using it on your own images
 
-1. **Copy your data** to a local folder (not a synced cloud folder if the data is not yours to share):
+1. **Copy your data** to a local folder:
    `wormscore copy D:\from\drive C:\data\my_copy` copies every file, checks each one by SHA-256 and
    makes the copies read-only.
 2. **Make a project:** in the app, **New project...** opens **Project settings**: choose each folder of
