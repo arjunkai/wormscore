@@ -95,27 +95,40 @@ function refocus(k, fallback) {
   (el || (fallback?.isConnected ? fallback : null))?.focus();
 }
 
-function ask(title, body, choices, cancel = "Cancel") {
+// opts.wide: a wider box for forms. opts.check: runs when a choice is picked and returns an
+// error to show (the dialog then stays open) or nothing to close it.
+function ask(title, body, choices, cancel = "Cancel", opts = {}) {
   const opener = document.activeElement, openerKey = opener?.dataset?.k;
   return new Promise(resolve => {
     $("#mTitle").textContent = title;
     if (body instanceof Node) $("#mBody").replaceChildren(body);
     else $("#mBody").textContent = body;
     $("#mCancel").textContent = cancel;
+    $("#mErr").hidden = true;
     // A plain yes/no question gets a small box with its button next to Cancel; choices that
     // need explaining are listed as cards.
     const simple = choices.length > 0 && choices.every(c => !c.desc);
-    $("#modal .dialog").classList.toggle("sm", simple);
+    $("#modal .dialog").classList.toggle("sm", simple && !opts.wide);
+    $("#modal .dialog").classList.toggle("wide", !!opts.wide);
     const box = simple ? $("#mFootChoices") : $("#mChoices");
     (simple ? $("#mChoices") : $("#mFootChoices")).replaceChildren();
     box.replaceChildren(...choices.map(c => simple
       // red only for what cannot be undone; plain for harmless ones like taking a project off the list
-      ? h("button", { class: c.danger ? "btn danger" : c.plain ? "btn" : "primary", onclick: () => close(c.value) }, c.label)
-      : h("button", { class: "choice" + (c.danger ? " danger" : ""), onclick: () => close(c.value) },
+      ? h("button", { class: c.danger ? "btn danger" : c.plain ? "btn" : "primary", onclick: () => pick(c.value) }, c.label)
+      : h("button", { class: "choice" + (c.danger ? " danger" : ""), onclick: () => pick(c.value) },
         h("b", {}, c.label), c.desc ? h("span", {}, c.desc) : null)));
     const m = $("#modal");
+    const pick = async v => {
+      const err = opts.check ? await opts.check(v) : null;
+      // shown in the dialog, next to its buttons: a toast would cover them
+      $("#mErr").textContent = err || "";
+      $("#mErr").hidden = !err;
+      if (err) $("#mErr").scrollIntoView({ block: "nearest" });
+      if (!err) close(v);
+    };
     const close = v => {
       m.hidden = true;
+      $("#modal .dialog").classList.remove("wide");
       document.removeEventListener("keydown", esc);
       refocus(openerKey, opener);
       resolve(v);
@@ -143,6 +156,7 @@ function duration(s) {
 
 function cardStatus(p) {
   if (!p.has_config) return "Folder or config.json missing";
+  if (p.package) return `Second-scorer package: scored ${p.scored} of ${p.coded ?? 0}`;
   if (p.unblinded) return "Unblinded";
   if (p.coded !== null && p.coded !== undefined) return `Scored ${p.scored} of ${p.coded}`;
   if (p.scanned !== null && p.scanned !== undefined) return "Scanned; blind set not built";
@@ -211,6 +225,7 @@ function renderMain(d) {
   const main = $("#main");
   const p = d.project;
   if (!p) return main.replaceChildren(welcome());
+  if (p.package) return main.replaceChildren(packageView(p, d.job));
   const job = d.job;
   const busy = job.running;
   const runningHere = busy && job.project === p.path;
@@ -220,6 +235,7 @@ function renderMain(d) {
   const built = p.coded !== null && p.coded !== undefined;
   const allScored = built && p.coded > 0 && p.scored >= p.coded;
   const ok = p.has_config && !p.config_error;
+  const needFolders = p.has_config && !scanned && p.folders_found === 0;
 
   const building = stepRunning("build") || stepRunning("rebuild") || stepRunning("add new");
   const s1 = stepRunning("scan") ? "running" : scanned ? "done" : "next";
@@ -229,8 +245,10 @@ function renderMain(d) {
 
   const steps = h("ol", { class: "steps" },
     stepCard(1, s1, "Scan data", "List every file and image and identify channels from metadata.",
-      scanned ? `${plural(p.scanned, "raw image")} found. Scan again if you added files.` : null,
-      [h("button", { class: s1 === "next" ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok, onclick: scan },
+      needFolders ? "First tell wormscore where your images are and how file names show the genotype."
+        : scanned ? `${plural(p.scanned, "raw image")} found. Scan again if you added files.` : null,
+      [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: openProjectSettings }, "Set image folders...") : null,
+       h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
         scanned ? "Scan again" : "Scan data")]),
     stepCard(2, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan in log.md.",
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
@@ -242,7 +260,8 @@ function renderMain(d) {
         p.scored ? "Continue scoring" : "Start scoring")],
       built && p.coded && !building ? h("div", { class: "mini" }, h("div", { style: `width:${Math.min(100, 100 * p.scored / p.coded)}%` })) : null),
     stepCard(4, s4, "Unblind", "Reveal which genotype each code was, then write the results tables and a draft Methods text. Do this only when scoring is finished.",
-      p.unblinded ? "Results are in the outputs\\unblinded folder." : null,
+      p.unblinded ? "Results are in the outputs\\unblinded folder." + ((p.second_scorers || []).some(s => s.imported)
+        ? " Agreement with second scorers is in between_scorers.csv." : "") : null,
       [h("label", { class: "check" },
         h("input", { type: "checkbox", "data-k": "finished", checked: st.finished, onchange: e => { st.finished = e.target.checked; render(); } }),
         "I have finished scoring"),
@@ -255,12 +274,13 @@ function renderMain(d) {
       h("div", {}, h("h2", {}, p.name || "Project"), h("div", { class: "p-path" }, breakable(p.path))),
       h("div", { class: "p-tools" },
         h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"),
-        h("button", { class: "btn", "data-k": "config", disabled: !p.has_config, onclick: () => act("/api/open", { what: "config" }) }, "Edit config.json"))),
+        h("button", { class: "btn", "data-k": "settings", disabled: !p.has_config || busy, onclick: openProjectSettings }, "Project settings..."))),
     !p.has_config ? h("div", { class: "banner" }, "This folder has no config.json. Open another project or make a new one.") : null,
     p.config_error ? h("div", { class: "banner" }, "config.json needs a fix before the next step:\n" + p.config_error) : null,
     busy && !runningHere ? h("div", { class: "banner" }, `"${job.title}" is running for another project.`) : null,
     activity(job),
-    steps));
+    steps,
+    built && !building ? secondScorerCard(p, busy) : null));
   const log = $("#log");
   if (log) log.scrollTop = log.scrollHeight;
 }
@@ -283,6 +303,227 @@ function activity(job) {
     h("button", { class: "btn subtle log-toggle", "data-k": "log", onclick: () => { st.showLog = !st.showLog; render(); } },
       st.showLog ? "Hide log" : "Show log"),
     st.showLog ? h("pre", { class: "log", id: "log" }, st.log.join("\n")) : null);
+}
+
+// ---------------------------------------------------------------- second scorer
+
+const SCORER_NAME = /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$/;
+
+function secondScorerCard(p, busy) {
+  const list = p.second_scorers || [];
+  const rows = list.map(s => h("li", { class: "pk" },
+    h("div", { class: "pk-text" }, h("b", {}, s.scorer),
+      h("span", { class: "pk-meta" }, `${plural(s.images, "image")} · made ${s.made.slice(0, 10)}`)),
+    h("span", { class: `chip ${s.imported ? "done" : "wait"}` },
+      s.imported ? `Imported: ${s.scored} of ${s.images} scored` : "Waiting for scores"),
+    !s.imported && s.folder_found ? h("button", { class: "btn subtle", "data-k": `pk:${s.id}`,
+      title: "Zip this folder and send it to the second scorer",
+      onclick: () => act("/api/open", { what: "package", id: s.id }) }, "Open package folder") : null));
+  return h("section", { class: "extra" },
+    h("div", { class: "x-head" },
+      h("div", {},
+        h("div", { class: "s-title" }, "Second scorer", h("span", { class: "chip wait" }, "Optional")),
+        h("div", { class: "s-desc" }, "Another person scores some of the coded images on their own, from a package with no key. "
+          + "Unblinding compares their answers with yours; your results never use them.")),
+      h("div", { class: "x-act" },
+        h("button", { class: "btn", "data-k": "pk-make", disabled: busy, onclick: makePackage }, "Make a package..."),
+        list.length ? h("button", { class: "btn", "data-k": "pk-import", disabled: busy, onclick: importScores }, "Import scores...") : null)),
+    rows.length ? h("ul", { class: "pk-list" }, rows) : null);
+}
+
+async function makePackage() {
+  const p = st.data.project;
+  const name = h("input", { type: "text", id: "pkName", class: "f-input", maxlength: "40", autocomplete: "off", placeholder: "For example: Sam K" });
+  const pct = h("input", { type: "range", id: "pkPct", min: "1", max: "100", value: "30" });
+  const out = h("output", { for: "pkPct", class: "f-out" });
+  const show = () => (out.textContent = `${pct.value}% · about ${plural(Math.max(1, Math.round(p.coded * pct.value / 100)), "image")}`);
+  pct.oninput = show;
+  show();
+  const body = h("div", { class: "form" },
+    h("label", { class: "f-label", for: "pkName" }, "Second scorer's name"), name,
+    h("label", { class: "f-label", for: "pkPct" }, "Share of each genotype's images"), h("div", { class: "f-range" }, pct, out),
+    h("p", { class: "f-help" }, "Images are picked at random within each genotype (at least one each) and shown in a new random order. "
+      + "The package holds the coded images and the scoring form only: no key, file names or analysis plan. "
+      + "Next, choose a new, empty folder outside this project."));
+  const asked = ask("Make a package for a second scorer", body, [{ value: true, label: "Choose folder..." }], "Cancel", {
+    check: () => SCORER_NAME.test(name.value.trim()) ? null
+      : "Give the second scorer a short name: letters, digits, spaces, dots, dashes or underscores (up to 40)." });
+  name.focus();
+  name.onkeydown = e => { if (e.key === "Enter") $("#mFootChoices button")?.click(); };
+  if (!(await asked)) return;
+  st.log = []; st.since = 0; st.showLog = false;
+  act("/api/second-scorer", { action: "export", scorer: name.value.trim(), percent: Number(pct.value) });
+}
+
+async function importScores() {
+  const go = await ask("Import a second scorer's scores",
+    h("span", {}, "Choose the package folder the second scorer sent back (unzip it first). wormscore checks that it is a package made here, "
+      + "with the same images and scoring form, then keeps the scores in the scorers folder. Your own scores do not change. "
+      + "Then run ", h("b", {}, "Unblind"), " (again) to get the agreement tables."),
+    [{ value: true, label: "Choose folder..." }]);
+  if (!go) return;
+  st.log = []; st.since = 0; st.showLog = false;
+  act("/api/second-scorer", { action: "import" });
+}
+
+// A second scorer's own view of a package: only Score, and how to send it back.
+function packageView(p, job) {
+  const busy = job.running;
+  const all = p.coded > 0 && p.scored >= p.coded;
+  return h("div", { class: "wrap" },
+    h("div", { class: "p-head" },
+      h("div", {}, h("h2", {}, p.name || "Package"), h("div", { class: "p-path" }, breakable(p.path))),
+      h("div", { class: "p-tools" },
+        h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"))),
+    h("div", { class: "note" }, h("b", {}, `Second-scorer package for ${p.package.scorer}`),
+      h("span", {}, "Score every image on your own, without asking how anyone else scored it. When you have finished, "
+        + "zip this whole folder and send it back to the person who gave it to you. Do not rename or change its files.")),
+    p.config_error ? h("div", { class: "banner" }, "config.json needs a fix:\n" + p.config_error) : null,
+    activity(job),
+    h("ol", { class: "steps" },
+      stepCard(1, all ? "done" : "next", "Score", "Score each coded image in the scoring window. This package has no file names or genotypes.",
+        all ? `All ${p.coded} scored. Zip this folder and send it back.` : `Scored ${p.scored} of ${p.coded ?? 0}.`,
+        [h("button", { class: all ? "btn" : "primary", "data-k": "step3", disabled: busy || !p.coded, onclick: score },
+          p.scored ? "Continue scoring" : "Start scoring")],
+        p.coded ? h("div", { class: "mini" }, h("div", { style: `width:${Math.min(100, 100 * p.scored / p.coded)}%` })) : null)));
+}
+
+// ---------------------------------------------------------------- project settings
+
+const blankSource = () => ({ name: "", path: "", original_path: "", genotypes: [{ match: "", genotype: "" }],
+  default_genotype: "UNKNOWN", exclude: [], from: null });
+
+function previewText(pv, scanned) {
+  if (!pv) return "";
+  if (!pv.folder_found) return ["warn", "Folder not found. Check the path or choose it with Browse."];
+  if (!scanned || pv.images === null) return ["", "Not scanned with these settings yet. Save, then run Scan data to see how the rules sort the images."];
+  const g = Object.entries(pv.genotypes).sort((a, b) => a[0].localeCompare(b[0]));
+  const parts = g.map(([k, n]) => `${k} ${n}`);
+  const unknown = pv.genotypes.UNKNOWN;
+  return [unknown ? "warn" : "ok", `${plural(pv.images, "scanned image")}: ${parts.join(", ") || "none"}`
+    + (pv.left_out ? `; ${pv.left_out} left out` : "") + (unknown ? `. ${unknown} match no rule.` : "")];
+}
+
+async function openProjectSettings() {
+  let cur;
+  try { cur = await api("/api/project-settings", { action: "load" }); }
+  catch (e) {
+    const go = await ask("config.json cannot be read", `${e.message}\nOpen it in a text editor to fix it?`, [{ value: true, label: "Edit config.json" }]);
+    if (go) act("/api/open", { what: "config" });
+    return;
+  }
+  const scanned = st.data.project?.scanned !== null && st.data.project?.scanned !== undefined;
+  const model = { project_name: cur.project_name, sources: cur.sources.map((s, i) => ({ ...s, from: i })) };
+  if (!model.sources.length) model.sources.push(blankSource());
+  const locked = cur.locked;
+  const payload = () => ({ project_name: model.project_name, sources: model.sources });
+  const box = h("div", { class: "settings ps" });
+  const err = h("div", { class: "m-err", role: "alert", hidden: true });
+  let pvTimer = null, previews = [];
+
+  const preview = () => {
+    clearTimeout(pvTimer);
+    err.hidden = true;           // the message was about the answers before this change
+    pvTimer = setTimeout(async () => {
+      try {
+        const r = await api("/api/project-settings", { action: "preview", ...payload() });
+        previews = r.sources;
+        $$(".ps .pv").forEach((el, i) => {
+          const [cls, text] = previewText(previews[i], r.scanned) || ["", ""];
+          el.className = `pv ${cls}`;
+          el.textContent = text;
+        });
+      } catch {     // a half-filled row: old counts would mislead, so say why there are none
+        $$(".ps .pv").forEach(el => { el.className = "pv"; el.textContent = "Fill in every name, folder and rule to see the counts."; });
+      }
+    }, 300);
+  };
+  const field = (obj, k, attrs = {}) => h("input", { type: "text", class: "f-input", value: obj[k] ?? "", autocomplete: "off",
+    spellcheck: "false", ...attrs, oninput: e => { obj[k] = e.target.value; preview(); } });
+  const removeBtn = (label, fn) => h("button", { class: "ghost icon rm", title: label, "aria-label": label, onclick: fn }, icon("close", 14));
+
+  const rules = (src, list, a, b, labels, off) => h("div", { class: "rules" },
+    src[list].map((r, j) => h("div", { class: "rule" },
+      field(r, a, { placeholder: labels[0], "aria-label": `${labels[0]}, rule ${j + 1}`, disabled: off }),
+      h("span", { class: "arrow", "aria-hidden": "true" }, "\u2192"),
+      field(r, b, { placeholder: labels[1], "aria-label": `${labels[1]}, rule ${j + 1}`, disabled: off }),
+      off ? null : removeBtn(`Remove rule ${j + 1}`, () => { src[list].splice(j, 1); draw(); preview(); }))),
+    off ? null : h("button", { class: "btn subtle add", onclick: () => { src[list].push({ [a]: "", [b]: "" }); draw(`${list}`); } }, labels[2]));
+
+  const draw = focusLast => {
+    const cards = model.sources.map((s, i) => {
+      const off = i < locked;
+      const [cls, text] = previewText(previews[i], scanned) || ["", ""];
+      return h("div", { class: "s-card src" + (off ? " locked" : "") },
+        h("div", { class: "src-head" },
+          h("label", { class: "f-label", for: `srcName${i}` }, "Folder name"),
+          off ? h("span", { class: "chip wait" }, "Locked: scoring has started") : null,
+          off || model.sources.length < 2 ? null : removeBtn("Remove this image folder", () => { model.sources.splice(i, 1); draw(); preview(); })),
+        field(s, "name", { id: `srcName${i}`, placeholder: "For example: confocal 2026", disabled: off }),
+        h("label", { class: "f-label", for: `srcPath${i}` }, "Folder with the images"),
+        h("div", { class: "f-row" }, field(s, "path", { id: `srcPath${i}`, placeholder: "C:\\data\\my images (ideally a read-only copy)", disabled: off }),
+          off ? null : h("button", { class: "btn", onclick: async () => {
+            const r = await api("/api/project-settings", { action: "browse" }).catch(e => (toast(e.message), null));
+            if (r?.path) { s.path = r.path; if (!s.name) s.name = r.path.split(/[\\/]/).filter(Boolean).pop(); draw(); preview(); }
+          } }, "Browse...")),
+        h("div", { class: "f-label" }, "Genotype rules"),
+        h("div", { class: "f-help" }, "A pattern is matched against each file's path inside the folder and its name. "
+          + "* stands for any text, so *ctrl* matches every file with ctrl in it. The first rule that matches wins."),
+        rules(s, "genotypes", "match", "genotype", ["Pattern, e.g. *ctrl*", "Genotype", "Add genotype rule"], off),
+        h("div", { class: "f-row dflt" }, h("label", { class: "f-label", for: `srcDef${i}` }, "Genotype of files no rule matches"),
+          field(s, "default_genotype", { id: `srcDef${i}`, disabled: off })),
+        h("details", { class: "lo", open: s.exclude.length ? true : null },
+          h("summary", {}, `Leave out images${s.exclude.length ? ` (${s.exclude.length})` : ""}`),
+          h("div", { class: "f-help" }, "Matching images are not coded or scored. They are listed in outputs/excluded.csv with the reason."),
+          rules(s, "exclude", "match", "reason", ["Pattern, e.g. *test*", "Reason", "Add a rule"], off)),
+        h("div", { class: `pv ${cls}`, "aria-live": "polite" }, text));
+    });
+    box.replaceChildren(
+      h("h4", {}, "Project"),
+      h("div", { class: "s-card src" }, h("label", { class: "f-label", for: "psName" }, "Project name"),
+        field(model, "project_name", { id: "psName" })),
+      h("h4", {}, "Image folders"),
+      ...cards,
+      h("button", { class: "btn add-src", onclick: () => { model.sources.push(blankSource()); draw("src"); } }, "Add image folder"),
+      h("h4", {}, "Other settings"),
+      h("div", { class: "s-card" }, sRow("Marker, scoring form and statistics", "Set in config.json for now. A form builder is coming.",
+        h("button", { class: "btn", onclick: () => leave("config") }, "Edit config.json"))));
+    if (focusLast === "src") $$(".ps .src").at(-1)?.querySelector("input")?.focus();
+    else if (focusLast) [...document.querySelectorAll(".ps .rules")].find(r => r.contains(document.activeElement))?.querySelector(".rule:last-of-type input")?.focus();
+  };
+  draw();
+  preview();
+  // A page in the main area, not an overlay: the form is long, and the project list stays in view.
+  const leave = what => {
+    clearTimeout(pvTimer);
+    st.settingsOpen = null;
+    st.pageKey = "";
+    if (what === "config") act("/api/open", { what: "config" });
+    render();
+  };
+  const save = async () => {
+    try { await api("/api/project-settings", { action: "save", ...payload() }); }
+    catch (e) {
+      err.textContent = e.message;
+      err.hidden = false;
+      return;
+    }
+    toast(scanned ? "Saved. Run Scan data again so the new folders and rules are used." : "Saved. Next: Scan data.", "ok");
+    leave();
+    refresh(true);
+  };
+  const path = st.data.project.path;
+  st.settingsOpen = path;
+  const page = h("div", { class: "wrap ps-page", onkeydown: e => { if (e.key === "Escape") leave(); } },
+    h("div", { class: "p-head" },
+      h("div", {}, h("h2", {}, "Project settings"), h("div", { class: "p-path" }, breakable(path)))),
+    box,
+    h("div", { class: "ps-foot" }, err, h("span", { class: "grow" }),
+      h("button", { class: "btn subtle", onclick: () => leave() }, "Cancel"),
+      h("button", { class: "primary", onclick: save }, "Save")));
+  $("#main").replaceChildren(page);
+  $("#main").scrollTop = 0;
+  $("#psName")?.focus();
 }
 
 // ---------------------------------------------------------------- updates
@@ -490,9 +731,7 @@ async function openSettings() {
         h("div", { class: "s-text" }, h("div", { class: "s-title" }, "Cite wormscore"),
           h("div", { class: "s-desc" }, "Cite the version you scored with. log.md records it.")),
         citeBlock(v))));
-  $("#modal .dialog").classList.add("wide");      // rows and the citation wrap less
-  await ask("Settings", box, [], "Close");
-  $("#modal .dialog").classList.remove("wide");
+  await ask("Settings", box, [], "Close", { wide: true });      // wide: rows and the citation wrap less
   if (pick === "found") return refresh(true);      // the update dialog opens from the new state
   if (pick === "see") {
     st.updOpen = true;
@@ -525,7 +764,9 @@ function render() {
   st.pageKey = key;
   const focused = document.activeElement;
   renderSide(d);
-  renderMain(d);
+  // Project settings stay open while the page polls; picking another project closes them.
+  if (st.settingsOpen && st.settingsOpen !== path) st.settingsOpen = null;
+  if (!st.settingsOpen) renderMain(d);
   if (focused && !focused.isConnected) refocus(focused.dataset?.k);
 }
 
@@ -541,7 +782,8 @@ async function sideAction(which) {
     st.log = []; st.since = 0;
     return act("/api/demo", { real: real === "real" });
   }
-  return act(`/api/${which}`, {});
+  const r = await act(`/api/${which}`, {});
+  if (r?.settings) openProjectSettings();      // a new project starts with its image folders
 }
 
 async function scan() {

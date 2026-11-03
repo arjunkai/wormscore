@@ -43,9 +43,26 @@ def refuse_in_package(project, what):
                          "the original project, by the person who made the package.")
 
 
+def form_answers(cfg):
+    """Every answer field of the scoring form and the answers it allows."""
+    sc = cfg["scoring"]
+    allowed = {"usable": {"yes", "no", ""}, "count_this_image": {"yes", "no", ""},
+               "cells_seen": set(sc["count_question"]["options"]) | {""}}
+    for i in range(1, len(sc["neurons"]) + 1):
+        allowed[f"n{i}_call"] = set(sc["calls"]) | {""}
+        for q in sc["neuron_questions"]:
+            allowed[f"n{i}_{q['id']}"] = set(q["options"]) | {""}
+    return allowed
+
+
 def form_hash(cfg):
-    """Fingerprint of the scoring form, so scores come back for the same questions."""
-    return hashlib.sha256(json.dumps(cfg["scoring"], sort_keys=True).encode()).hexdigest()[:16]
+    """Fingerprint of the scoring form (its fields, allowed answers and neuron names), so scores come
+    back for the same questions. Only what the answers depend on is included, so a later version
+    that adds a display or help setting under "scoring" still accepts packages made earlier."""
+    from .server import score_fields
+    form = {"neurons": cfg["scoring"]["neurons"], "fields": sorted(score_fields(cfg)),
+            "answers": {k: sorted(v) for k, v in sorted(form_answers(cfg).items())}}
+    return hashlib.sha256(json.dumps(form, sort_keys=True).encode()).hexdigest()[:16]
 
 
 def folder_hashes(folder):
@@ -71,14 +88,8 @@ def check_answers(rows, cfg):
     """Every column and answer in a returned scores.csv must come from the scoring form, so a
     changed file cannot slip other text (or spreadsheet formulas) into the results."""
     from .server import score_fields
-    sc = cfg["scoring"]
     fields = set(score_fields(cfg))
-    allowed = {"usable": {"yes", "no", ""}, "count_this_image": {"yes", "no", ""},
-               "cells_seen": set(sc["count_question"]["options"]) | {""}}
-    for i in range(1, len(sc["neurons"]) + 1):
-        allowed[f"n{i}_call"] = set(sc["calls"]) | {""}
-        for q in sc["neuron_questions"]:
-            allowed[f"n{i}_{q['id']}"] = set(q["options"]) | {""}
+    allowed = form_answers(cfg)
     for r in rows:
         unknown = set(r) - fields
         if unknown:
@@ -91,6 +102,24 @@ def check_answers(rows, cfg):
 def scorer_ids(project):
     d = Path(project) / "scorers"
     return sorted(x.name for x in d.iterdir() if (x / PACKAGE_FILE).is_file()) if d.is_dir() else []
+
+
+def packages(project):
+    """The packages made from this project, for the home page: name, size and whether scores came
+    back. Counts and dates only, nothing about which images or genotypes."""
+    out = []
+    for sid in scorer_ids(project):
+        own = Path(project) / "scorers" / sid
+        try:
+            rec = json.loads((own / PACKAGE_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        scores = own / "scoring" / "scores.csv"
+        out.append({"id": sid, "scorer": rec.get("scorer", ""), "made": rec.get("made", ""),
+                    "images": len(rec.get("order", [])), "imported": scores.is_file(),
+                    "folder_found": bool(rec.get("folder")) and Path(rec["folder"]).is_dir(),
+                    "scored": len(read_csv(scores)) if scores.is_file() else 0})
+    return out
 
 
 def choose(key, fraction, rng):
@@ -179,6 +208,7 @@ def export_package(project, scorer, destination, fraction=0.3, log=print):
     own.mkdir(parents=True)
     (own / PACKAGE_FILE).write_text(json.dumps({
         "id": pid, "scorer": scorer, "made": pkg_cfg["scorer_package"]["made"], "fraction": fraction,
+        "folder": str(destination.resolve()),
         "originals": codes, "repeats": repeats, "order": order, "form": form_hash(cfg),
         "blind_sha256": {c: folder_hashes(project / "blind" / c) for c in order}}, indent=1), encoding="utf-8")
     n_orig = len([r for r in key if not r.get("repeat_of")])
@@ -283,3 +313,12 @@ def between_scorers(project, rows, cfg):
                       "first": saved[0][:10] if saved else "", "last": saved[-1][:10] if saved else "",
                       "after_unblinding": bool(unblinded and saved and saved[0][:16] > unblinded[0])})
     return agree, differ, about
+
+
+def package_folder(project, sid):
+    """Where a package of this project was made (to zip and send it), or None."""
+    if not isinstance(sid, str) or sid not in scorer_ids(project):
+        return None
+    rec = json.loads((Path(project) / "scorers" / sid / PACKAGE_FILE).read_text(encoding="utf-8"))
+    folder = Path(rec["folder"]) if rec.get("folder") else None
+    return folder if folder and folder.is_dir() and package_info(folder) else None

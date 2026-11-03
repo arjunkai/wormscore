@@ -75,10 +75,13 @@ evidence that people struggle with it, and what wormscore does.
   fluorescence channel or transmitted light image from which content of the experimental image cannot
   be deduced"). Only one identity channel is supported, so NeuroPAL's several colors are not; there is
   no bleed-through check or chromatic-shift correction, and the 3D view turns the reporter only.
-- **No second-scorer mode yet.** Since 0.10.0 wormscore can hide repeat images and reports one scorer's
-  consistency (percent agreement and Cohen's kappa) at unblinding, as Blind Analysis Tools (replicate
-  copies) and Blinder (re-shown images) do. Agreement between two scorers is not supported yet. Kappa
-  below 0.60 is considered inadequate ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)).
+- **Two scorers, not more, and no adjudication.** Since 0.10.0 wormscore hides repeat images and reports
+  one scorer's consistency, as Blind Analysis Tools (replicate copies) and Blinder (re-shown images) do.
+  Since 1.2.0 a second scorer can score a package of the blind set (no key) and unblinding reports
+  agreement between the two (percent agreement, Cohen's kappa). Each package is compared with the
+  primary scorer on its own; there is no Krippendorff's alpha for three or more scorers, no consensus
+  or adjudication step, and no ICC for the two scorers' drawn regions. Kappa below 0.60 is considered
+  inadequate ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)).
 - **Max projections in some measures.** `mean_mip` and `peak_filtered` use the maximum-intensity
   projection, which "shouldn't be used for intensity quantification" according to
   [Culley et al., "Made to measure" (preprint)](https://arxiv.org/abs/2302.01657) (also
@@ -101,8 +104,9 @@ evidence that people struggle with it, and what wormscore does.
   many cells, use Cellpose, StarDist, ilastik, CellProfiler or QuPath.
 - **No neuron identification.** You must know which cell is which. For whole-brain identification use
   NeuroPAL and NeuroPAL ID.
-- **Single computer.** Scoring is local. Several scorers in different places are better served by a
-  web-based tool such as [Schippers et al. 2024](https://doi.org/10.3390/jimaging10020033).
+- **Single computer.** Scoring is local. A second scorer elsewhere gets a package folder to score on
+  their own computer and send back; many scorers working at once are better served by a web-based tool
+  such as [Schippers et al. 2024](https://doi.org/10.3390/jimaging10020033).
 - **Platforms.** The Windows app (its own WebView2 windows since 0.9.0) is tested by hand; the Python package is tested on Windows and Linux
   in CI. The Mac app is built, tested and smoke-tested on an Apple silicon runner for each release,
   but not tested by hand.

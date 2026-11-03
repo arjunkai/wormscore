@@ -120,9 +120,15 @@ The images are not part of this repository.
 1. **Copy your data** to a local folder (not a synced cloud folder if the data is not yours to share):
    `wormscore copy D:\from\drive C:\data\my_copy` copies every file, checks each one by SHA-256 and
    makes the copies read-only.
-2. **Make a project:** `wormscore init C:\projects\my_project`, then edit `config.json`:
-   point `sources` at your images, write genotype rules, and name your neurons. See
+2. **Make a project:** in the app, **New project...** opens **Project settings**: choose each folder of
+   images and write the genotype rules (a pattern such as `*ctrl*` and the genotype it means). The page
+   counts how the rules sort the scanned images, so a typo shows before you build anything. Images can be
+   left out by pattern there too. Images do not need converting: wormscore reads the microscope files
+   as they are. Other settings (neuron names, marker, statistics) are in `config.json`; see
    [`examples/config_example.json`](https://github.com/arjunkai/wormscore/blob/main/examples/config_example.json).
+   From the command line: `wormscore init C:\projects\my_project`, then edit `config.json`. Once
+   scoring has started, the folders and rules that built the blind set are locked; you can still add a
+   folder for **Add new images**.
 3. **Scan:** `wormscore inventory my_project` lists every file (`outputs/manifest.csv`: raw image,
    duplicate, derived projection, reference, hidden system file) and every image with its metadata
    and channel identity (`outputs/inventory.csv`). Check the flags column.
@@ -155,6 +161,18 @@ The images are not part of this repository.
    analysis plan before scoring and locked once scoring starts. See [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md#8-unblinding).
    `methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
    `blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
+7. **Second scorer (optional):** after building the blind set, use **Make a package...** in the
+   **Second scorer** card on the home page (or `wormscore export-scorer my_project D:\for_sam --scorer "Sam K" --percent 30`).
+   Choose a name and a share of each genotype's images (1 to 100%, at least one image per genotype,
+   picked at random). The package is a folder with those coded images in a new random order and the
+   scoring form. It has no key, no file names, no analysis plan and no checksum list. Zip it and send
+   it. The second scorer opens the folder in wormscore, which then shows only **Score**, and sends the
+   folder back when finished. **Import scores...** (or `wormscore import-scorer my_project D:\from_sam`)
+   checks that it is the package made from this project with the same images and scoring form, and
+   stores the answers in `scorers/`. Your own scores are never changed. At unblinding,
+   `between_scorers.csv` gives percent agreement and Cohen's kappa for each answer,
+   `scorer_disagreements.csv` lists each image where the answers differ (codes only), and the Methods
+   draft gets a sentence about it. All results tables still use only your answers.
 
 ## Project folder
 
@@ -166,6 +184,7 @@ The images are not part of this repository.
 | `outputs/auto_measurements.csv` | numbers for suggested spots | avoid until done |
 | `blind/` | images for scoring, named by code | used by the app |
 | `scoring/` | your scores, regions and their measurements | scores yes; avoid `roi_measurements.csv` |
+| `scorers/` | second scorers' packages (which images, checksums) and their returned scores | not needed |
 | `key/` | code to file, genotype, settings | **no, not until scoring is finished** |
 
 ## How it works

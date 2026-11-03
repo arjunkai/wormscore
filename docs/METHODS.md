@@ -111,6 +111,27 @@ counted in any result; at unblinding, `reliability.csv` compares each scored rep
 (see section 8). Limit: someone who opens `blind/` and compares files can find the repeats, as they can
 find any other information there; score only through the app.
 
+**Second scorer** (optional, made from the app or with `export-scorer`). The project owner makes a
+package for another person after the blind set is built. A share of each genotype's included images
+(chosen by the owner from 1 to 100%, at least one per genotype) is picked at random with a seed that is
+not stored, together with the hidden repeats of the picked images, and put in a new random order with
+each repeat kept apart from its original (the same 15% rule). The package is an ordinary project folder
+with only those `blind/` folders and a `config.json` holding the scoring form, the marker and display
+settings and the region measurement settings. It has no `key/`, `outputs/`, `log.md`, `scoring/`,
+image sources, analysis plan, file names or checksums (repeats are byte copies of their originals, so a
+checksum list would show which codes are repeats). Its scoring list follows the package's own order.
+Scanning, building and unblinding are refused inside a package. The owner's project keeps the
+selection, the order and a SHA-256 checksum of every file of every packaged code in
+`scorers/<id>/package.json`, and `log.md` records the scorer's name, the share and the number of
+images. When the package comes back, import refuses it unless the package ID was made in this
+project, the scoring form (its answer fields and allowed answers) is unchanged on both sides, the
+packaged images and the project's own images match the checksums, no codes were added or removed,
+every column and answer of `scores.csv` comes from the form, and nothing in the package is a link.
+Only the scoring files are copied, to `scorers/<id>/scoring/`; the owner's `scoring/` is never
+written. Limits: the owner knows the results if the package is made after unblinding (the images are
+still picked at random, and the Methods text says when the second scorer scored); and the second
+scorer is trusted to score alone and not to compare raw files.
+
 ## 5. Images shown
 
 For each image the marker channel is saved plane by plane and as a maximum-intensity projection
@@ -282,6 +303,16 @@ Results tables use counted, usable images only, with the animal as the unit (one
   times, fixed seed), PABAK and Gwet's AC1 (both from exact agreement); `call_weights` sets the kappa
   weights for neuron calls: `linear` (default, for ordered calls such as normal, dim, missing),
   `quadratic`, or `none` (for calls that are not ordered).
+- **Agreement between scorers** (only when a second scorer's scores were imported). `between_scorers.csv`
+  compares the primary scorer's and each second scorer's answers on the original images both scored
+  (repeats are left out, so no image counts twice), with the same measures and statistics as for
+  hidden repeats (percent agreement, Cohen's kappa, weighted for ordered calls, and the optional extra
+  statistics). `scorer_disagreements.csv` lists each code and answer (usable, cells seen, each neuron's
+  call) where the two differ, with no genotype. Every results table uses the primary scorer's answers
+  only; the second scorer's answers are never merged in or used to settle disagreements. The Methods
+  draft says how many images the second scorer scored, the share, when, and that they scored blind,
+  without the key, in a different order and without seeing the first scorer's answers (and, if they
+  scored after the primary analysis was unblinded, says so).
 - **Analysis plan lock.** When any of the settings above, `question_outcomes` or `interaction` is set,
   `prepare` writes the whole analysis plan (both definitions of affected, comparisons, direction,
   cross-microscope measures, interaction model, dim cutoff) to `log.md`. Unblinding compares the current settings with

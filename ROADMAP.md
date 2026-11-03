@@ -9,11 +9,7 @@ reports exactly as before.
 
 ## Planned
 
-- **Second scorer.** A second person scores the same blind set; agreement between scorers.
-- **Reference images for "dim".** An optional panel of reference images the scorer can compare against.
-- **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
-  several identity channels (for multi-color systems such as NeuroPAL).
-- **Score form builder.** Make your own set of scoring questions in the app instead of editing
+- **Score form builder (next).** Make your own set of scoring questions in the app instead of editing
   `config.json`: start from a preset (cell fate, axon guidance, neurodegeneration, dendrite
   length, counts and position) or a blank form; choose each question's answer type (choice,
   yes/no, ordered scale, count), whether it is asked per neuron, per left/right cell or per
@@ -21,6 +17,9 @@ reports exactly as before.
   visible"); pick one main outcome; see the score panel as the scorer will. The form is locked
   and recorded in the log at Build blind set, and each answer type gets its test at unblinding
   (Fisher's exact for choices, a rank test for scales and counts).
+- **Reference images for "dim".** An optional panel of reference images the scorer can compare against.
+- **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
+  several identity channels (for multi-color systems such as NeuroPAL).
 - **More 3D.** Depth of the brightest point under the cursor, and turning about the horizontal axis
   too (both keep brightness unchanged; no depth cueing in the scoring view).
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
@@ -38,6 +37,12 @@ each is off by default, so a project that does not turn it on works exactly as i
 
 ## Recently shipped
 
+- 1.2.0: a second scorer. **Make a package** gives another person a random share of each genotype's
+  coded images, with no key, file names or analysis plan, in a new order; **Import scores** checks the
+  package came back unchanged and keeps the answers apart from yours. Unblinding adds agreement
+  between scorers and a list of disagreements; results still use only your answers. Image folders,
+  genotype rules and leave-out rules are now set in the app (**Project settings**), with a live count
+  of how the rules sort the scanned images, instead of by editing `config.json`.
 - 1.1.0: checks from a review of the measurement and statistics methods. An optional likelihood-ratio
   test for genetic interaction (`interaction.test`), which allows for the sampling error of the single
   mutants (the binomial test, still the default, finds an interaction too often with small groups);

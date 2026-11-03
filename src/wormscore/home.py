@@ -139,13 +139,20 @@ def project_status(path):
         cfg = C.load(p)
         C.check(cfg)
         st.update(name=cfg["project_name"], min_scored=cfg["unblinding"]["min_scored_worms"], config_error=None)
+        # how many image folders exist, so a new project is sent to Set image folders first
+        st["folders_found"] = sum(1 for s in cfg["sources"] if isinstance(s.get("path"), str) and Path(s["path"]).is_dir())
     except (Exception, SystemExit) as exc:
         st.update(name=p.name, min_scored=0, config_error=str(exc))
+    from .scorers import package_info, packages
+    info = package_info(p)
+    # A second scorer's package: only its own images and scores, so the page shows just Score.
+    st["package"] = {"scorer": str(info.get("scorer", ""))} if info else None
     inv = p / "outputs" / "inventory.csv"
     st["scanned"] = _rows(inv) if inv.is_file() else None
     blind = p / "blind"
     st["coded"] = (len([d for d in blind.iterdir() if d.is_dir() and CODE.match(d.name)])
-                   if blind.is_dir() and (p / "key" / "key.csv").is_file() else None)
+                   if blind.is_dir() and (info or (p / "key" / "key.csv").is_file()) else None)
+    st["second_scorers"] = [] if info else packages(p)
     scores = p / "scoring" / "scores.json"
     try:
         st["scored"] = len(json.loads(scores.read_text(encoding="utf-8"))) if scores.is_file() else 0
@@ -720,6 +727,36 @@ class HomeApp:
             raise ValueError("Another step is still running.")
         return {"ok": True}
 
+    def second_scorer(self, body):
+        """Make a package for a second scorer, or bring their scores back. Both run as a step."""
+        from . import scorers
+        p = self.need_project()
+        if scorers.package_info(p):
+            raise ValueError("This folder is itself a second scorer's package.")
+        if body.get("action") == "export":
+            name = body.get("scorer")
+            pct = body.get("percent")
+            if not isinstance(name, str) or not scorers.NAME.fullmatch(name.strip()):
+                raise ValueError("Give the second scorer a short name (letters, digits, spaces, . _ -; up to 40 characters).")
+            if isinstance(pct, bool) or not isinstance(pct, (int, float)) or not 1 <= pct <= 100:
+                raise ValueError("The share of images must be from 1 to 100%.")
+            d = self.pick(f"Choose a new, empty folder for {name.strip()}'s package (outside the project)")
+            if not d:
+                return {"ok": False}
+            fn = lambda: scorers.export_package(p, name.strip(), d, fraction=pct / 100, log=self.job.say)
+            title = "Make second-scorer package"
+        elif body.get("action") == "import":
+            d = self.pick("Choose the package folder the second scorer sent back")
+            if not d:
+                return {"ok": False}
+            fn = lambda: scorers.import_scores(p, d, log=self.job.say)
+            title = "Import second scorer's scores"
+        else:
+            raise ValueError("unknown second-scorer action")
+        if not self.job.start(title, p, fn):
+            raise ValueError("Another step is still running.")
+        return {"ok": True}
+
     def start_scoring(self):
         from .server import make_server
         p = str(self.need_project())
@@ -822,7 +859,7 @@ class HomeApp:
             if not cfg.exists():
                 cfg.write_text(json.dumps(template(Path(d).name), indent=2), encoding="utf-8")
             remember(d)
-            self.opener(cfg)
+            return {"ok": True, "settings": True}     # the page opens Project settings for the image folders
         elif route == "demo":
             d = self.pick("Choose an empty folder for the demo project")
             if not d:
@@ -836,6 +873,23 @@ class HomeApp:
                 fn = lambda: make_demo(d, log=self.job.say)
             if not self.job.start("Make demo", d, fn):
                 raise ValueError("Another step is still running.")
+        elif route == "project-settings":
+            from . import editconfig
+            action, p = body.get("action"), self.need_project()
+            if action == "load":
+                return {"ok": True, **editconfig.current(p)}
+            if action == "preview":
+                return editconfig.preview(p, body)
+            if action == "save":
+                if self.job.running:
+                    raise ValueError("A step is still running. Save when it is done.")
+                return editconfig.save(p, body)
+            if action == "browse":
+                d = self.pick("Choose the folder with the images")
+                return {"ok": bool(d), "path": d or ""}
+            raise ValueError("unknown settings action")
+        elif route == "second-scorer":
+            return self.second_scorer(body)
         elif route == "run":
             return self.run_step(body)
         elif route == "score":
@@ -843,6 +897,9 @@ class HomeApp:
         elif route == "open":
             p = self.need_project()
             target = {"folder": p, "config": p / "config.json", "results": p / "outputs" / "unblinded"}.get(body.get("what"))
+            if body.get("what") == "package":
+                from .scorers import package_folder
+                target = package_folder(p, body.get("id"))
             if target is None or not target.exists():
                 raise ValueError("Nothing to open yet.")
             self.opener(target)
