@@ -446,11 +446,22 @@ function formSection(info) {
     [arr[j], arr[k]] = [arr[k], arr[j]];
     drawAll();
   };
-  const tools = (arr, j, what, min = 0) => off ? null : h("span", { class: "sf-tools" },
+  // confirm(j): a question to ask before removing row j (a filled-in question), or null to remove at once.
+  const tools = (arr, j, what, min = 0, confirm = null) => off ? null : h("span", { class: "sf-tools" },
     h("button", { class: "ghost icon sm", title: "Move up", "aria-label": `Move ${what} up`, disabled: j === 0, onclick: () => move(arr, j, -1) }, icon("up", 14)),
     h("button", { class: "ghost icon sm", title: "Move down", "aria-label": `Move ${what} down`, disabled: j === arr.length - 1, onclick: () => move(arr, j, 1) }, icon("down", 14)),
     h("button", { class: "ghost icon sm", title: "Remove", "aria-label": `Remove ${what}`, disabled: arr.length <= min,
-      onclick: () => { arr.splice(j, 1); drawAll(); } }, icon("close", 14)));
+      onclick: async () => {
+        const q = confirm?.(j);
+        if (q && !(await ask(q.title, q.body, [{ value: true, label: "Remove" }]))) return;
+        arr.splice(j, 1);
+        drawAll();
+      } }, icon("close", 14)));
+  const confirmQuestion = j => m.questions[j].label.trim() ? {
+    title: `Remove question ${j + 1}?`,
+    body: `“${m.questions[j].label.trim()}” and its answers and analysis settings are removed from the form. `
+      + "Nothing is saved until you press Save; Cancel at the bottom keeps the form as it was.",
+  } : null;
   const text = (value, set, attrs = {}) => h("input", { type: "text", class: "f-input", value: value ?? "", autocomplete: "off",
     disabled: off, ...attrs, oninput: e => { set(e.target.value); drawPreview(); } });
   const check = (checked, label, set, attrs = {}) => h("label", { class: "sf-check" },
@@ -529,7 +540,7 @@ function formSection(info) {
     return h("div", { class: "s-card sf-card sf-q" },
       h("div", { class: "sf-row sf-q-head" }, h("span", { class: "sf-num" }, `${j + 1}`),
         text(q.label, v => { q.label = v; }, { placeholder: "The question, e.g. Axon reaches the nerve ring?", "aria-label": `Question ${j + 1}` }),
-        tools(m.questions, j, `question ${j + 1}`)),
+        tools(m.questions, j, `question ${j + 1}`, 0, confirmQuestion)),
       h("div", { class: "sf-grid" },
         ...row("Asked", radioRow(j, "Ask", "asked", [["neuron", "For each neuron"], ["animal", "Once per animal"]], q.ask || "neuron",
           v => { q.ask = v; if (v === "animal") { q.skip_when = []; q.rollup = ""; } else if (ranked && !q.rollup) q.rollup = ROLLUPS[q.type][0]; })),
@@ -663,7 +674,20 @@ function formSection(info) {
       + "It is shown read-only here; change it in config.json.") : null,
     h("div", { class: "sf-cols" }, edit, prev)].filter(Boolean));
   drawAll();
-  return { el: root, payload: () => off ? null : m };
+  // A save error about one question ("Question 3: ..." or "Question "Axon": ...") also marks that
+  // question's card and scrolls to it, so the scorer's form is fixed where the problem is.
+  const showError = msg => {
+    const byNumber = /^Question (\d+)\b/.exec(msg), byLabel = /^Question "(.+?)"/.exec(msg);
+    const j = byNumber ? Number(byNumber[1]) - 1 : byLabel ? m.questions.findIndex(q => q.label.trim() === byLabel[1]) : -1;
+    const card = j >= 0 ? edit.querySelectorAll(".sf-q")[j] : null;
+    if (!card) return;
+    card.classList.add("sf-bad");
+    card.scrollIntoView({ block: "center" });
+    const level = /level (\d+) is empty/.exec(msg);
+    (level && card.querySelector(`[aria-label="Question ${j + 1}: level ${level[1]}"]`) || card.querySelector("input"))
+      ?.focus({ preventScroll: true });
+  };
+  return { el: root, payload: () => off ? null : m, showError };
 }
 
 // ---------------------------------------------------------------- project settings
@@ -788,6 +812,7 @@ async function openProjectSettings(section) {
     catch (e) {
       err.textContent = e.message;
       err.hidden = false;
+      form.showError(e.message);
       return;
     }
     toast(r.form_changed ? "Saved. The score form is recorded in log.md and locks at the first score."
@@ -855,7 +880,7 @@ function renderUpdate(d) {
 
   const head = (title, sub) => h("div", { class: "ud-head" },
     h("img", { src: "/static/icon.svg", width: 40, height: 40, alt: "" }),
-    h("div", {}, h("h3", { id: "udTitle" }, title), sub));
+    h("div", {}, h("h2", { id: "udTitle" }, title), sub));
   const versions = h("div", { class: "ud-ver" }, h("span", { class: "vtag" }, d.version), " \u2192 ",
     h("span", { class: "vtag new" }, u.latest));
   let kids;

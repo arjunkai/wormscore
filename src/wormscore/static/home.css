@@ -125,7 +125,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .upd-pill:hover { filter: brightness(1.1); }
 .upd-dialog { width: min(520px, 100%); padding: 22px 24px 18px; }
 .ud-head { display: flex; gap: 14px; align-items: center; }
-.ud-head h3 { margin: 0; font-size: var(--text-xl); }
+.ud-head h2, .ud-head h3 { margin: 0; font-size: var(--text-xl); }
 .ud-ver { margin-top: 4px; color: var(--muted); font-size: var(--text-sm); }
 .vtag { font-variant-numeric: tabular-nums; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
 .vtag.new { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
@@ -306,7 +306,7 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
   box-shadow: var(--shadow); padding: 20px 22px 16px;
   max-height: calc(100vh - 32px); overflow-y: auto;   /* a tall dialog scrolls instead of losing its buttons */
 }
-.dialog h3 { margin: 0 0 8px; font-size: var(--text-xl); }
+.dialog h2, .dialog h3 { margin: 0 0 8px; font-size: var(--text-xl); }
 .m-body { color: var(--muted); font-size: var(--text-md); white-space: pre-wrap; }
 .m-choices { display: grid; gap: 8px; margin-top: 16px; }
 .choice {
@@ -435,6 +435,7 @@ details.lo[open] summary { margin-bottom: 4px; }
 .sf-section-head { display: grid; gap: var(--space-xs); padding: 0 var(--space-xs); }
 .sf-section-head .f-label, .sf-section-head .f-help { margin: 0; }
 .sf-q { gap: var(--space-lg); }
+.sf-q.sf-bad { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 5%, var(--panel)); }   /* the question a save error is about */
 .sf-q-head .f-input { font-weight: 600; }
 .sf-num {
   flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
