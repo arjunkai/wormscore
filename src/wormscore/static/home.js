@@ -168,7 +168,12 @@ function cardStatus(p) {
 // ---------------------------------------------------------------- render
 
 // The X only takes a project off this list; people reasonably fear it deletes the folder.
+// Project settings with unsaved changes ask before the page is left (another project, a new
+// one, the demo): save, discard, or keep editing. True when it is fine to go on.
+const canLeaveSettings = async () => !st.leaveGuard || await st.leaveGuard();
+
 async function forgetProject(name, path) {
+  if (!(await canLeaveSettings())) return;
   const go = await ask(`Remove "${name}" from the list?`,
     h("span", {}, "The folder stays on your computer. Use ", h("b", {}, "Open project"), " to add it back."),
     [{ value: true, label: "Remove", plain: true }]);
@@ -181,7 +186,7 @@ function renderSide(d) {
     const name = p.name || p.path.split(/[\\/]/).pop();
     return h("div", { class: "card-p" + (p.path === cur ? " cur" : "") },
       h("button", { class: "pick", "data-k": `pick:${p.path}`, "aria-current": p.path === cur ? "true" : null,
-        onclick: () => p.path !== cur && act("/api/select", { path: p.path }) },
+        onclick: async () => p.path !== cur && await canLeaveSettings() && act("/api/select", { path: p.path }) },
         h("span", { class: "nm" }, name),
         h("span", { class: "pth", title: p.path }, h("bdi", { dir: "ltr" }, p.path)),
         h("span", { class: "st" }, cardStatus(p))),
@@ -211,7 +216,8 @@ function welcome() {
 const breakable = path => path.split(/(?<=[\\/])/).map(part => h("span", {}, part));
 
 function stepCard(n, state, title, desc, fact, actions, extra) {
-  const chip = { done: ["done", "Done"], next: ["next", "Next"], running: ["running", "Running"], wait: ["wait", "Waiting"] }[state];
+  const chip = { done: ["done", "Done"], next: ["next", "Next"], running: ["running", "Running"], wait: ["wait", "Waiting"],
+    changed: ["changed", "Changed"] }[state];
   return h("li", { class: `step ${state}` },
     h("div", { class: "num", "aria-label": state === "done" ? `Step ${n}, done` : `Step ${n}` },
       state === "done" ? icon("check", 18) : n),
@@ -228,7 +234,8 @@ function formFact(f) {
   const parts = [`a call with ${f.calls} choices`];
   if (f.neuron_questions) parts.push(plural(f.neuron_questions, "question"));
   const ask = `Each neuron: ${parts.join(" and ")}` + (f.animal_questions ? `. Each animal: ${plural(f.animal_questions, "question")}` : "") + ".";
-  const status = f.locked ? " Locked at the first score."
+  const status = f.changed_after_lock ? " Changed after scoring began, so unblinding runs no planned test until it is changed back."
+    : f.locked ? " Locked at the first score."
     : f.recorded ? " Recorded in log.md; you can change it until the first score."
     : " Open it, check the questions, and press Save to record it.";
   return ask + status;
@@ -255,7 +262,7 @@ function renderMain(d) {
   // checked = recorded in log.md (saved or checked on the form page, or at Build), or locked
   const formDone = !!f && (f.recorded || !!f.locked);
   const s1 = stepRunning("scan") ? "running" : scanned ? "done" : "next";
-  const sF = formDone ? "done" : scanned ? "next" : "wait";
+  const sF = f?.changed_after_lock ? "changed" : formDone ? "done" : scanned ? "next" : "wait";
   const s2 = building ? "running" : built ? "done" : scanned && formDone ? "next" : "wait";
   const s3 = building ? "wait" : built ? (allScored ? "done" : "next") : "wait";
   const s4 = stepRunning("unblind") ? "running" : p.unblinded ? "done" : allScored ? "next" : "wait";
@@ -450,7 +457,8 @@ const ROLLUPS = { scale: ["worst", "mean"], count: ["sum", "mean_per_neuron"] };
 // element and payload(), which is null when the form cannot be changed here.
 function formSection(info) {
   const m = structuredClone(info.model);
-  const off = !!(info.locked || info.readonly);
+  let off = !!(info.locked || info.readonly);
+  let reason = "";      // why a locked form is changed anyway; written to log.md with the change
   const edit = h("div", { class: "sf-edit" });
   const prev = h("div", { class: "sf-prev" });
   const root = h("div", { class: "sf" });
@@ -682,12 +690,40 @@ function formSection(info) {
       drawing = false;
     }
   };
-  root.replaceChildren(...[
-    info.locked ? h("div", { class: "sf-lock" }, h("span", { class: "chip wait" }, "Locked"),
-      h("span", {}, `${info.locked} It was recorded in log.md and is what unblinding checks. To change it, start a new blind set.`)) : null,
+  // Changing a locked form is possible but never quiet: a reason goes into log.md, and a change to
+  // the answers (not just wording) means unblinding runs no planned test.
+  const unlock = async () => {
+    const box = h("textarea", { id: "sfReason", class: "f-input", rows: 3, maxlength: 500,
+      placeholder: "For example: question 2's text was unclear; only the wording changes." });
+    const go = await ask("Change the form after scoring began?", h("div", { class: "sf-unlock" },
+      h("p", {}, "The form was recorded in log.md before the first score, and the planned tests depend on it. "
+        + "The usual way is to keep it, or to start a new blind set."),
+      h("p", {}, h("b", {}, "Wording only"), " (question text or rules): safe. The planned tests still run."),
+      h("p", {}, h("b", {}, "Answers, neurons, required or skipped questions, or what counts as a defect"),
+        ": unblinding then writes only descriptive tables and runs no planned test, and the summary and Methods say why. "
+        + "Images already scored keep their old answers. Changing the form back runs the tests again."),
+      h("label", { class: "f-label", for: "sfReason" }, "Reason (written to log.md with the change)"), box),
+      [{ value: true, label: "Unlock the form", danger: true }], "Keep it locked",
+      { wide: true, check: () => box.value.trim() ? null : "Write a reason first. It goes into log.md with the change." });
+    if (!go) return;
+    reason = box.value.trim();
+    off = false;
+    drawBanner();
+    drawAll();
+    edit.querySelector("input, button")?.focus();   // the link that opened the dialog is gone
+  };
+  const banner = h("div", {});
+  const drawBanner = () => banner.replaceChildren(...[
+    info.locked && off ? h("div", { class: "sf-lock" }, h("span", { class: "chip wait" }, "Locked"),
+      h("span", {}, `${info.locked} It was recorded in log.md and is what unblinding checks. To change it, start a new blind set`
+        + (info.can_unlock ? ", or " : "."),
+        info.can_unlock ? h("button", { class: "linkish", "data-k": "sfUnlock", onclick: unlock }, "change it anyway...") : null)) : null,
+    info.locked && !off ? h("div", { class: "banner" }, "Unlocked for this save. Reason: " + reason
+      + " Saving writes the change and the reason to log.md; a change beyond wording stops the planned tests.") : null,
     info.readonly && !info.locked ? h("div", { class: "banner" }, `This form uses a setting the builder cannot show (${info.readonly}). `
-      + "It is shown read-only here; change it in config.json.") : null,
-    h("div", { class: "sf-cols" }, edit, prev)].filter(Boolean));
+      + "It is shown read-only here; change it in config.json.") : null].filter(Boolean));
+  drawBanner();
+  root.replaceChildren(banner, h("div", { class: "sf-cols" }, edit, prev));
   drawAll();
   // A save error about one question ("Question 3: ..." or "Question "Axon": ...") also marks that
   // question's card and scrolls to it, so the scorer's form is fixed where the problem is.
@@ -702,7 +738,7 @@ function formSection(info) {
     (level && card.querySelector(`[aria-label="Question ${j + 1}: level ${level[1]}"]`) || card.querySelector("input"))
       ?.focus({ preventScroll: true });
   };
-  return { el: root, payload: () => off ? null : m, showError };
+  return { el: root, payload: () => off ? null : m, reason: () => reason, showError };
 }
 
 // ---------------------------------------------------------------- project settings
@@ -736,7 +772,8 @@ async function openProjectSettings(section) {
   const form = formSection(cur.form);
   // form_checked: opened from the Score form step, so Save records the form even if unchanged
   const payload = () => ({ project_name: model.project_name, sources: model.sources,
-    ...(form.payload() ? { form: form.payload(), form_checked: section === "form" } : {}) });
+    ...(form.payload() ? { form: form.payload(), form_checked: section === "form",
+      ...(form.reason() ? { unlock_reason: form.reason() } : {}) } : {}) });
   const box = h("div", { class: "settings ps" });
   const err = h("div", { class: "m-err", role: "alert", hidden: true });
   let pvTimer = null, previews = [];
@@ -808,7 +845,7 @@ async function openProjectSettings(section) {
       h("h4", { id: "sfHead" }, "Scoring form"),
       form.el,
       h("div", { class: "f-help sf-config" }, "The marker, statistics and other settings are in config.json: ",
-        h("button", { class: "linkish", onclick: () => leave("config") }, "edit config.json"), "."));
+        h("button", { class: "linkish", onclick: () => tryLeave("config") }, "edit config.json"), "."));
     if (focusLast === "src") $$(".ps .src").at(-1)?.querySelector("input")?.focus();
     else if (focusLast) [...document.querySelectorAll(".ps .rules")].find(r => r.contains(document.activeElement))?.querySelector(".rule:last-of-type input")?.focus();
   };
@@ -817,6 +854,8 @@ async function openProjectSettings(section) {
   // A page in the main area, not an overlay: the form is long, and the project list stays in view.
   const leave = what => {
     clearTimeout(pvTimer);
+    st.leaveGuard = null;
+    st.settingsDirty = null;
     st.settingsOpen = null;
     st.pageKey = "";
     if (what === "config") act("/api/open", { what: "config" });
@@ -829,27 +868,45 @@ async function openProjectSettings(section) {
       err.textContent = e.message;
       err.hidden = false;
       form.showError(e.message);
-      return;
+      return false;
     }
-    toast(r.form_changed ? "Saved. The score form is recorded in log.md and locks at the first score."
+    toast(r.after_lock ? "Saved. The change and your reason are in log.md."
+      : r.form_changed ? "Saved. The score form is recorded in log.md and locks at the first score."
       : scanned ? "Saved. Run Scan data again so the new folders and rules are used." : "Saved. Next: Scan data.", "ok");
     leave();
     refresh(true);
+    return true;
   };
+  // What the page held when it opened; anything different is an unsaved change.
+  const snapshot = JSON.stringify(payload());
+  const confirmLeave = async () => {
+    if (JSON.stringify(payload()) === snapshot) return true;
+    const v = await ask("Save your changes?",
+      "You changed these settings or the score form, and the changes are not saved yet.",
+      [{ value: "discard", label: "Discard changes", danger: true }, { value: "save", label: "Save" }], "Keep editing");
+    if (v === "save") return await save();     // a save that fails keeps the page open, with the error
+    return v === "discard";
+  };
+  const tryLeave = async what => { if (await confirmLeave()) leave(what); };
+  st.leaveGuard = confirmLeave;
+  st.settingsDirty = () => JSON.stringify(payload()) !== snapshot;
   const path = st.data.project.path;
   st.settingsOpen = path;
-  const page = h("div", { class: "wrap ps-page", onkeydown: e => { if (e.key === "Escape") leave(); } },
+  const page = h("div", { class: "wrap ps-page", onkeydown: e => { if (e.key === "Escape") tryLeave(); } },
     h("div", { class: "p-head" },
       h("div", {}, h("h2", { id: "psTitle", tabindex: "-1" }, "Project settings"), h("div", { class: "p-path" }, breakable(path)))),
     box,
     h("div", { class: "ps-foot" }, err, h("span", { class: "grow" }),
-      h("button", { class: "btn subtle", onclick: () => leave() }, "Cancel"),
+      h("button", { class: "btn subtle", onclick: () => tryLeave() }, "Cancel"),
       h("button", { class: "primary", onclick: save }, "Save")));
   $("#main").replaceChildren(page);
   $("#main").scrollTop = 0;
   // Only a new project starts in its name box (cursor at the end). Otherwise the page opens
   // without typing into anything, so the name cannot be changed by accident.
-  if (section === "form") $("#sfHead")?.scrollIntoView();
+  if (section === "form") {
+    $("#psTitle")?.focus({ preventScroll: true });   // keyboard focus on the page, so Escape works
+    $("#sfHead")?.scrollIntoView();
+  }
   else if (section === "new") {
     const name = $("#psName");
     name?.focus();
@@ -1105,6 +1162,7 @@ function render() {
 // ---------------------------------------------------------------- actions
 
 async function sideAction(which) {
+  if (!(await canLeaveSettings())) return;
   if (which === "demo") {
     const real = await ask("Try a demo", "Pick the kind of demo, then choose an empty folder for it.", [
       { value: "sim", label: "Simulated worms", desc: "20 heads with known normal, dim and missing cells. Instant, works offline." },
@@ -1261,6 +1319,10 @@ document.addEventListener("keydown", e => {
 });
 
 $$("[data-act]").forEach(b => (b.onclick = () => sideAction(b.dataset.act)));
+// Closing or reloading the window with unsaved Project settings asks first, like any editor.
+window.addEventListener("beforeunload", e => {
+  if (!st.closing && st.settingsDirty?.()) { e.preventDefault(); e.returnValue = ""; }
+});
 $("#guideBtn").onclick = () => act("/api/guide", {});
 $("#updPill").onclick = () => { st.updOpen = true; st.updKey = ""; render(); };
 $("#settingsBtn").replaceChildren(icon("gear", 18));

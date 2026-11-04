@@ -890,7 +890,10 @@ class HomeApp:
             if action == "save":
                 if self.job.running:
                     raise ValueError("A step is still running. Save when it is done.")
-                return editconfig.save(p, body)
+                r = editconfig.save(p, body)
+                if r.get("after_lock") and self.scoring and self.scoring[0] == str(p):
+                    self.stop_scoring()   # the open scoring window still shows the old form
+                return r
             if action == "browse":
                 d = self.pick("Choose the folder with the images")
                 return {"ok": bool(d), "path": d or ""}

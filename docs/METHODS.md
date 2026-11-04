@@ -378,7 +378,11 @@ Results tables use counted, usable images only, with the animal as the unit (one
   but are marked `set_before_scoring = NO`.
 - **Score form lock.** Unblinding compares the current form with the last one recorded before the first
   score (section 7). If it differs, no test is run, every test file says the form changed, and the
-  Methods draft says only descriptive results are reported. Projects built before 1.3.0 have no form
+  Methods draft says only descriptive results are reported. Since 1.6.0 the app can change a locked
+  form only after the scorer types a reason; the change, the reason and whether it went beyond wording
+  are written to `log.md`, the summary and the Methods draft list each change with its reason (as
+  recommended for reporting deviations from a pre-registered plan; Willroth & Atherton, 2024), and the
+  rule above still decides whether tests run. Projects built before 1.3.0 have no form
   line; for them the full settings that Build wrote to `log.md` before the first score are used. If those
   differ or are missing, tests run but are marked `form_recorded_before_scoring = NO` and the summary
   warns.

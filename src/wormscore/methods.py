@@ -204,7 +204,7 @@ def identity_sentence(cfg):
             f"brightness could not hint at the genotype, and it was never measured. {where} {missing}"]
 
 
-def form_sentences(cfg, form_status):
+def form_sentences(cfg, form_status, form_changes=()):
     """The primary outcome and whether the score form was locked (nothing for older forms that match)."""
     out = []
     primary = cfg["unblinding"].get("primary_outcome")
@@ -214,6 +214,11 @@ def form_sentences(cfg, form_status):
     elif form_status.startswith("NO"):
         out.append("[The score form was not recorded in the project log before scoring began; say how the "
                    "questions were fixed in advance.]")
+    for when, why, wording in form_changes:
+        # bracketed for the author: say what changed and how it affects the results
+        out.append(f"[On {when[:10]} the score form was changed after scoring began "
+                   f"({'wording only; the planned tests still ran' if wording else 'beyond wording'}). Reason recorded: "
+                   f"{why or 'none given'}. Describe what changed and how it affects the results.]")
     if primary:
         name = "the neuron calls" if primary == "calls" else f"\"{primary}\""
         out.append(f"The primary outcome, named before scoring and recorded with the score form, was {name}; "
@@ -223,7 +228,8 @@ def form_sentences(cfg, form_status):
 
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
-              dim_rows=(), dim_skipped=0, second_scorers=(), between=(), form_status="yes", rank_tests=()):
+              dim_rows=(), dim_skipped=0, second_scorers=(), between=(), form_status="yes", rank_tests=(),
+              form_changes=()):
     """added: (date, number of images) for each batch added to an existing key.
     key_rows, excluded_rows: for the table of images per genotype and microscope.
     reliability, n_repeats: agreement of hidden repeats. dim_rows: the measured check of calls."""
@@ -283,7 +289,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
            if C.analysis_plan(cfg) and all(t.get("set_before_scoring") == "yes"
                                            for t in list(tests) + list(interaction_tests)) and
            (tests or interaction_tests) else "")
-        + "".join(" " + x for x in form_sentences(cfg, form_status)),
+        + "".join(" " + x for x in form_sentences(cfg, form_status, form_changes)),
         "",
         *([f"**Limitations.** {' '.join(cfg['unblinding']['methods_notes'])}", ""]
           if cfg["unblinding"].get("methods_notes") else []),

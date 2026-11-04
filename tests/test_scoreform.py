@@ -291,3 +291,55 @@ def test_checking_the_form_unchanged_records_it_once(fresh_project):
     # checking again adds nothing
     E.save(fresh_project, dict(body_with_form(fresh_project, m), form_checked=True))
     assert (fresh_project / "log.md").read_text(encoding="utf-8").count("score form checked") == 1
+
+
+# ------------------------------------------------------------- changing a locked form anyway (1.5.1)
+
+def save_after_scoring(project, body, monkeypatch):
+    """Save with log.md entries stamped after the test scores (saved 2099-01-01 12:00)."""
+    from wormscore import pipeline
+    monkeypatch.setattr(pipeline, "now", lambda: "2100-01-01 00:00:00")
+    return E.save(project, body)
+
+
+def test_a_locked_form_changes_only_with_a_reason_and_is_logged(fresh_project, monkeypatch):
+    from wormscore.home import project_status
+    score_all(fresh_project)
+    m = E.current(fresh_project)["form"]["model"]
+    assert E.current(fresh_project)["form"]["can_unlock"] is True
+    changed = dict(m, neurons=["Left", "Right"])
+    with pytest.raises(ValueError, match="locked"):
+        E.save(fresh_project, body_with_form(fresh_project, changed))
+    r = save_after_scoring(fresh_project, dict(body_with_form(fresh_project, changed), unlock_reason="  neuron names were wrong  "), monkeypatch)
+    assert r["after_lock"] and r["form_changed"]
+    log = (fresh_project / "log.md").read_text(encoding="utf-8")
+    assert "score form changed after scoring began" in log and "Reason given: neuron names were wrong" in log
+    assert "runs no planned test" in log
+    st = project_status(fresh_project)["form"]
+    assert st["locked"] and st["changed_after_lock"] is True
+    out = unblind(fresh_project, finished=True, log=quiet)
+    summary = (out / "summary.txt").read_text(encoding="utf-8")
+    assert "changed after scoring began" in summary
+    assert "beyond wording. Reason: neuron names were wrong" in summary          # disclosed with its reason
+    assert "Reason recorded: neuron names were wrong" in (out / "methods_text.md").read_text(encoding="utf-8")
+
+
+def test_a_wording_change_after_the_lock_keeps_the_tests(fresh_project, monkeypatch):
+    from wormscore.home import project_status
+    score_all(fresh_project)
+    m = E.current(fresh_project)["form"]["model"]
+    reworded = dict(m, rules=["Reworded rule."]) if "rules" in m else None
+    if reworded is None:
+        pytest.skip("the builder model has no rules text")
+    r = save_after_scoring(fresh_project, dict(body_with_form(fresh_project, reworded), unlock_reason="typo"), monkeypatch)
+    assert r["after_lock"]
+    assert "Only wording changed" in (fresh_project / "log.md").read_text(encoding="utf-8")
+    assert project_status(fresh_project)["form"]["changed_after_lock"] is False
+
+
+def test_no_unlock_while_a_second_scorer_package_exists(fresh_project):
+    (fresh_project / "scorers" / "Sam").mkdir(parents=True)
+    m = E.current(fresh_project)["form"]["model"]
+    assert E.current(fresh_project)["form"]["can_unlock"] is False
+    with pytest.raises(ValueError, match="package"):
+        E.save(fresh_project, dict(body_with_form(fresh_project, dict(m, neurons=["L", "R"])), unlock_reason="x"))

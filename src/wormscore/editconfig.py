@@ -139,9 +139,20 @@ def _origin(body, i, n_old):
     return frm if isinstance(frm, int) and not isinstance(frm, bool) and 0 <= frm < n_old else None
 
 
-def form_change(project, old_raw, raw, form):
+MAX_REASON = 500
+
+
+def unlock_reason(body):
+    """The reason typed when a locked form is changed anyway, or "" if none was given."""
+    r = body.get("unlock_reason")
+    return " ".join(r.split())[:MAX_REASON] if isinstance(r, str) else ""
+
+
+def form_change(project, old_raw, raw, form, reason=""):
     """raw with the score form from the builder applied, or raw unchanged if the form was not
-    changed. Refused once the form is locked, or if the builder cannot show this form."""
+    changed. Refused if the builder cannot show this form, and once the form is locked unless a
+    reason is given for changing it anyway (never while a second-scorer package exists: its
+    scores must come back with the form it was made with)."""
     from . import scoreform as S
     if form is None:
         return raw, False
@@ -154,7 +165,7 @@ def form_change(project, old_raw, raw, form):
     if same:
         return raw, False
     why = S.locked(project)
-    if why:
+    if why and (not reason or S.packages_exist(project)):
         raise ValueError(f"{why} The form was not changed; only the other settings can be saved.")
     if S.unsupported(old_cfg):
         raise ValueError("This form uses settings the builder cannot show. Change it in config.json.")
@@ -167,7 +178,9 @@ def save(project, body):
     project = Path(project)
     old_raw = _raw(project)
     raw = merged(project, body)
-    raw, form_changed = form_change(project, old_raw, raw, body.get("form"))
+    was_locked = bool(S.locked(project))
+    reason = unlock_reason(body) if was_locked else ""
+    raw, form_changed = form_change(project, old_raw, raw, body.get("form"), reason)
     try:
         cfg = S._cfg_from_raw(raw)
         C.check(cfg)
@@ -179,14 +192,25 @@ def save(project, body):
                and not S.locked(project) and not S.form_recorded(project, cfg))
     if raw != old_raw:
         write(project, raw)
-    if form_changed:
+    if form_changed and was_locked:
+        same = S.form_record(cfg) == S.form_record(S._cfg_from_raw(old_raw))
+        append_log(project, S.CHANGE_TITLE,
+                   [f"Reason given: {reason}",
+                    "Only wording changed (question text or rules), so the planned tests still run." if same else
+                    "The answers, neurons, required or skipped questions, or what counts as a defect changed. "
+                    "Unblinding writes only descriptive tables and runs no planned test while the form differs "
+                    "from the one recorded before the first score; changing it back runs them again.",
+                    # not the "set before scoring" prefix: unblinding must keep checking the earlier form
+                    "Score form after this change: " + S.record_text(cfg)])
+    elif form_changed:
         append_log(project, "score form saved in Project settings",
                    ["Saved before the first score; the last form recorded before the first score is the one "
                     "unblinding checks."] + S.form_log_lines(cfg))
     elif checked:
         append_log(project, "score form checked in Project settings",
                    ["Checked before the first score and kept as it was."] + S.form_log_lines(cfg))
-    return {"ok": True, "changed": raw != old_raw, "form_changed": form_changed or checked}
+    return {"ok": True, "changed": raw != old_raw, "form_changed": form_changed or checked,
+            "after_lock": bool(form_changed and was_locked)}
 
 
 def write(project, raw):

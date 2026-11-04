@@ -380,6 +380,12 @@ def unblind(project, finished=False, anyway=False, log=print):
     elif fstatus == "changed":
         lines.append("")
         lines.append("WARNING: the score form changed after scoring began, so no test was run.")
+    form_changes = scoreform.changes_after_lock(project)
+    if form_changes:
+        lines.append("")
+        lines.append("Score form changes made in the app after scoring began (reasons as typed; see log.md):")
+        lines += [f"  {when}: {'wording only' if wording else 'beyond wording'}. Reason: {why or '(none given)'}"
+                  for when, why, wording in form_changes]
     if primary:
         lines.append("")
         lines.append(f"Primary outcome (named before scoring): {primary}. Every other test is secondary "
@@ -416,7 +422,8 @@ def unblind(project, finished=False, anyway=False, log=print):
         outcome_tests=outcome_tests, interaction_tests=itests, rank_tests=rank_tests,
         added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key_orig) if d).items()),
         key_rows=key_orig, excluded_rows=excluded, reliability=rel, n_repeats=len(pairs), dim_rows=dims,
-        dim_skipped=dim_skipped, second_scorers=second, between=between, form_status=fstatus),
+        dim_skipped=dim_skipped, second_scorers=second, between=between, form_status=fstatus,
+        form_changes=form_changes),
         encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [

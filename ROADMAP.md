@@ -31,6 +31,10 @@ each is off by default, so a project that does not turn it on works exactly as i
 
 ## Recently shipped
 
+- 1.6.0: a locked score form can be changed on purpose: **change it anyway...** asks for a reason and
+  writes the change and the reason to the log, and unblinding lists each change with its reason in the
+  summary and the Methods draft. Wording fixes keep the planned tests; other changes stop them, as a hand
+  edit always did. Project settings asks before closing with unsaved changes.
 - 1.5.0: **Score form** is its own step on the home screen (Scan data, Score form, Build blind set,
   Score, Unblind). The card says what the scorer answers and whether the form is recorded in the log
   or locked; checking the form and keeping it as it is also records it. Fixes an occasional "cannot

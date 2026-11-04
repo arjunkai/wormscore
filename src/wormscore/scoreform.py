@@ -94,14 +94,45 @@ def form_recorded(project, cfg):
         return False
 
 
+CHANGE_TITLE = "score form changed after scoring began"
+
+
+def changes_after_lock(project):
+    """Every change made with "change it anyway...", oldest first: (time, reason, wording_only).
+    Unblinding reports them, so a deviation from the form recorded before scoring is disclosed with
+    its reason (Willroth & Atherton, 2024, on reporting deviations from a pre-registered plan)."""
+    log_path = Path(project) / "log.md"
+    if not log_path.exists():
+        return []
+    out, cur = [], None
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            cur = [line[3:19], "", False] if line.endswith(CHANGE_TITLE) else None
+            if cur:
+                out.append(cur)
+        elif cur and line.startswith("- Reason given: "):
+            cur[1] = line[len("- Reason given: "):]
+        elif cur and line.startswith("- Only wording changed"):
+            cur[2] = True
+    return [tuple(c) for c in out]
+
+
 def form_summary(project, cfg):
     """What the Score form step card shows: how many questions the scorer answers, and whether
     the form is recorded in log.md and locked."""
     sc = cfg["scoring"]
+    why = locked(project)
+    changed = False
+    if why:     # changed after the first score: unblinding runs no planned test (form_status)
+        from .pipeline import read_csv
+        hist = Path(project) / "scoring" / "score_history.csv"
+        changed = form_status(project, cfg, read_csv(hist) if hist.is_file() else []) == "changed"
     return {"calls": len(sc["calls"]),
             "neuron_questions": len(sc["neuron_questions"]),
             "animal_questions": len(sc.get("animal_questions") or []),
-            "recorded": form_recorded(project, cfg), "locked": locked(project)}
+            "recorded": form_recorded(project, cfg), "locked": why, "changed_after_lock": changed,
+            # a second scorer's package must come back with the form it was made with
+            "can_unlock": bool(why) and not packages_exist(project)}
 
 
 def packages_exist(project):
@@ -382,7 +413,9 @@ def current(project):
     """What the Scoring form section shows."""
     cfg = _cfg_from_raw(_raw(project))
     why = unsupported(cfg)
-    return {"model": to_model_cfg(cfg), "locked": locked(project), "readonly": why,
+    why_locked = locked(project)
+    return {"model": to_model_cfg(cfg), "locked": why_locked, "readonly": why,
+            "can_unlock": bool(why_locked) and not packages_exist(project),
             "presets": [{"id": k, **v} for k, v in PRESETS.items()],
             "warn_questions": WARN_QUESTIONS, "max_questions": MAX_QUESTIONS, "max_levels": MAX_LEVELS}
 

@@ -256,6 +256,9 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .chip.done { background: var(--accent-soft); color: var(--accent); }
 .chip.next { background: var(--accent-soft); color: var(--accent); }
 .chip.running { background: var(--run-soft); color: var(--run); }
+.chip.changed { background: var(--warn-soft); color: var(--text); }   /* --warn text is 4.4:1 in light */
+.step.changed { border-color: var(--warn); }
+.step.changed .num { border-color: var(--warn); color: var(--warn); }
 .chip.wait { background: var(--raised); color: var(--muted); }
 .s-desc { color: var(--muted); font-size: var(--text-sm); margin-top: 2px; }
 .s-fact { margin-top: 8px; font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
@@ -469,6 +472,9 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
 .sf-more[open] summary { margin-bottom: var(--space-xs); }
 .sf-lock { display: flex; gap: var(--space-sm); align-items: baseline; margin-bottom: var(--space-md); font-size: var(--text-sm); color: var(--muted); text-wrap: pretty; }
 .sf-lock .chip { flex: none; }
+.sf > div > .banner { margin-bottom: var(--space-md); }
+.sf-unlock p { margin: 0 0 var(--space-sm); text-wrap: pretty; }
+.sf-unlock textarea { width: 100%; resize: vertical; font: inherit; }
 .sf-config { margin-top: 14px; }
 .linkish { background: none; border: 0; padding: 0; color: var(--run); cursor: pointer; text-decoration: underline; font-size: inherit; }
 /* the preview: the scoring page's form at its real width, beside the editor while it scrolls */

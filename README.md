@@ -50,9 +50,11 @@ measured there, so a dim or missing reporter cell is still found. See
 ## Install
 
 **Windows, no Python needed:** click **Download for Windows** above (or get `wormscore-windows.zip`
-from the [Releases page](https://github.com/arjunkai/wormscore/releases)), unzip it, and double-click `wormscore.exe`. It opens in its own window (drawn by WebView2, the web engine built into Windows 10 and 11, so it behaves like any other app: one taskbar button, and it closes when you close its window). Your projects are on the left and the
-five steps (Scan data, Score form, Build blind set, Score, Unblind) as a guided list with progress and time left.
-The older launcher window is still there for one version: `wormscore.exe --classic`.
+from the [Releases page](https://github.com/arjunkai/wormscore/releases)), unzip it, and double-click
+`wormscore.exe`. It opens in its own window (drawn by WebView2, the web engine built into Windows 10 and
+11), so it behaves like any other app: one taskbar button, and it closes when you close its window. Your
+projects are on the left, and the five steps (Scan data, Score form, Build blind set, Score, Unblind) are
+a guided list on the right. The older launcher window is still available: `wormscore.exe --classic`.
 
 **Mac (Apple silicon, M1 and newer), no Python needed:** click **Download for macOS** above, unzip,
 and drag `wormscore.app` into Applications. The app is not signed with a paid Apple developer
@@ -78,8 +80,8 @@ stays downloadable from the [Releases page](https://github.com/arjunkai/wormscor
 analysis can be rerun on the version it used. For a study, keep one version from building the blind
 set to unblinding (the app reminds you), and cite that version.
 
-From 0.8.0 the downloaded app (Windows and Mac) checks for a new version when it starts. If there is
-one, a banner shows what is new with **Update and restart**, **Not now** and **Skip this version**.
+The downloaded app (Windows and Mac) checks for a new version when it starts. If there is one, a
+banner shows what is new with **Update and restart**, **Not now** and **Skip this version**.
 Update downloads the zip for your computer, checks it against the SHA-256 checksum GitHub lists for
 it, runs the new copy once to confirm its version, and swaps it in after the app closes. The previous
 version is kept: **Settings > Go back to ...** swaps it back. Projects, codes and scores are never
@@ -105,7 +107,7 @@ wormscore app my_demo
 `demo` writes 20 simulated worm heads (controls with two normal cells; mutants with cells that are
 normal, dim or missing at random) and a `demo_truth.csv` you can check your calls against later.
 `wormscore demo my_demo --identity` adds an mCherry identity channel that marks every cell.
-In the app window, use **Try a demo...**, then the steps in order: **Scan data > Build blind set > Score**.
+In the app window, use **Try a demo...**, then the steps in order: **Scan data > Score form > Build blind set > Score > Unblind**.
 
 **Real worms:** `wormscore demo my_demo --real` (or **Real worm images** in the app's demo dialog) downloads four
 L1 heads with an endogenous GFP reporter, about 150 MB, from
@@ -117,96 +119,126 @@ The images are not part of this repository.
 
 ## Using it on your own images
 
-1. **Copy your data** to a local folder:
-   `wormscore copy D:\from\drive C:\data\my_copy` copies every file, checks each one by SHA-256 and
-   makes the copies read-only.
-2. **Make a project:** in the app, **New project...** opens **Project settings**: choose each folder of
-   images and write the genotype rules (a pattern such as `*ctrl*` and the genotype it means). The page
-   counts how the rules sort the scanned images, so a typo shows before you build anything. Images can be
-   left out by pattern there too. Images do not need converting: wormscore reads the microscope files
-   as they are. The **Scoring form** section of the same page sets what the scorer answers for each
-   image, with a live preview of the score panel:
-   - start from **Fate reporter** (each neuron normal / dim / missing, the default), **Axon guidance**
-     (yes/no questions about the axon), **Neurodegeneration** (each dendrite scored 0 to 6),
-     **Dendrite length** (full / partial / short) or **Blank**;
-   - name the neurons and the calls, and tick which calls count as a defect;
-   - add questions, each asked **for each neuron** or **once per animal**, with an optional
-     "can't tell" answer (never counted as an answer: that neuron or animal is left out), whether it is
-     required, and calls for which it is skipped (for example "not seen"). Four answer types:
-     - **Yes / No** and **Choice**: tick the answers that count as a defect. Questions with the same
-       outcome name are combined (the animal has that defect if any answer is a defect), and each
-       outcome gets Fisher's exact tests at unblinding;
-     - **Scale**: levels in order, best first and worst last (for example 0 to 6, or full / partial /
-       short);
-     - **Count**: whole numbers from a lowest to a highest, the last optionally "that many or more"
-       (for example 0 to 5+).
+The app's home screen walks you through five steps in order, with progress and time left. Every step
+also has a command (in brackets) if you prefer the command line or want to script it.
 
-     A scale or count with an outcome name is tested on its own. Each animal gets one value: for a
-     question asked for each neuron, the **worst neuron** (default) or the mean of the assessed neurons
-     for a scale, and the total (default) or the mean per neuron for a count. Genotypes are compared
-     with the **Mann-Whitney test** on those values, with an exact permutation p-value (correct with
-     the many ties short scales have). An optional **cutoff** (for example "4 or worse") also gives
-     the share of animals at or past it, tested with Fisher's exact test;
-   - name one **primary outcome**; the results and Methods then call every other test secondary.
+**Before you start**
 
-   On the home screen this is step 2, **Score form**: **Check score form...** opens this section, and
-   pressing Save records the form in `log.md` even if you keep the default, so the step shows Done.
-   Every save of the form is written to `log.md`, and the form **locks at the first score** (or once a
-   second-scorer package exists), so the questions cannot change while you score. If `config.json` is
-   edited by hand afterwards, unblinding runs no test and says why. The marker and statistics settings are still
-   in `config.json`; see
-   [`examples/config_example.json`](https://github.com/arjunkai/wormscore/blob/main/examples/config_example.json).
-   From the command line: `wormscore init C:\projects\my_project`, then edit `config.json`. Once
-   scoring has started, the folders and rules that built the blind set are locked; you can still add a
-   folder for **Add new images**.
-3. **Scan:** `wormscore inventory my_project` lists every file (`outputs/manifest.csv`: raw image,
-   duplicate, derived projection, reference, hidden system file) and every image with its metadata
-   and channel identity (`outputs/inventory.csv`). Check the flags column.
-4. **Build the blind set:** `wormscore prepare my_project` applies the inclusion rules, assigns codes,
-   finds and measures suggested cells, and writes the sealed key. Excluded images and the reasons are
-   in `outputs/excluded.csv`. To leave out images by name (for example a plate with the wrong
-   reporter), add `"exclude": [{"match": "*pattern*", "reason": "why"}]` to that source.
-   Images taken after scoring started can be added with `wormscore prepare my_project --add-new-images`
-   (scan first): existing codes stay the same and new images get codes after the last one.
-5. **Score:** `wormscore app my_project`. For each image: answer any yellow questions, score each
-   neuron, save, then outline each cell body (or accept a suggestion) and save regions.
-   Answers you have not saved yet are kept as a draft (`scoring_drafts/`, never counted as scores),
-   so a crash or restart loses nothing: open the image again and click Save. If the connection to
-   wormscore is lost, the window shows "Reconnecting..." and reconnects by itself; if wormscore is not
-   running it says so, with a Start wormscore button (Windows app).
-6. **Unblind after scoring:** `wormscore unblind my_project --i-have-finished-scoring`. Writes
-   `outputs/unblinded/merged.csv` (scores + numbers + key, one row per image), a summary, and results
-   tables: `per_neuron.csv` (one row per animal and neuron, for plotting), `penetrance.csv` (animals with
-   0, 1, 2 ... affected neurons) and `fisher_tests.csv` (Fisher's exact within each microscope,
-   Bonferroni-corrected). Set `unblinding.reference_genotype` in `config.json` to test against a control.
-   Optional, off unless set in `unblinding`: `question_outcomes` turns the per-neuron questions into
-   the same penetrance and Fisher tables (for example "process defect" when a dendrite question is
-   answered "no"), `rank_outcomes` (set by the builder for scale and count questions) writes
-   `rank_outcomes.csv` (per genotype: animals, animals left out and why, median and quartiles, % at
-   each level or the mean, the share at the cutoff) and `rank_outcome_tests.csv` (Mann-Whitney with
-   the effect size: the chance a genotype_a animal scores worse than a genotype_b animal, and Cliff's
-   delta), and `interaction` tests a double mutant against the value two single mutants predict
-   (Product model by default) with a binomial test. Also optional: a secondary definition of "affected"
-   (descriptive, within one microscope), planned comparisons, one-sided tests, labelled sources,
-   comparisons across microscopes for chosen measures (with warnings), and a measured background cutoff
-   (`dim_cutoff_sd`) for checking calls against numbers afterwards. Set `reliability.repeat_fraction`
-   (for example 0.1) before building the blind set to hide repeat images; unblinding then reports how
-   consistently you scored them (`reliability.csv`). All of these are recorded as an
-   analysis plan before scoring and locked once scoring starts. See [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md#8-unblinding).
-   `methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
-   `blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
-7. **Second scorer (optional):** after building the blind set, use **Make a package...** in the
-   **Second scorer** card on the home page (or `wormscore export-scorer my_project D:\for_sam --scorer "Sam K" --percent 30`).
-   Choose a name and a share of each genotype's images (1 to 100%, at least one image per genotype,
-   picked at random). The package is a folder with those coded images in a new random order and the
-   scoring form. It has no key, no file names, no analysis plan and no checksum list. Zip it and send
-   it. The second scorer opens the folder in wormscore, which then shows only **Score**, and sends the
-   folder back when finished. **Import scores...** (or `wormscore import-scorer my_project D:\from_sam`)
-   checks that it is the package made from this project with the same images and scoring form, and
-   stores the answers in `scorers/`. Your own scores are never changed. At unblinding,
-   `between_scorers.csv` gives percent agreement and Cohen's kappa for each answer,
-   `scorer_disagreements.csv` lists each image where the answers differ (codes only), and the Methods
-   draft gets a sentence about it. All results tables still use only your answers.
+- **Copy your data** to a local folder (recommended): `wormscore copy D:\from\drive C:\data\my_copy`
+  copies every file, checks each one by SHA-256 and makes the copies read-only.
+- **Make a project:** **New project...** opens **Project settings**. Choose each folder of images and
+  write the genotype rules (a pattern such as `*ctrl*` and the genotype it means). The page counts how
+  the rules sort the scanned images, so a typo shows before you build anything. Images can be left out
+  by pattern there too. Images do not need converting: wormscore reads the microscope files as they are.
+  (`wormscore init C:\projects\my_project`, then edit `config.json`.) The marker and statistics
+  settings are in `config.json`; see
+  [`examples/config_example.json`](https://github.com/arjunkai/wormscore/blob/main/examples/config_example.json).
+
+**The five steps**
+
+1. **Scan data** (`wormscore inventory my_project`): lists every file (`outputs/manifest.csv`: raw
+   image, duplicate, derived projection, reference, hidden system file) and every image with its
+   metadata and channel identity (`outputs/inventory.csv`). Check the flags column.
+2. **Score form:** choose what the scorer answers for each image (see [The score form](#the-score-form)
+   below). **Check score form...** opens it; pressing Save records it in `log.md`, even if you keep the
+   default. It locks at the first score.
+3. **Build blind set** (`wormscore prepare my_project`): applies the inclusion rules, gives every image a
+   random code, finds and measures suggested cells, and writes the sealed key. Excluded images and the
+   reasons are in `outputs/excluded.csv`. To leave out images by name (for example a plate with the
+   wrong reporter), add `"exclude": [{"match": "*pattern*", "reason": "why"}]` to that source. Images
+   taken after scoring started can be added with **Add new images** (`wormscore prepare my_project
+   --add-new-images`; scan first): existing codes stay the same and new images get codes after the last
+   one. Once scoring has started, the folders and rules that built the blind set are locked, but you can
+   still add a folder for new images.
+4. **Score** (`wormscore app my_project`): for each image, answer any yellow questions, score each
+   neuron, save, then outline each cell body (or accept a suggestion) and save regions. Answers you have
+   not saved yet are kept as a draft (`scoring_drafts/`, never counted as scores), so a crash or restart
+   loses nothing: open the image again and click Save. If the connection to wormscore is lost, the
+   window shows "Reconnecting..." and reconnects by itself; if wormscore is not running it says so, with
+   a Start wormscore button (Windows app).
+5. **Unblind** (`wormscore unblind my_project --i-have-finished-scoring`), only when scoring is
+   finished: reveals the genotypes and writes the results tables and a draft Methods paragraph (see
+   [Results](#results) below).
+
+**Optional: a second scorer.** After building the blind set, use **Make a package...** in the
+**Second scorer** card on the home page (`wormscore export-scorer my_project D:\for_sam --scorer "Sam K"
+--percent 30`). Choose a name and a share of each genotype's images (1 to 100%, at least one image per
+genotype, picked at random). The package is a folder with those coded images in a new random order and
+the score form. It has no key, no file names, no analysis plan and no checksum list. Zip it and send it.
+The second scorer opens the folder in wormscore, which then shows only **Score**, and sends the folder
+back when finished. **Import scores...** (`wormscore import-scorer my_project D:\from_sam`) checks that
+it is the package made from this project with the same images and score form, and stores the answers in
+`scorers/`. Your own scores are never changed. At unblinding, `between_scorers.csv` gives percent
+agreement and Cohen's kappa for each answer, `scorer_disagreements.csv` lists each image where the
+answers differ (codes only), and the Methods draft gets a sentence about it. All results tables still
+use only your answers.
+
+## The score form
+
+The **Scoring form** section of Project settings sets what the scorer answers for each image, with a
+live preview of the score panel.
+
+- **Start from a preset:** **Fate reporter** (each neuron normal / dim / missing, the default),
+  **Axon guidance** (yes/no questions about the axon), **Neurodegeneration** (each dendrite scored 0 to
+  6), **Dendrite length** (full / partial / short) or **Blank**.
+- **Neurons and calls:** name the neurons and the calls, and tick which calls count as a defect.
+- **Extra questions,** each asked **for each neuron** or **once per animal**, with an optional "can't
+  tell" answer (never counted as an answer: that neuron or animal is left out), whether it is required,
+  and calls for which it is skipped (for example "not seen"). Four answer types:
+  - **Yes / No** and **Choice:** tick the answers that count as a defect. Questions with the same
+    outcome name are combined (the animal has that defect if any answer is a defect), and each outcome
+    gets Fisher's exact tests at unblinding.
+  - **Scale:** levels in order, best first and worst last (for example 0 to 6, or full / partial /
+    short).
+  - **Count:** whole numbers from a lowest to a highest, the last optionally "that many or more" (for
+    example 0 to 5+).
+- **How scales and counts are tested:** a scale or count with an outcome name is tested on its own.
+  Each animal gets one value: for a question asked for each neuron, the **worst neuron** (default) or
+  the mean of the assessed neurons for a scale, and the total (default) or the mean per neuron for a
+  count. Genotypes are compared with the **Mann-Whitney test** on those values, with an exact
+  permutation p-value (correct with the many ties short scales have). An optional **cutoff** (for
+  example "4 or worse") also gives the share of animals at or past it, tested with Fisher's exact test.
+- **Primary outcome:** name one; the results and Methods then call every other test secondary.
+
+**The form locks at the first score** (or once a second-scorer package exists), so the questions cannot
+change while you score. Every save of the form is written to `log.md`. If you really must change it
+afterwards, **change it anyway...** on the locked form asks for a reason and writes the change and the
+reason to `log.md`; unblinding lists each change with its reason in the summary and the Methods draft.
+Fixing wording (question text, rules) keeps the planned tests. Any other change, in the app or by
+editing `config.json` by hand, means unblinding runs no planned test and says why (descriptive tables
+are still written, and changing the form back runs the tests again). It is not offered once a
+second-scorer package exists. Leaving Project settings with unsaved changes asks whether to save them.
+
+## Results
+
+Unblinding writes `outputs/unblinded/merged.csv` (scores + numbers + key, one row per image), a
+summary, and results tables: `per_neuron.csv` (one row per animal and neuron, for plotting),
+`penetrance.csv` (animals with 0, 1, 2 ... affected neurons) and `fisher_tests.csv` (Fisher's exact
+within each microscope, Bonferroni-corrected). Set `unblinding.reference_genotype` in `config.json` to
+test against a control.
+
+`methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
+`blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
+
+Optional, off unless set in `unblinding`:
+
+- `question_outcomes` turns the per-neuron questions into the same penetrance and Fisher tables (for
+  example "process defect" when a dendrite question is answered "no").
+- `rank_outcomes` (set by the builder for scale and count questions) writes `rank_outcomes.csv` (per
+  genotype: animals, animals left out and why, median and quartiles, % at each level or the mean, the
+  share at the cutoff) and `rank_outcome_tests.csv` (Mann-Whitney with the effect size: the chance a
+  genotype_a animal scores worse than a genotype_b animal, and Cliff's delta).
+- `interaction` tests a double mutant against the value two single mutants predict (Product model by
+  default) with a binomial test.
+- Also: a secondary definition of "affected" (descriptive, within one microscope), planned comparisons,
+  one-sided tests, labelled sources, comparisons across microscopes for chosen measures (with
+  warnings), and a measured background cutoff (`dim_cutoff_sd`) for checking calls against numbers
+  afterwards.
+- `reliability.repeat_fraction` (for example 0.1), set before building the blind set, hides repeat
+  images; unblinding then reports how consistently you scored them (`reliability.csv`).
+
+All of these are recorded as an analysis plan before scoring and locked once scoring starts. See
+[docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md#8-unblinding).
 
 ## Project folder
 
