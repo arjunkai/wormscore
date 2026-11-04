@@ -211,7 +211,8 @@ optionally "N+" for N or more; `"type": "count"`). A scale or count may have a "
 and a question for each neuron can be skipped (hidden, saved empty) when the neuron's call is one the
 question's outcome leaves out, such as "not seen". Answers are stored as their text.
 
-The form is recorded in `log.md` ("Score form set before scoring") when it is saved in the app, when the
+The form is recorded in `log.md` ("Score form set before scoring") when it is saved in the app (or checked
+and kept as it is, from the home screen's Score form step, since 1.5.0), when the
 blind set is built and when the first score is saved. From the first score, or once a second-scorer
 package exists, the app does not let it change. The record covers what decides the stored answers and
 their analysis: neurons, calls, defect calls, sides, count answers, each question's id, answers, whether it

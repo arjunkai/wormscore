@@ -81,13 +81,22 @@ def check_writable(*paths):
                 raise FileBusy(f"{p.name} is open in another program (Excel?). Close it, then save again.")
 
 
+HEAVY_LOCK = threading.RLock()
+
+
 def heavy_imports():
     """numpy, Pillow and the measurement code (which loads scipy) are needed only to measure
     regions. Loading them here, not when this file is imported, keeps them out of the app
-    window's start (home.py imports this file); the window loads them in the background."""
-    import numpy
-    from PIL import Image, ImageDraw
-    from . import measure
+    window's start (home.py imports this file); the window loads them in the background.
+
+    Only one thread loads them at a time. The background preload and the first project status
+    (scorers -> pipeline -> measure) used to load them at the same moment, and the import then
+    sometimes failed with "cannot import name 'measure' from 'wormscore'"."""
+    with HEAVY_LOCK:
+        import numpy
+        from PIL import Image, ImageDraw
+        from . import measure
+        from . import pipeline, scorers  # noqa: F401  (loaded here so no other thread loads them first)
     return numpy, Image, ImageDraw, measure
 
 

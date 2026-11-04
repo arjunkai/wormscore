@@ -1,4 +1,4 @@
-// Home screen: projects, the four steps, progress and the safety questions.
+// Home screen: projects, the five steps, progress and the safety questions.
 // Every action calls the same code as the command line (see home.py).
 "use strict";
 
@@ -223,6 +223,17 @@ function stepCard(n, state, title, desc, fact, actions, extra) {
     h("div", { class: "s-act" }, actions));
 }
 
+// The Score form card: what the scorer answers, then whether the form is recorded or locked.
+function formFact(f) {
+  const parts = [`a call with ${f.calls} choices`];
+  if (f.neuron_questions) parts.push(plural(f.neuron_questions, "question"));
+  const ask = `Each neuron: ${parts.join(" and ")}` + (f.animal_questions ? `. Each animal: ${plural(f.animal_questions, "question")}` : "") + ".";
+  const status = f.locked ? " Locked at the first score."
+    : f.recorded ? " Recorded in log.md; you can change it until the first score."
+    : " Open it, check the questions, and press Save to record it.";
+  return ask + status;
+}
+
 function renderMain(d) {
   const main = $("#main");
   const p = d.project;
@@ -240,8 +251,12 @@ function renderMain(d) {
   const needFolders = p.has_config && !scanned && p.folders_found === 0;
 
   const building = stepRunning("build") || stepRunning("rebuild") || stepRunning("add new");
+  const f = p.form;
+  // checked = recorded in log.md (saved or checked on the form page, or at Build), or locked
+  const formDone = !!f && (f.recorded || !!f.locked);
   const s1 = stepRunning("scan") ? "running" : scanned ? "done" : "next";
-  const s2 = building ? "running" : built ? "done" : scanned ? "next" : "wait";
+  const sF = formDone ? "done" : scanned ? "next" : "wait";
+  const s2 = building ? "running" : built ? "done" : scanned && formDone ? "next" : "wait";
   const s3 = building ? "wait" : built ? (allScored ? "done" : "next") : "wait";
   const s4 = stepRunning("unblind") ? "running" : p.unblinded ? "done" : allScored ? "next" : "wait";
 
@@ -252,20 +267,20 @@ function renderMain(d) {
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
         scanned ? "Scan again" : "Scan data")]),
-    stepCard(2, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan and score form in log.md.",
+    stepCard(2, sF, "Score form", "Choose what the scorer answers for each image. The form is recorded in log.md and locks at the first score.",
+      f ? formFact(f) : null,
+      [h("button", { class: sF === "next" ? "primary" : "btn", "data-k": "form", disabled: busy || !ok, onclick: () => openProjectSettings("form") },
+        f?.locked ? "View score form" : formDone ? "Edit score form..." : "Check score form...")]),
+    stepCard(3, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan and score form in log.md.",
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
       [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
-        !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")],
-      // what the scorer will answer can change until the first score, so it is offered here
-      !p.scoring_started && !building && ok ? h("div", { class: "s-fact" }, "Questions the scorer answers: ",
-        h("button", { class: "linkish", "data-k": "form", disabled: busy, onclick: () => openProjectSettings("form") }, "check the score form"),
-        ". It locks at the first score.") : null),
-    stepCard(3, s3, "Score", "Score each coded image in the scoring window. File names and genotypes stay hidden.",
+        !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")]),
+    stepCard(4, s3, "Score", "Score each coded image in the scoring window. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
       [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },
         p.scored ? "Continue scoring" : "Start scoring")],
       built && p.coded && !building ? h("div", { class: "mini" }, h("div", { style: `width:${Math.min(100, 100 * p.scored / p.coded)}%` })) : null),
-    stepCard(4, s4, "Unblind", "Reveal which genotype each code was, then write the results tables and a draft Methods text. Do this only when scoring is finished.",
+    stepCard(5, s4, "Unblind", "Reveal which genotype each code was, then write the results tables and a draft Methods text. Do this only when scoring is finished.",
       p.unblinded ? "Results are in the outputs\\unblinded folder." + ((p.second_scorers || []).some(s => s.imported)
         ? " Agreement with second scorers is in between_scorers.csv." : "") : null,
       [h("label", { class: "check" },
@@ -719,8 +734,9 @@ async function openProjectSettings(section) {
   if (!model.sources.length) model.sources.push(blankSource());
   const locked = cur.locked;
   const form = formSection(cur.form);
+  // form_checked: opened from the Score form step, so Save records the form even if unchanged
   const payload = () => ({ project_name: model.project_name, sources: model.sources,
-    ...(form.payload() ? { form: form.payload() } : {}) });
+    ...(form.payload() ? { form: form.payload(), form_checked: section === "form" } : {}) });
   const box = h("div", { class: "settings ps" });
   const err = h("div", { class: "m-err", role: "alert", hidden: true });
   let pvTimer = null, previews = [];

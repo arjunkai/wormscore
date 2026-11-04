@@ -141,8 +141,11 @@ def project_status(path):
         st.update(name=cfg["project_name"], min_scored=cfg["unblinding"]["min_scored_worms"], config_error=None)
         # how many image folders exist, so a new project is sent to Set image folders first
         st["folders_found"] = sum(1 for s in cfg["sources"] if isinstance(s.get("path"), str) and Path(s["path"]).is_dir())
+        from .scoreform import form_summary
+        st["form"] = form_summary(p, cfg)
     except (Exception, SystemExit) as exc:
-        st.update(name=p.name, min_scored=0, config_error=str(exc))
+        st.update(name=p.name, min_scored=0, config_error=str(exc), form=None)
+    heavy_imports()   # scorers loads numpy and scipy: never at the same time as the preload
     from .scorers import package_info, packages
     info = package_info(p)
     # A second scorer's package: only its own images and scores, so the page shows just Score.
@@ -813,6 +816,7 @@ class HomeApp:
         return time.time() - seen
 
     def post(self, route, body):
+        heavy_imports()   # most actions load pipeline (numpy, scipy); one thread at a time, instant once loaded
         if route == "select":
             p = str(body.get("path", ""))
             if not (Path(p) / "config.json").is_file():

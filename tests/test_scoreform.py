@@ -257,3 +257,37 @@ console.log(JSON.stringify([
   wsForm.missingRequired({{n1_call: "", n2_call: "dim"}}, sc)]));"""
     out = subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout
     assert json.loads(out) == [[1], [], [1, 2]]
+
+
+# ------------------------------------------------------------- the Score form step (1.5.0)
+
+def rename_neurons(project):
+    """A form change made in config.json by hand: not recorded in log.md."""
+    edit_config(project, lambda c: c.setdefault("scoring", {}).update(neurons=["Left", "Right"]))
+
+
+def test_build_records_the_form_and_a_hand_edit_is_not_recorded(fresh_project):
+    from wormscore.home import project_status
+    st = project_status(fresh_project)["form"]       # the demo project is built
+    assert st["recorded"] is True and st["calls"] == 3 and st["locked"] == ""
+    rename_neurons(fresh_project)
+    assert project_status(fresh_project)["form"]["recorded"] is False
+
+
+def test_checking_the_form_unchanged_records_it_once(fresh_project):
+    from wormscore.home import project_status
+    rename_neurons(fresh_project)
+    m = E.current(fresh_project)["form"]["model"]
+    # saved from another section (folders): the form was not looked at, so it is not "checked"
+    assert not E.save(fresh_project, body_with_form(fresh_project, m)).get("form_changed")
+    assert project_status(fresh_project)["form"]["recorded"] is False
+    # opened from the Score form step and saved unchanged: recorded, config.json untouched
+    before = (fresh_project / "config.json").read_bytes()
+    r = E.save(fresh_project, dict(body_with_form(fresh_project, m), form_checked=True))
+    assert r["form_changed"] and not r["changed"]
+    assert (fresh_project / "config.json").read_bytes() == before
+    assert "score form checked in Project settings" in (fresh_project / "log.md").read_text(encoding="utf-8")
+    assert project_status(fresh_project)["form"]["recorded"] is True
+    # checking again adds nothing
+    E.save(fresh_project, dict(body_with_form(fresh_project, m), form_checked=True))
+    assert (fresh_project / "log.md").read_text(encoding="utf-8").count("score form checked") == 1

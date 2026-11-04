@@ -70,6 +70,40 @@ def form_log_lines(cfg):
     return [FORM_LOG + record_text(cfg)]
 
 
+_recorded_cache = {}
+
+
+def form_recorded(project, cfg):
+    """True if the last form recorded in log.md (saved or checked in Project settings, at Build,
+    or at the first score) is this form. Cached on log.md's size and time, since the home page
+    asks every few seconds."""
+    from .unblind import recorded
+    log_path = Path(project) / "log.md"
+    try:
+        s = log_path.stat()
+        key = (str(log_path), s.st_size, s.st_mtime_ns)
+    except OSError:
+        return False
+    if key not in _recorded_cache:
+        _recorded_cache.clear()
+        _recorded_cache[key] = recorded(Path(project), "", FORM_LOG)
+    rec = _recorded_cache[key]
+    try:
+        return rec is not None and json.loads(rec) == json.loads(record_text(cfg))
+    except ValueError:
+        return False
+
+
+def form_summary(project, cfg):
+    """What the Score form step card shows: how many questions the scorer answers, and whether
+    the form is recorded in log.md and locked."""
+    sc = cfg["scoring"]
+    return {"calls": len(sc["calls"]),
+            "neuron_questions": len(sc["neuron_questions"]),
+            "animal_questions": len(sc.get("animal_questions") or []),
+            "recorded": form_recorded(project, cfg), "locked": locked(project)}
+
+
 def packages_exist(project):
     d = Path(project) / "scorers"
     return d.is_dir() and any(x.is_dir() for x in d.iterdir())

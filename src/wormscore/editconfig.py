@@ -173,14 +173,20 @@ def save(project, body):
         C.check(cfg)
     except SystemExit as exc:
         raise ValueError(f"config.json would not be valid: {exc}")
-    if raw == old_raw:
-        return {"ok": True, "changed": False}
-    write(project, raw)
+    # Opened from the Score form step and saved unchanged: the scorer checked the form and kept
+    # it, so it is recorded too and the step counts as done.
+    checked = (not form_changed and body.get("form_checked") is True and body.get("form") is not None
+               and not S.locked(project) and not S.form_recorded(project, cfg))
+    if raw != old_raw:
+        write(project, raw)
     if form_changed:
         append_log(project, "score form saved in Project settings",
                    ["Saved before the first score; the last form recorded before the first score is the one "
                     "unblinding checks."] + S.form_log_lines(cfg))
-    return {"ok": True, "changed": True, "form_changed": form_changed}
+    elif checked:
+        append_log(project, "score form checked in Project settings",
+                   ["Checked before the first score and kept as it was."] + S.form_log_lines(cfg))
+    return {"ok": True, "changed": raw != old_raw, "form_changed": form_changed or checked}
 
 
 def write(project, raw):

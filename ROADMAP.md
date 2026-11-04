@@ -31,6 +31,10 @@ each is off by default, so a project that does not turn it on works exactly as i
 
 ## Recently shipped
 
+- 1.5.0: **Score form** is its own step on the home screen (Scan data, Score form, Build blind set,
+  Score, Unblind). The card says what the scorer answers and whether the form is recorded in the log
+  or locked; checking the form and keeping it as it is also records it. Fixes an occasional "cannot
+  import name 'measure'" message a few seconds after the app opened. Results are unchanged.
 - 1.4.0: scale and count questions. The builder adds **Scale** (levels in order, best first) and
   **Count** answers, and any question can be asked for each neuron or once per animal. Each animal gets
   one value (worst neuron by default), compared between genotypes with a Mann-Whitney test with an

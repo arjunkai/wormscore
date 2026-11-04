@@ -51,7 +51,7 @@ measured there, so a dim or missing reporter cell is still found. See
 
 **Windows, no Python needed:** click **Download for Windows** above (or get `wormscore-windows.zip`
 from the [Releases page](https://github.com/arjunkai/wormscore/releases)), unzip it, and double-click `wormscore.exe`. It opens in its own window (drawn by WebView2, the web engine built into Windows 10 and 11, so it behaves like any other app: one taskbar button, and it closes when you close its window). Your projects are on the left and the
-four steps (Scan data, Build blind set, Score, Unblind) as a guided list with progress and time left.
+five steps (Scan data, Score form, Build blind set, Score, Unblind) as a guided list with progress and time left.
 The older launcher window is still there for one version: `wormscore.exe --classic`.
 
 **Mac (Apple silicon, M1 and newer), no Python needed:** click **Download for macOS** above, unzip,
@@ -149,6 +149,8 @@ The images are not part of this repository.
      the share of animals at or past it, tested with Fisher's exact test;
    - name one **primary outcome**; the results and Methods then call every other test secondary.
 
+   On the home screen this is step 2, **Score form**: **Check score form...** opens this section, and
+   pressing Save records the form in `log.md` even if you keep the default, so the step shows Done.
    Every save of the form is written to `log.md`, and the form **locks at the first score** (or once a
    second-scorer package exists), so the questions cannot change while you score. If `config.json` is
    edited by hand afterwards, unblinding runs no test and says why. The marker and statistics settings are still
