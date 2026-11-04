@@ -117,6 +117,28 @@ def changes_after_lock(project):
     return [tuple(c) for c in out]
 
 
+_changed_cache = {}
+
+
+def _changed_after_lock(project, cfg):
+    """form_status(...) == "changed", read again only when log.md, the score history or the form
+    changes (the home page asks every few seconds)."""
+    from .pipeline import read_csv
+    hist = Path(project) / "scoring" / "score_history.csv"
+
+    def stamp(f):
+        try:
+            st = f.stat()
+            return st.st_size, st.st_mtime_ns
+        except OSError:
+            return None
+    key = (str(project), stamp(Path(project) / "log.md"), stamp(hist), record_text(cfg))
+    if key not in _changed_cache:
+        _changed_cache.clear()
+        _changed_cache[key] = form_status(project, cfg, read_csv(hist) if hist.is_file() else []) == "changed"
+    return _changed_cache[key]
+
+
 def form_summary(project, cfg):
     """What the Score form step card shows: how many questions the scorer answers, and whether
     the form is recorded in log.md and locked."""
@@ -124,9 +146,7 @@ def form_summary(project, cfg):
     why = locked(project)
     changed = False
     if why:     # changed after the first score: unblinding runs no planned test (form_status)
-        from .pipeline import read_csv
-        hist = Path(project) / "scoring" / "score_history.csv"
-        changed = form_status(project, cfg, read_csv(hist) if hist.is_file() else []) == "changed"
+        changed = _changed_after_lock(project, cfg)
     return {"calls": len(sc["calls"]),
             "neuron_questions": len(sc["neuron_questions"]),
             "animal_questions": len(sc.get("animal_questions") or []),

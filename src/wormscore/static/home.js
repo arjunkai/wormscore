@@ -856,6 +856,7 @@ async function openProjectSettings(section) {
     clearTimeout(pvTimer);
     st.leaveGuard = null;
     st.settingsDirty = null;
+    setTimeout(reportDirty);
     st.settingsOpen = null;
     st.pageKey = "";
     if (what === "config") act("/api/open", { what: "config" });
@@ -1319,9 +1320,20 @@ document.addEventListener("keydown", e => {
 });
 
 $$("[data-act]").forEach(b => (b.onclick = () => sideAction(b.dataset.act)));
-// Closing or reloading the window with unsaved Project settings asks first, like any editor.
+// Closing the window with unsaved Project settings asks first, like any editor. In wormscore's own
+// window (WebView2) closing never asks the page, so the page tells wormscore whenever that changes and
+// the window asks (desktop.py); in a browser or Edge window the page asks itself.
+let reportedDirty = false;
+const reportDirty = () => {
+  const dirty = !!st.settingsDirty?.();
+  if (dirty === reportedDirty) return;
+  reportedDirty = dirty;
+  api("/api/dirty", { dirty }).catch(() => { reportedDirty = !dirty; });   // try again on the next change
+};
+// after the page's own handlers have updated the form
+["input", "change", "click", "keyup"].forEach(t => document.addEventListener(t, () => setTimeout(reportDirty), true));
 window.addEventListener("beforeunload", e => {
-  if (!st.closing && st.settingsDirty?.()) { e.preventDefault(); e.returnValue = ""; }
+  if (!OWN_WINDOW && !st.closing && st.settingsDirty?.()) { e.preventDefault(); e.returnValue = ""; }
 });
 $("#guideBtn").onclick = () => act("/api/guide", {});
 $("#updPill").onclick = () => { st.updOpen = true; st.updKey = ""; render(); };

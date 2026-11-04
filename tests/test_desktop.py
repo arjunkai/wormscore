@@ -165,3 +165,32 @@ def test_edge_window_gets_a_running_server_when_own_windows_fail(monkeypatch):
     (fd, url), = served
     assert fd != -1 and url.startswith("http://127.0.0.1:")
     assert any("own windows failed" in line for line in logged)
+
+
+def test_closing_with_unsaved_settings_asks_first(shell):
+    """WebView2 windows close without running the page's beforeunload, so the window asks (1.6.1)."""
+    d, app, asked = shell
+    w = d.open("home", "http://127.0.0.1:1", "wormscore", (1200, 820))
+    assert app.post("dirty", {"dirty": True}) == {"ok": True} and app.settings_dirty
+    w.destroy()                                   # the user says No: the window stays
+    assert asked and "not saved" in asked[0] and "home" in d.windows
+    d.ask = lambda w, text: asked.append(text) or True
+    w.destroy()                                   # Yes: it closes
+    assert "home" not in d.windows and len(asked) == 2
+
+
+def test_closing_after_settings_were_saved_asks_nothing(shell):
+    d, app, asked = shell
+    w = d.open("home", "http://127.0.0.1:1", "wormscore", (1200, 820))
+    app.post("dirty", {"dirty": True})
+    app.post("dirty", {"dirty": False})
+    w.destroy()
+    assert not asked and d.windows == {}
+
+
+def test_an_update_closes_even_with_unsaved_settings(shell):
+    d, app, asked = shell
+    d.open("home", "http://127.0.0.1:1", "wormscore", (1200, 820))
+    app.post("dirty", {"dirty": True})
+    d.close_all()
+    assert d.windows == {} and not asked

@@ -567,6 +567,9 @@ class HomeApp:
         self.opener = opener
         self.exit_app = lambda: None   # set by main(): closes the app so an update can replace it
         self.can_start = False         # set by main(): a wormscore://start link starts this app
+        # Project settings open with unsaved changes (the page says so). wormscore's own window
+        # closes without asking the page, so the window asks before closing (desktop.py).
+        self.settings_dirty = False
         self.home_url = ""
         self.upd = {"info": None, "error": None, "checking": False, "dismissed": False,
                     "phase": "", "frac": None, "message": "", "result": None}
@@ -822,6 +825,8 @@ class HomeApp:
             if not (Path(p) / "config.json").is_file():
                 raise ValueError("That folder has no config.json.")
             remember(p)
+        elif route == "dirty":
+            self.settings_dirty = body.get("dirty") is True
         elif route == "forget":
             s = load_settings()
             gone = str(body.get("path", ""))

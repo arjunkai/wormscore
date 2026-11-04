@@ -31,6 +31,9 @@ each is off by default, so a project that does not turn it on works exactly as i
 
 ## Recently shipped
 
+- 1.6.1: closing the Windows app's own window with unsaved Project settings asks first (WebView2
+  windows close without asking the page). The home screen re-reads the log only when it changes. README
+  checked claim by claim against the code.
 - 1.6.0: a locked score form can be changed on purpose: **change it anyway...** asks for a reason and
   writes the change and the reason to the log, and unblinding lists each change with its reason in the
   summary and the Methods draft. Wording fixes keep the planned tests; other changes stop them, as a hand

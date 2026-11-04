@@ -74,23 +74,25 @@ default browser on macOS and Linux).
 
 ### Updates
 
-wormscore is young and new versions come out often. Each new feature is off until you turn it on,
-so a project that does not use it scores, measures and reports exactly as before, and every version
-stays downloadable from the [Releases page](https://github.com/arjunkai/wormscore/releases) so an
-analysis can be rerun on the version it used. For a study, keep one version from building the blind
+wormscore is young and new versions come out often. Updating does not change your results: new
+analysis options (such as a new test or hidden repeat images) only run if you set them, so an
+existing project scores, measures and reports exactly as before. Screens and buttons may change. Every
+version stays downloadable from the [Releases page](https://github.com/arjunkai/wormscore/releases),
+so an analysis can be rerun on the version it used. For a study, keep one version from building the blind
 set to unblinding (the app reminds you), and cite that version.
 
 The downloaded app (Windows and Mac) checks for a new version when it starts. If there is one, a
-banner shows what is new with **Update and restart**, **Not now** and **Skip this version**.
+window shows what is new with **Update and restart**, **Not now** and **Skip this version**.
 Update downloads the zip for your computer, checks it against the SHA-256 checksum GitHub lists for
 it, runs the new copy once to confirm its version, and swaps it in after the app closes. The previous
 version is kept: **Settings > Go back to ...** swaps it back. Projects, codes and scores are never
 touched. From the command line: `wormscore update`, `wormscore update --install`,
 `wormscore update --rollback`.
 
-If a project has a blind set built but is not unblinded yet, the banner warns that updating would
-put two wormscore versions in that project's Methods, and **Not now** becomes the default. Update
-before you build a blind set or after you unblind.
+If a project has a blind set built but is not unblinded yet, the update window warns that updating
+would put two wormscore versions in that project's Methods: **Not now** becomes the default, and
+**Update anyway** works only after you tick "I understand the Methods would cite two versions".
+Update before you build a blind set or after you unblind.
 
 Copies installed with pip are told to run `pip install -U wormscore` instead. Turn the check off in
 Settings (the gear at the top). Versions before 0.8.0 need one manual download.
@@ -104,8 +106,8 @@ wormscore prepare my_demo
 wormscore app my_demo
 ```
 
-`demo` writes 20 simulated worm heads (controls with two normal cells; mutants with cells that are
-normal, dim or missing at random) and a `demo_truth.csv` you can check your calls against later.
+`demo` writes 20 simulated worm heads, 10 per genotype (`--n` changes that): controls with two
+normal cells, and mutants with cells that are normal, dim or missing at random, and a `demo_truth.csv` you can check your calls against later.
 `wormscore demo my_demo --identity` adds an mCherry identity channel that marks every cell.
 In the app window, use **Try a demo...**, then the steps in order: **Scan data > Score form > Build blind set > Score > Unblind**.
 
@@ -141,7 +143,8 @@ also has a command (in brackets) if you prefer the command line or want to scrip
    metadata and channel identity (`outputs/inventory.csv`). Check the flags column.
 2. **Score form:** choose what the scorer answers for each image (see [The score form](#the-score-form)
    below). **Check score form...** opens it; pressing Save records it in `log.md`, even if you keep the
-   default. It locks at the first score.
+   default. It locks at the first score. On the command line this step is optional: the form in
+   `config.json` (the default unless you changed it) is recorded when you build the blind set.
 3. **Build blind set** (`wormscore prepare my_project`): applies the inclusion rules, gives every image a
    random code, finds and measures suggested cells, and writes the sealed key. Excluded images and the
    reasons are in `outputs/excluded.csv`. To leave out images by name (for example a plate with the
@@ -163,8 +166,8 @@ also has a command (in brackets) if you prefer the command line or want to scrip
 **Optional: a second scorer.** After building the blind set, use **Make a package...** in the
 **Second scorer** card on the home page (`wormscore export-scorer my_project D:\for_sam --scorer "Sam K"
 --percent 30`). Choose a name and a share of each genotype's images (1 to 100%, at least one image per
-genotype, picked at random). The package is a folder with those coded images in a new random order and
-the score form. It has no key, no file names, no analysis plan and no checksum list. Zip it and send it.
+genotype, picked at random). The package is a folder with those coded images in a new random order
+(plus their hidden repeats, if you turned repeats on), the score form and the display settings. It has no key, no file names, no analysis plan and no checksum list. Zip it and send it.
 The second scorer opens the folder in wormscore, which then shows only **Score**, and sends the folder
 back when finished. **Import scores...** (`wormscore import-scorer my_project D:\from_sam`) checks that
 it is the package made from this project with the same images and score form, and stores the answers in
@@ -195,8 +198,9 @@ live preview of the score panel.
 - **How scales and counts are tested:** a scale or count with an outcome name is tested on its own.
   Each animal gets one value: for a question asked for each neuron, the **worst neuron** (default) or
   the mean of the assessed neurons for a scale, and the total (default) or the mean per neuron for a
-  count. Genotypes are compared with the **Mann-Whitney test** on those values, with an exact
-  permutation p-value (correct with the many ties short scales have). An optional **cutoff** (for
+  count. Genotypes are compared with the **Mann-Whitney test** on those values, with a permutation
+  p-value (correct with the many ties short scales have): exact when there are up to 100,000
+  rearrangements, otherwise from 100,000 random ones with a fixed seed. An optional **cutoff** (for
   example "4 or worse") also gives the share of animals at or past it, tested with Fisher's exact test.
 - **Primary outcome:** name one; the results and Methods then call every other test secondary.
 
@@ -220,7 +224,7 @@ test against a control.
 `methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
 `blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
 
-Optional, off unless set in `unblinding`:
+Optional, off unless set in the `unblinding` section of `config.json`:
 
 - `question_outcomes` turns the per-neuron questions into the same penetrance and Fisher tables (for
   example "process defect" when a dendrite question is answered "no").
@@ -229,13 +233,16 @@ Optional, off unless set in `unblinding`:
   share at the cutoff) and `rank_outcome_tests.csv` (Mann-Whitney with the effect size: the chance a
   genotype_a animal scores worse than a genotype_b animal, and Cliff's delta).
 - `interaction` tests a double mutant against the value two single mutants predict (Product model by
-  default) with a binomial test.
+  default; also additive or min). The default test is binomial, which treats the single mutants'
+  rates as exact and so finds an interaction too often with small groups; `"test": "likelihood_ratio"`
+  allows for that and is recommended for new projects.
 - Also: a secondary definition of "affected" (descriptive, within one microscope), planned comparisons,
   one-sided tests, labelled sources, comparisons across microscopes for chosen measures (with
   warnings), and a measured background cutoff (`dim_cutoff_sd`) for checking calls against numbers
   afterwards.
-- `reliability.repeat_fraction` (for example 0.1), set before building the blind set, hides repeat
-  images; unblinding then reports how consistently you scored them (`reliability.csv`).
+Hidden repeats are set in their own `reliability` section: `"reliability": {"repeat_fraction": 0.1}`,
+set before building the blind set, shows that share of images a second time under new codes;
+unblinding then reports how consistently you scored them (`reliability.csv`).
 
 All of these are recorded as an analysis plan before scoring and locked once scoring starts. See
 [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md#8-unblinding).
@@ -281,8 +288,8 @@ This repository contains code only. `.gitignore` excludes image formats, keys, s
 Do not commit or upload data that belongs to someone else.
 
 wormscore never sends your images, projects or scores anywhere. The only network requests are the
-update check (one request to GitHub's latest-release page, sending nothing but the app's version in
-the User-Agent; off switch in Settings), an update you choose to install, and the real-image demo
+update check (one request to GitHub's releases API for the latest version, sending nothing but the
+app's version in the User-Agent; off switch in Settings), an update you choose to install, and the real-image demo
 download.
 
 ## License and citation

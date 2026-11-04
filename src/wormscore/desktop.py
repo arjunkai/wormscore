@@ -157,9 +157,17 @@ class Desktop:
     # ---------------------------------------------------------------- closing
 
     def on_closing(self, kind):
-        """Returning False keeps the window open. Asked only when closing the last window
-        would stop a step that is running."""
-        if self.leaving or len(self.windows) > 1 or not self.app.job.running:
+        """Returning False keeps the window open. Asked when the home window holds unsaved Project
+        settings (closing a WebView2 window never runs the page's own beforeunload question), and
+        when closing the last window would stop a step that is running."""
+        if self.leaving:
+            return True
+        if kind == "home" and getattr(self.app, "settings_dirty", False):
+            if not self.ask(self.windows.get(kind), "Project settings have changes that are not saved yet. "
+                            "Close the window and lose them?\n\nChoose No to go back and save them."):
+                return False
+            self.app.settings_dirty = False
+        if len(self.windows) > 1 or not self.app.job.running:
             return True
         text = (f'"{self.app.job.title}" is still running. Closing wormscore stops it, and it would '
                 "have to be run again.\n\nClose anyway?")
