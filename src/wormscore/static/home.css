@@ -463,6 +463,7 @@ details.lo[open] summary { margin-bottom: 4px; }
 .sf-start { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
 .sf-start .f-help { margin: 0 var(--space-xs) 0 0; }
 .sf-select { width: auto; max-width: 100%; }
+
 .sf-count { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm) var(--space-lg); }
 .sf-inline { display: inline-flex; align-items: center; gap: var(--space-sm); font-size: var(--text-sm); color: var(--muted); }
 .sf-number { width: 5.5em; flex: none; }
@@ -525,3 +526,8 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
   padding: 6px 14px; border-radius: 999px; font-size: var(--text-sm); color: var(--muted);
   background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow);
 }
+
+/* the browser's own arrow sits against the edge; this one has room and matches the line icons */
+select.f-input, .sf-form select { font: inherit; appearance: none; -webkit-appearance: none; padding-right: 34px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M2.5 4.5 6 8l3.5-3.5%27 fill=%27none%27 stroke=%27%23959ca6%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E"); background-position: right 12px center; background-size: 12px 12px; background-repeat: no-repeat; }
+[data-theme="light"] select.f-input, [data-theme="light"] .sf-form select { background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M2.5 4.5 6 8l3.5-3.5%27 fill=%27none%27 stroke=%27%235b636e%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E"); }

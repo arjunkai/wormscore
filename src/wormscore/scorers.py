@@ -95,10 +95,10 @@ def check_answers(rows, cfg):
     for r in rows:
         unknown = set(r) - fields
         if unknown:
-            raise SystemExit(f"The package's scores.csv has columns the scoring form does not: {sorted(unknown)[:3]}.")
+            raise SystemExit(f"The package's scores.csv has columns the scoring criteria do not: {sorted(unknown)[:3]}.")
         for k, ok in allowed.items():
             if r.get(k, "") not in ok:
-                raise SystemExit(f"The package's scores.csv has an answer that is not on the form ({k} of {r.get('code')}).")
+                raise SystemExit(f"The package's scores.csv has an answer the scoring criteria do not allow ({k} of {r.get('code')}).")
 
 
 def scorer_ids(project):
@@ -218,7 +218,7 @@ def export_package(project, scorer, destination, fraction=0.3, log=print):
         f"Scorer: {scorer}. {len(codes)} of {n_orig} included images ({round(100 * fraction)}% of each genotype, "
         f"at least one, chosen at random)" + (f", plus {len(repeats)} hidden repeat(s) of those images" if repeats else "")
         + f"; {len(order)} codes in the scorer's own random order.",
-        "The package holds coded images and the scoring form only: no key, no file names, no analysis plan.",
+        "The package holds coded images and the scoring criteria only: no key, no file names, no analysis plan.",
         f"Selection and checksums kept in scorers/{sid}/package.json (not in the package).",
     ])
     log(f"Package for {scorer}: {len(order)} images in {destination}")
@@ -241,7 +241,7 @@ def import_scores(project, package, log=print):
     rec = json.loads((own / PACKAGE_FILE).read_text(encoding="utf-8"))
     cfg = C.load(project)
     if rec["form"] != form_hash(cfg) or info.get("form") != rec["form"]:
-        raise SystemExit("The scoring form changed since the package was made, so the answers cannot be compared.")
+        raise SystemExit("The scoring criteria changed since the package was made, so the answers cannot be compared.")
     present = sorted(d.name for d in (package / "blind").iterdir() if d.is_dir()) if (package / "blind").is_dir() else []
     if present != sorted(rec["order"]):
         raise SystemExit("The package's images are not the ones it was made with (codes added or removed).")
@@ -273,7 +273,7 @@ def import_scores(project, package, log=print):
             shutil.copyfile(f, dest / name)
     append_log(project, f"second-scorer scores imported ({sid})", [
         f"Scorer: {rec['scorer']}. {len(rows)} of {len(rec['order'])} package images scored. "
-        "Checked: same package, scoring form and images. Stored in scorers/{sid}/scoring/; "
+        "Checked: same package, scoring criteria and images. Stored in scorers/{sid}/scoring/; "
         "the primary scores in scoring/ are unchanged.".replace("{sid}", sid)])
     log(f"Imported {len(rows)} scores from {rec['scorer']}.")
     return own

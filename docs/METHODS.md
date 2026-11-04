@@ -116,7 +116,7 @@ package for another person after the blind set is built. A share of each genotyp
 (chosen by the owner from 1 to 100%, at least one per genotype) is picked at random with a seed that is
 not stored, together with the hidden repeats of the picked images, and put in a new random order with
 each repeat kept apart from its original (the same 15% rule). The package is an ordinary project folder
-with only those `blind/` folders and a `config.json` holding the scoring form, the marker and display
+with only those `blind/` folders and a `config.json` holding the scoring criteria, the marker and display
 settings and the region measurement settings. It has no `key/`, `outputs/`, `log.md`, `scoring/`,
 image sources, analysis plan, file names or checksums (repeats are byte copies of their originals, so a
 checksum list would show which codes are repeats). Its scoring list follows the package's own order.
@@ -124,7 +124,7 @@ Scanning, building and unblinding are refused inside a package. The owner's proj
 selection, the order and a SHA-256 checksum of every file of every packaged code in
 `scorers/<id>/package.json`, and `log.md` records the scorer's name, the share and the number of
 images. When the package comes back, import refuses it unless the package ID was made in this
-project, the scoring form (its answer fields and allowed answers) is unchanged on both sides, the
+project, the scoring criteria (their answer fields and allowed answers) are unchanged on both sides, the
 packaged images and the project's own images match the checksums, no codes were added or removed,
 every column and answer of `scores.csv` comes from the form, and nothing in the package is a link.
 Only the scoring files are copied, to `scorers/<id>/scoring/`; the owner's `scoring/` is never
@@ -201,7 +201,7 @@ be deduced". The sharpest plane is still the plane where the reporter is brighte
 
 ## 7. Questions asked of the scorer
 
-The score form (set on the Project settings page or in `config.json`) asks, for each image: whether it
+The scoring criteria (the score form; set on the Project settings page or in `config.json`) ask, for each image: whether it
 is usable (and if not, why), the count question, and for each neuron its call, optionally its side, and
 any extra questions; since 1.4.0 a question can instead be asked once per animal (`scoring.animal_questions`,
 saved as `a_<id>`, shown under "This animal"). Extra questions are yes/no, a choice, an ordered scale (levels
@@ -211,10 +211,10 @@ optionally "N+" for N or more; `"type": "count"`). A scale or count may have a "
 and a question for each neuron can be skipped (hidden, saved empty) when the neuron's call is one the
 question's outcome leaves out, such as "not seen". Answers are stored as their text.
 
-The form is recorded in `log.md` ("Score form set before scoring") when it is saved in the app (or checked
-and kept as it is, from the home screen's Score form step, since 1.5.0), when the
+The criteria are recorded in `log.md` ("Score form set before scoring") when they are saved in the app (or checked
+and kept as they are, from the home screen's Set scoring criteria step, since 1.5.0), when the
 blind set is built and when the first score is saved. From the first score, or once a second-scorer
-package exists, the app does not let it change. The record covers what decides the stored answers and
+package exists, the app does not let them change. The record covers what decides the stored answers and
 their analysis: neurons, calls, defect calls, sides, count answers, each question's id, answers, whether it
 is required and when it is skipped, the question outcomes and the primary outcome; since 1.4.0 also each
 question's type and "can't tell" answer, the questions asked once per animal and the rank outcomes (these
@@ -376,8 +376,8 @@ Results tables use counted, usable images only, with the animal as the unit (one
   the last plan recorded before the first score was saved. If they differ, no test is run and every test
   file says why; descriptive tables are still written. If no plan was recorded before scoring, tests run
   but are marked `set_before_scoring = NO`.
-- **Score form lock.** Unblinding compares the current form with the last one recorded before the first
-  score (section 7). If it differs, no test is run, every test file says the form changed, and the
+- **Scoring criteria lock.** Unblinding compares the current form with the last one recorded before the first
+  score (section 7). If it differs, no test is run, every test file says the scoring criteria changed, and the
   Methods draft says only descriptive results are reported. Since 1.6.0 the app can change a locked
   form only after the scorer types a reason; the change, the reason and whether it went beyond wording
   are written to `log.md`, the summary and the Methods draft list each change with its reason (as

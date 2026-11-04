@@ -164,9 +164,9 @@ def locked(project):
     """Why the form can no longer be changed in the app, or "" if it still can."""
     from .editconfig import scoring_started
     if scoring_started(project):
-        return "Scoring has started, so the form is locked."
+        return "Scoring has started, so the scoring criteria are locked."
     if packages_exist(project):
-        return "A second-scorer package was made with this form, so the form is locked."
+        return "A second-scorer package was made with these criteria, so they are locked."
     return ""
 
 
@@ -278,12 +278,14 @@ def preset_model(name):
         m["calls"] = [{"text": "seen", "defect": False}, {"text": "not seen", "defect": True}]
         if name == "degeneration":
             levels = ["0 normal", "1 bends or kinks", "2 under 5 blebs", "3 5 to 10 blebs",
-                      "4 over 10 blebs or a break", "5 25 to 75% lost", "6 over 75% lost"]
+                      "4 over 10 blebs, or a break losing under 25%", "5 25 to 75% lost", "6 over 75% lost"]
             m["rules"] = ["Seen: the cell body is visible. Not seen: no cell body in any plane.",
                           "Score the whole dendrite and give the highest score that applies.",
                           "Blebs are round swellings along the dendrite; a break is a gap in it.",
                           "Lost: the share of the dendrite's normal length that is missing.",
-                          "Score each neuron separately. The animal is the unit for statistics."]
+                          "Score each neuron separately. The animal is the unit for statistics.",
+                          # the published scale, so the Methods can cite it (validated in strain BY200)
+                          "Scale: Bijwadia, Morton and Meyer 2021, JoVE 62894."]
             label, qid, outcome = "Dendrite score", "dendrite_score", "dendrite score"
         else:
             levels = ["full", "partial", "short"]
@@ -550,7 +552,7 @@ def _clean_question(q, i, calls, taken, ids):
 def clean(model):
     """The builder's answers, checked. Returns a cleaned model with ids filled in."""
     if not isinstance(model, dict):
-        raise ValueError("No score form was sent.")
+        raise ValueError("No scoring criteria were sent.")
     neurons = _texts(model.get("neurons"), "Neuron", 1)
     if len(neurons) > 8:
         raise ValueError("At most 8 neurons per image.")

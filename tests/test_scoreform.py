@@ -187,7 +187,7 @@ def test_a_form_changed_after_scoring_stops_every_test(fresh_project):
     edit_config(fresh_project, lambda c: c["scoring"].update(defect_calls=["missing"]))    # by hand, after scoring
     out = unblind(fresh_project, finished=True, log=quiet)
     for name in ("fisher_tests.csv", "question_outcome_tests.csv"):
-        assert "score form" in read_csv(out / name)[0]["note"]
+        assert "scoring criteria" in read_csv(out / name)[0]["note"]
     assert (out / "penetrance.csv").exists() and "note" not in read_csv(out / "penetrance.csv")[0]   # descriptive kept
     assert "changed after scoring began" in (out / "summary.txt").read_text(encoding="utf-8")
     assert "no statistical test was run" in (out / "methods_text.md").read_text(encoding="utf-8")
@@ -212,7 +212,7 @@ def test_old_projects_fall_back_to_the_settings_logged_at_build(fresh_project):
     out = unblind(fresh_project, finished=True, log=quiet, anyway=True)
     t = read_csv(out / "fisher_tests.csv")[0]
     assert t["form_recorded_before_scoring"] == "NO" and "note" not in t                     # tests still run
-    assert "WARNING: the score form was not recorded" in (out / "summary.txt").read_text(encoding="utf-8")
+    assert "WARNING: the scoring criteria were not recorded" in (out / "summary.txt").read_text(encoding="utf-8")
 
 
 def test_primary_outcome_labels_the_tests(fresh_project):

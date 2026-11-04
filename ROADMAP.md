@@ -31,6 +31,9 @@ each is off by default, so a project that does not turn it on works exactly as i
 
 ## Recently shipped
 
+- 1.6.2: the score form is now called **scoring criteria** (the term papers use), and step 2 is **Set
+  scoring criteria**. ROI, intra-rater and inter-rater named where they apply. Dropdown arrows with room
+  to breathe. The Neurodegeneration preset's level 4 matches the published scale (Bijwadia et al. 2021).
 - 1.6.1: closing the Windows app's own window with unsaved Project settings asks first (WebView2
   windows close without asking the page). The home screen re-reads the log only when it changes. README
   checked claim by claim against the code.

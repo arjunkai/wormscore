@@ -209,19 +209,19 @@ def form_sentences(cfg, form_status, form_changes=()):
     out = []
     primary = cfg["unblinding"].get("primary_outcome")
     if form_status == "changed":
-        out.append("The score form was changed after scoring began, so no statistical test was run and only "
+        out.append("The scoring criteria were changed after scoring began, so no statistical test was run and only "
                    "descriptive results are reported.")
     elif form_status.startswith("NO"):
-        out.append("[The score form was not recorded in the project log before scoring began; say how the "
+        out.append("[The scoring criteria were not recorded in the project log before scoring began; say how the "
                    "questions were fixed in advance.]")
     for when, why, wording in form_changes:
         # bracketed for the author: say what changed and how it affects the results
-        out.append(f"[On {when[:10]} the score form was changed after scoring began "
+        out.append(f"[On {when[:10]} the scoring criteria were changed after scoring began "
                    f"({'wording only; the planned tests still ran' if wording else 'beyond wording'}). Reason recorded: "
                    f"{why or 'none given'}. Describe what changed and how it affects the results.]")
     if primary:
         name = "the neuron calls" if primary == "calls" else f"\"{primary}\""
-        out.append(f"The primary outcome, named before scoring and recorded with the score form, was {name}; "
+        out.append(f"The primary outcome, named before scoring and recorded with the scoring criteria, was {name}; "
                    "all other tests are secondary.")
     return out
 

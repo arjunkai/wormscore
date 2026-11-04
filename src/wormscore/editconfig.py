@@ -166,9 +166,9 @@ def form_change(project, old_raw, raw, form, reason=""):
         return raw, False
     why = S.locked(project)
     if why and (not reason or S.packages_exist(project)):
-        raise ValueError(f"{why} The form was not changed; only the other settings can be saved.")
+        raise ValueError(f"{why} The criteria were not changed; only the other settings can be saved.")
     if S.unsupported(old_cfg):
-        raise ValueError("This form uses settings the builder cannot show. Change it in config.json.")
+        raise ValueError("These criteria use settings the builder cannot show. Change them in config.json.")
     return S.apply(raw, form), True
 
 
@@ -198,7 +198,7 @@ def save(project, body):
                    [f"Reason given: {reason}",
                     "Only wording changed (question text or rules), so the planned tests still run." if same else
                     "The answers, neurons, required or skipped questions, or what counts as a defect changed. "
-                    "Unblinding writes only descriptive tables and runs no planned test while the form differs "
+                    "Unblinding writes only descriptive tables and runs no planned test while the criteria differ "
                     "from the one recorded before the first score; changing it back runs them again.",
                     # not the "set before scoring" prefix: unblinding must keep checking the earlier form
                     "Score form after this change: " + S.record_text(cfg)])

@@ -186,8 +186,8 @@ def rewrite(pkg, rows, extra=()):
     (damage_image, "were changed"),
     (add_code, "codes added or removed"),
     (extra_row, "codes it never had"),
-    (odd_answer, "not on the form"),
-    (odd_column, "columns the scoring form does not"),
+    (odd_answer, "the scoring criteria do not allow"),
+    (odd_column, "columns the scoring criteria do not"),
 ])
 def test_import_refuses_a_changed_package(made, spoil, message):
     project, pkg = made
@@ -208,7 +208,7 @@ def test_import_refuses_other_projects_packages_and_a_changed_form(made, demo_pr
     with pytest.raises(SystemExit, match="not a second-scorer package"):
         scorers.import_scores(project, other, log=quiet)
     changed_form(project)
-    with pytest.raises(SystemExit, match="scoring form changed"):
+    with pytest.raises(SystemExit, match="scoring criteria changed"):
         scorers.import_scores(project, pkg, log=quiet)
 
 

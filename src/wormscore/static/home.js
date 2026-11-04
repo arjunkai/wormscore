@@ -229,15 +229,15 @@ function stepCard(n, state, title, desc, fact, actions, extra) {
     h("div", { class: "s-act" }, actions));
 }
 
-// The Score form card: what the scorer answers, then whether the form is recorded or locked.
+// The scoring criteria card: what the scorer answers, then whether they are recorded or locked.
 function formFact(f) {
   const parts = [`a call with ${f.calls} choices`];
   if (f.neuron_questions) parts.push(plural(f.neuron_questions, "question"));
   const ask = `Each neuron: ${parts.join(" and ")}` + (f.animal_questions ? `. Each animal: ${plural(f.animal_questions, "question")}` : "") + ".";
-  const status = f.changed_after_lock ? " Changed after scoring began, so unblinding runs no planned test until it is changed back."
+  const status = f.changed_after_lock ? " Changed after scoring began, so unblinding runs no planned test until they are changed back."
     : f.locked ? " Locked at the first score."
-    : f.recorded ? " Recorded in log.md; you can change it until the first score."
-    : " Open it, check the questions, and press Save to record it.";
+    : f.recorded ? " Recorded in log.md; you can change them until the first score."
+    : " Open them, check the questions, and press Save to record them.";
   return ask + status;
 }
 
@@ -274,11 +274,11 @@ function renderMain(d) {
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
         scanned ? "Scan again" : "Scan data")]),
-    stepCard(2, sF, "Score form", "Choose what the scorer answers for each image. The form is recorded in log.md and locks at the first score.",
+    stepCard(2, sF, "Set scoring criteria", "Choose what the scorer answers for each image: the calls, the questions and what counts as a defect. They are recorded in log.md and lock at the first score.",
       f ? formFact(f) : null,
       [h("button", { class: sF === "next" ? "primary" : "btn", "data-k": "form", disabled: busy || !ok, onclick: () => openProjectSettings("form") },
-        f?.locked ? "View score form" : formDone ? "Edit score form..." : "Check score form...")]),
-    stepCard(3, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan and score form in log.md.",
+        f?.locked ? "View criteria" : formDone ? "Edit criteria..." : "Set criteria...")]),
+    stepCard(3, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan and scoring criteria in log.md.",
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
       [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
         !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")]),
@@ -352,7 +352,7 @@ function secondScorerCard(p, busy) {
       h("div", {},
         h("div", { class: "s-title" }, "Second scorer", h("span", { class: "chip wait" }, "Optional")),
         h("div", { class: "s-desc" }, "Another person scores some of the coded images on their own, from a package with no key. "
-          + "Unblinding compares their answers with yours; your results never use them.")),
+          + "Unblinding compares their answers with yours (inter-rater agreement: percent agreement and Cohen's kappa); your results never use them.")),
       h("div", { class: "x-act" },
         h("button", { class: "btn", "data-k": "pk-make", disabled: busy, onclick: makePackage }, "Make a package..."),
         list.length ? h("button", { class: "btn", "data-k": "pk-import", disabled: busy, onclick: importScores }, "Import scores...") : null)),
@@ -371,7 +371,7 @@ async function makePackage() {
     h("label", { class: "f-label", for: "pkName" }, "Second scorer's name"), name,
     h("label", { class: "f-label", for: "pkPct" }, "Share of each genotype's images"), h("div", { class: "f-range" }, pct, out),
     h("p", { class: "f-help" }, "Images are picked at random within each genotype (at least one each) and shown in a new random order. "
-      + "The package holds the coded images and the scoring form only: no key, file names or analysis plan. "
+      + "The package holds the coded images and the scoring criteria only: no key, file names or analysis plan. "
       + "Next, choose a new, empty folder outside this project."));
   const asked = ask("Make a package for a second scorer", body, [{ value: true, label: "Choose folder..." }], "Cancel", {
     check: () => SCORER_NAME.test(name.value.trim()) ? null
@@ -386,7 +386,7 @@ async function makePackage() {
 async function importScores() {
   const go = await ask("Import a second scorer's scores",
     h("span", {}, "Choose the package folder the second scorer sent back (unzip it first). wormscore checks that it is a package made here, "
-      + "with the same images and scoring form, then keeps the scores in the scorers folder. Your own scores do not change. "
+      + "with the same images and scoring criteria, then keeps the scores in the scorers folder. Your own scores do not change. "
       + "Then run ", h("b", {}, "Unblind"), " (again) to get the agreement tables."),
     [{ value: true, label: "Choose folder..." }]);
   if (!go) return;
@@ -482,8 +482,8 @@ function formSection(info) {
       } }, icon("close", 14)));
   const confirmQuestion = j => m.questions[j].label.trim() ? {
     title: `Remove question ${j + 1}?`,
-    body: `“${m.questions[j].label.trim()}” and its answers and analysis settings are removed from the form. `
-      + "Nothing is saved until you press Save; Cancel at the bottom keeps the form as it was.",
+    body: `“${m.questions[j].label.trim()}” and its answers and analysis settings are removed from the criteria. `
+      + "Nothing is saved until you press Save; Cancel at the bottom keeps the criteria as they were.",
   } : null;
   const text = (value, set, attrs = {}) => h("input", { type: "text", class: "f-input", value: value ?? "", autocomplete: "off",
     disabled: off, ...attrs, oninput: e => { set(e.target.value); drawPreview(); } });
@@ -647,7 +647,7 @@ function formSection(info) {
     h("label", { class: "f-label", for: "sfCount" }, "Count question (one per image)"),
     text(m.count.label, v => { m.count.label = v; }, { id: "sfCount" }),
     text(m.count.options.join(", "), v => { m.count.options = splitList(v); }, { placeholder: "Answers, separated by commas", "aria-label": "Count answers" }),
-    h("label", { class: "f-label", for: "sfRules" }, "Rules shown above the form, one per line"),
+    h("label", { class: "f-label", for: "sfRules" }, "Rules shown above the questions, one per line"),
     h("textarea", { id: "sfRules", class: "f-input", rows: 4, disabled: off,
       oninput: e => { m.rules = splitLines(e.target.value); drawPreview(); } }, m.rules.join("\n")),
     h("label", { class: "f-label", for: "sfReasons" }, "Reasons an image is not usable, one per line"),
@@ -656,8 +656,8 @@ function formSection(info) {
 
   const start = () => off ? null : h("div", { class: "sf-start" }, h("span", { class: "f-help" }, "Start from:"),
     info.presets.map(p => h("button", { class: "btn subtle", title: p.desc, onclick: async () => {
-      const go = await ask(`Start from ${p.title}?`, `${p.desc}\nThis replaces the form below. Nothing is saved until you press Save.`,
-        [{ value: true, label: "Replace the form" }]);
+      const go = await ask(`Start from ${p.title}?`, `${p.desc}\nThis replaces the criteria below. Nothing is saved until you press Save.`,
+        [{ value: true, label: "Replace the criteria" }]);
       if (!go) return;
       try { Object.assign(m, (await api("/api/project-settings", { action: "preset", preset: p.id })).model); drawAll(); }
       catch (e) { toast(e.message); }
@@ -665,7 +665,7 @@ function formSection(info) {
 
   const drawPreview = () => {
     const sc = formForPreview(m);
-    const f = h("form", { class: "sf-form", "aria-label": "Preview of the score form", onsubmit: e => e.preventDefault(),
+    const f = h("form", { class: "sf-form", "aria-label": "Preview of the scoring panel", onsubmit: e => e.preventDefault(),
       onchange: e => { if (/^n\d+_call$/.test(e.target.name)) wsForm.syncSkips(f, sc); } },
       sc.rules.length ? h("ul", { class: "sf-rules" }, sc.rules.map(r => h("li", {}, r))) : null,
       h("fieldset", {}, h("legend", {}, sc.count_question.label), h("div", {}, wsForm.radios(h, "cells_seen", sc.count_question.options))),
@@ -695,15 +695,15 @@ function formSection(info) {
   const unlock = async () => {
     const box = h("textarea", { id: "sfReason", class: "f-input", rows: 3, maxlength: 500,
       placeholder: "For example: question 2's text was unclear; only the wording changes." });
-    const go = await ask("Change the form after scoring began?", h("div", { class: "sf-unlock" },
-      h("p", {}, "The form was recorded in log.md before the first score, and the planned tests depend on it. "
-        + "The usual way is to keep it, or to start a new blind set."),
+    const go = await ask("Change the scoring criteria after scoring began?", h("div", { class: "sf-unlock" },
+      h("p", {}, "The criteria were recorded in log.md before the first score, and the planned tests depend on them. "
+        + "The usual way is to keep them, or to start a new blind set."),
       h("p", {}, h("b", {}, "Wording only"), " (question text or rules): safe. The planned tests still run."),
       h("p", {}, h("b", {}, "Answers, neurons, required or skipped questions, or what counts as a defect"),
         ": unblinding then writes only descriptive tables and runs no planned test, and the summary and Methods say why. "
-        + "Images already scored keep their old answers. Changing the form back runs the tests again."),
+        + "Images already scored keep their old answers. Changing the criteria back runs the tests again."),
       h("label", { class: "f-label", for: "sfReason" }, "Reason (written to log.md with the change)"), box),
-      [{ value: true, label: "Unlock the form", danger: true }], "Keep it locked",
+      [{ value: true, label: "Unlock the criteria", danger: true }], "Keep it locked",
       { wide: true, check: () => box.value.trim() ? null : "Write a reason first. It goes into log.md with the change." });
     if (!go) return;
     reason = box.value.trim();
@@ -715,13 +715,13 @@ function formSection(info) {
   const banner = h("div", {});
   const drawBanner = () => banner.replaceChildren(...[
     info.locked && off ? h("div", { class: "sf-lock" }, h("span", { class: "chip wait" }, "Locked"),
-      h("span", {}, `${info.locked} It was recorded in log.md and is what unblinding checks. To change it, start a new blind set`
+      h("span", {}, `${info.locked} They were recorded in log.md and are what unblinding checks. To change them, start a new blind set`
         + (info.can_unlock ? ", or " : "."),
-        info.can_unlock ? h("button", { class: "linkish", "data-k": "sfUnlock", onclick: unlock }, "change it anyway...") : null)) : null,
+        info.can_unlock ? h("button", { class: "linkish", "data-k": "sfUnlock", onclick: unlock }, "change them anyway...") : null)) : null,
     info.locked && !off ? h("div", { class: "banner" }, "Unlocked for this save. Reason: " + reason
       + " Saving writes the change and the reason to log.md; a change beyond wording stops the planned tests.") : null,
-    info.readonly && !info.locked ? h("div", { class: "banner" }, `This form uses a setting the builder cannot show (${info.readonly}). `
-      + "It is shown read-only here; change it in config.json.") : null].filter(Boolean));
+    info.readonly && !info.locked ? h("div", { class: "banner" }, `These criteria use a setting the builder cannot show (${info.readonly}). `
+      + "They are shown read-only here; change them in config.json.") : null].filter(Boolean));
   drawBanner();
   root.replaceChildren(banner, h("div", { class: "sf-cols" }, edit, prev));
   drawAll();
@@ -842,7 +842,7 @@ async function openProjectSettings(section) {
       h("h4", {}, "Image folders"),
       ...cards,
       h("button", { class: "btn add-src", onclick: () => { model.sources.push(blankSource()); draw("src"); } }, "Add image folder"),
-      h("h4", { id: "sfHead" }, "Scoring form"),
+      h("h4", { id: "sfHead" }, "Scoring criteria"),
       form.el,
       h("div", { class: "f-help sf-config" }, "The marker, statistics and other settings are in config.json: ",
         h("button", { class: "linkish", onclick: () => tryLeave("config") }, "edit config.json"), "."));
@@ -872,7 +872,7 @@ async function openProjectSettings(section) {
       return false;
     }
     toast(r.after_lock ? "Saved. The change and your reason are in log.md."
-      : r.form_changed ? "Saved. The score form is recorded in log.md and locks at the first score."
+      : r.form_changed ? "Saved. The scoring criteria are recorded in log.md and lock at the first score."
       : scanned ? "Saved. Run Scan data again so the new folders and rules are used." : "Saved. Next: Scan data.", "ok");
     leave();
     refresh(true);
@@ -883,7 +883,7 @@ async function openProjectSettings(section) {
   const confirmLeave = async () => {
     if (JSON.stringify(payload()) === snapshot) return true;
     const v = await ask("Save your changes?",
-      "You changed these settings or the score form, and the changes are not saved yet.",
+      "You changed these settings or the scoring criteria, and the changes are not saved yet.",
       [{ value: "discard", label: "Discard changes", danger: true }, { value: "save", label: "Save" }], "Keep editing");
     if (v === "save") return await save();     // a save that fails keeps the page open, with the error
     return v === "discard";

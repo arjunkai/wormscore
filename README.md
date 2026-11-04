@@ -53,7 +53,7 @@ measured there, so a dim or missing reporter cell is still found. See
 from the [Releases page](https://github.com/arjunkai/wormscore/releases)), unzip it, and double-click
 `wormscore.exe`. It opens in its own window (drawn by WebView2, the web engine built into Windows 10 and
 11), so it behaves like any other app: one taskbar button, and it closes when you close its window. Your
-projects are on the left, and the five steps (Scan data, Score form, Build blind set, Score, Unblind) are
+projects are on the left, and the five steps (Scan data, Set scoring criteria, Build blind set, Score, Unblind) are
 a guided list on the right. The older launcher window is still available: `wormscore.exe --classic`.
 
 **Mac (Apple silicon, M1 and newer), no Python needed:** click **Download for macOS** above, unzip,
@@ -109,7 +109,7 @@ wormscore app my_demo
 `demo` writes 20 simulated worm heads, 10 per genotype (`--n` changes that): controls with two
 normal cells, and mutants with cells that are normal, dim or missing at random, and a `demo_truth.csv` you can check your calls against later.
 `wormscore demo my_demo --identity` adds an mCherry identity channel that marks every cell.
-In the app window, use **Try a demo...**, then the steps in order: **Scan data > Score form > Build blind set > Score > Unblind**.
+In the app window, use **Try a demo...**, then the steps in order: **Scan data > Set scoring criteria > Build blind set > Score > Unblind**.
 
 **Real worms:** `wormscore demo my_demo --real` (or **Real worm images** in the app's demo dialog) downloads four
 L1 heads with an endogenous GFP reporter, about 150 MB, from
@@ -141,10 +141,11 @@ also has a command (in brackets) if you prefer the command line or want to scrip
 1. **Scan data** (`wormscore inventory my_project`): lists every file (`outputs/manifest.csv`: raw
    image, duplicate, derived projection, reference, hidden system file) and every image with its
    metadata and channel identity (`outputs/inventory.csv`). Check the flags column.
-2. **Score form:** choose what the scorer answers for each image (see [The score form](#the-score-form)
-   below). **Check score form...** opens it; pressing Save records it in `log.md`, even if you keep the
-   default. It locks at the first score. On the command line this step is optional: the form in
-   `config.json` (the default unless you changed it) is recorded when you build the blind set.
+2. **Set scoring criteria:** choose what the scorer answers for each image (see
+   [Scoring criteria](#scoring-criteria) below). **Set criteria...** opens them; pressing Save records
+   them in `log.md`, even if you keep the defaults. They lock at the first score. On the command line
+   this step is optional: the criteria in `config.json` (the defaults unless you changed them) are
+   recorded when you build the blind set.
 3. **Build blind set** (`wormscore prepare my_project`): applies the inclusion rules, gives every image a
    random code, finds and measures suggested cells, and writes the sealed key. Excluded images and the
    reasons are in `outputs/excluded.csv`. To leave out images by name (for example a plate with the
@@ -154,7 +155,7 @@ also has a command (in brackets) if you prefer the command line or want to scrip
    one. Once scoring has started, the folders and rules that built the blind set are locked, but you can
    still add a folder for new images.
 4. **Score** (`wormscore app my_project`): for each image, answer any yellow questions, score each
-   neuron, save, then outline each cell body (or accept a suggestion) and save regions. Answers you have
+   neuron, save, then outline each cell body (or accept a suggestion) and save the regions of interest (**Save ROIs**). Answers you have
    not saved yet are kept as a draft (`scoring_drafts/`, never counted as scores), so a crash or restart
    loses nothing: open the image again and click Save. If the connection to wormscore is lost, the
    window shows "Reconnecting..." and reconnects by itself; if wormscore is not running it says so, with
@@ -163,23 +164,23 @@ also has a command (in brackets) if you prefer the command line or want to scrip
    finished: reveals the genotypes and writes the results tables and a draft Methods paragraph (see
    [Results](#results) below).
 
-**Optional: a second scorer.** After building the blind set, use **Make a package...** in the
+**Optional: a second scorer** (inter-rater reliability). After building the blind set, use **Make a package...** in the
 **Second scorer** card on the home page (`wormscore export-scorer my_project D:\for_sam --scorer "Sam K"
 --percent 30`). Choose a name and a share of each genotype's images (1 to 100%, at least one image per
 genotype, picked at random). The package is a folder with those coded images in a new random order
-(plus their hidden repeats, if you turned repeats on), the score form and the display settings. It has no key, no file names, no analysis plan and no checksum list. Zip it and send it.
+(plus their hidden repeats, if you turned repeats on), the scoring criteria and the display settings. It has no key, no file names, no analysis plan and no checksum list. Zip it and send it.
 The second scorer opens the folder in wormscore, which then shows only **Score**, and sends the folder
 back when finished. **Import scores...** (`wormscore import-scorer my_project D:\from_sam`) checks that
-it is the package made from this project with the same images and score form, and stores the answers in
+it is the package made from this project with the same images and scoring criteria, and stores the answers in
 `scorers/`. Your own scores are never changed. At unblinding, `between_scorers.csv` gives percent
 agreement and Cohen's kappa for each answer, `scorer_disagreements.csv` lists each image where the
 answers differ (codes only), and the Methods draft gets a sentence about it. All results tables still
 use only your answers.
 
-## The score form
+## Scoring criteria
 
-The **Scoring form** section of Project settings sets what the scorer answers for each image, with a
-live preview of the score panel.
+The **Scoring criteria** section of Project settings sets what the scorer answers for each image, with
+a live preview of the score panel. (Older versions and `log.md` call this the score form.)
 
 - **Start from a preset:** **Fate reporter** (each neuron normal / dim / missing, the default),
   **Axon guidance** (yes/no questions about the axon), **Neurodegeneration** (each dendrite scored 0 to
@@ -204,13 +205,13 @@ live preview of the score panel.
   example "4 or worse") also gives the share of animals at or past it, tested with Fisher's exact test.
 - **Primary outcome:** name one; the results and Methods then call every other test secondary.
 
-**The form locks at the first score** (or once a second-scorer package exists), so the questions cannot
-change while you score. Every save of the form is written to `log.md`. If you really must change it
-afterwards, **change it anyway...** on the locked form asks for a reason and writes the change and the
+**The criteria lock at the first score** (or once a second-scorer package exists), so the questions
+cannot change while you score. Every save is written to `log.md`. If you really must change them
+afterwards, **change them anyway...** on the locked criteria asks for a reason and writes the change and the
 reason to `log.md`; unblinding lists each change with its reason in the summary and the Methods draft.
 Fixing wording (question text, rules) keeps the planned tests. Any other change, in the app or by
 editing `config.json` by hand, means unblinding runs no planned test and says why (descriptive tables
-are still written, and changing the form back runs the tests again). It is not offered once a
+are still written, and changing the criteria back runs the tests again). It is not offered once a
 second-scorer package exists. Leaving Project settings with unsaved changes asks whether to save them.
 
 ## Results
@@ -240,7 +241,7 @@ Optional, off unless set in the `unblinding` section of `config.json`:
   one-sided tests, labelled sources, comparisons across microscopes for chosen measures (with
   warnings), and a measured background cutoff (`dim_cutoff_sd`) for checking calls against numbers
   afterwards.
-Hidden repeats are set in their own `reliability` section: `"reliability": {"repeat_fraction": 0.1}`,
+Hidden repeats measure intra-rater reliability (how consistently one scorer scores the same image) and are set in their own `reliability` section: `"reliability": {"repeat_fraction": 0.1}`,
 set before building the blind set, shows that share of images a second time under new codes;
 unblinding then reports how consistently you scored them (`reliability.csv`).
 

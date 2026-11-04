@@ -157,9 +157,9 @@ def unblind(project, finished=False, anyway=False, log=print):
     fstatus = scoreform.form_status(project, cfg, history)
     run = status != "changed" and fstatus != "changed"
     stop_note = " ".join(
-        (["NOT RUN: the score form (neurons, answers, required or skipped questions, or what counts as a "
+        (["NOT RUN: the scoring criteria (neurons, answers, required or skipped questions, or what counts as a "
           "defect) in config.json differs from the one recorded in log.md when scoring began. Only "
-          "descriptive tables are written; restore the form to run the planned tests."] if fstatus == "changed" else [])
+          "descriptive tables are written; restore the criteria to run the planned tests."] if fstatus == "changed" else [])
         + (["NOT RUN: the analysis plan in config.json differs from the one recorded in log.md before "
             "scoring began. Restore it to run the planned tests."] if status == "changed" else []))
     primary = un.get("primary_outcome") or ""
@@ -375,15 +375,15 @@ def unblind(project, finished=False, anyway=False, log=print):
         lines.append("WARNING: the analysis plan was not recorded in log.md before scoring began.")
     if fstatus.startswith("NO"):
         lines.append("")
-        lines.append(f"WARNING: the score form was not recorded in log.md before scoring began ({fstatus[4:-1]}); "
+        lines.append(f"WARNING: the scoring criteria were not recorded in log.md before scoring began ({fstatus[4:-1]}); "
                      "tests were run and are marked form_recorded_before_scoring = NO.")
     elif fstatus == "changed":
         lines.append("")
-        lines.append("WARNING: the score form changed after scoring began, so no test was run.")
+        lines.append("WARNING: the scoring criteria changed after scoring began, so no test was run.")
     form_changes = scoreform.changes_after_lock(project)
     if form_changes:
         lines.append("")
-        lines.append("Score form changes made in the app after scoring began (reasons as typed; see log.md):")
+        lines.append("Scoring criteria changes made in the app after scoring began (reasons as typed; see log.md):")
         lines += [f"  {when}: {'wording only' if wording else 'beyond wording'}. Reason: {why or '(none given)'}"
                   for when, why, wording in form_changes]
     if primary:
