@@ -24,7 +24,7 @@
 <div class="layout">
   <aside class="side">
     <div class="side-head">Projects</div>
-    <div id="recent" class="recent"></div>
+    <div id="recent" class="recent"><div class="skel" aria-hidden="true"><div class="sk sk-proj"></div></div></div>
     <div class="side-actions">
       <button class="btn" data-act="open-project">Open project...</button>
       <button class="btn" data-act="new-project">New project...</button>
@@ -32,7 +32,15 @@
     </div>
   </aside>
 
-  <main id="main" class="main"><p class="loading">Loading...</p></main>
+  <main id="main" class="main">
+    <!-- shown until the first answer from wormscore replaces it; appears only after 250 ms, so a fast
+         start never flashes it -->
+    <div class="wrap skel" role="status" aria-label="Loading projects">
+      <div class="sk sk-title"></div><div class="sk sk-path"></div>
+      <div class="sk sk-step"></div><div class="sk sk-step"></div><div class="sk sk-step"></div>
+      <div class="sk sk-step"></div><div class="sk sk-step"></div>
+    </div>
+  </main>
 </div>
 
 <div id="modal" class="modal" hidden>

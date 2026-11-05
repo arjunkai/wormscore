@@ -58,6 +58,9 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.6.3: the home screen appears at once: the project list no longer waits for the image libraries
+  (about 2 s to 0.2 s here), a skeleton of the screen shows while it loads, and the version and theme
+  are there from the first frame.
 - 1.6.2: the score form is now called **scoring criteria** (the term papers use), and step 2 is **Set
   scoring criteria**. ROI, intra-rater and inter-rater named where they apply. Dropdown arrows with room
   to breathe. The Neurodegeneration preset's level 4 matches the published scale (Bijwadia et al. 2021).

@@ -77,7 +77,7 @@ def form_recorded(project, cfg):
     """True if the last form recorded in log.md (saved or checked in Project settings, at Build,
     or at the first score) is this form. Cached on log.md's size and time, since the home page
     asks every few seconds."""
-    from .unblind import recorded
+    from .files import recorded
     log_path = Path(project) / "log.md"
     try:
         s = log_path.stat()
@@ -123,7 +123,7 @@ _changed_cache = {}
 def _changed_after_lock(project, cfg):
     """form_status(...) == "changed", read again only when log.md, the score history or the form
     changes (the home page asks every few seconds)."""
-    from .pipeline import read_csv
+    from .files import read_csv
     hist = Path(project) / "scoring" / "score_history.csv"
 
     def stamp(f):
@@ -173,7 +173,7 @@ def locked(project):
 def record_first_score(project, cfg):
     """Called by the scoring page just before the first score is saved: the form it is about to
     lock goes into log.md, even if it was edited by hand after Build."""
-    from .pipeline import append_log
+    from .files import append_log
     append_log(project, "first score: score form locked", form_log_lines(cfg))
 
 
@@ -204,7 +204,7 @@ def _logged_parameters(project, first_score):
 def form_status(project, cfg, history):
     """'yes' if the form matches the one recorded before scoring began, 'changed' if it differs
     (then no test runs), 'NO (...)' if it was never recorded (old projects; tests still run)."""
-    from .unblind import recorded
+    from .files import recorded
     first = min((r["saved"] for r in history if r.get("saved")), default="")
     rec = recorded(Path(project), first, FORM_LOG)
     if rec is not None:

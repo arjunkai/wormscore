@@ -251,3 +251,24 @@ def test_an_unexpected_error_is_shown_not_read_as_a_lost_connection(desk, tmp_pa
     assert status == 500 and body["ok"] is False and "did not work" in body["error"]
     assert state(desk["port"])["version"]          # the app is still running
     assert logged and logged[0].startswith("error: FileNotFoundError")
+
+
+def test_the_project_list_never_waits_for_the_image_libraries(fresh_project):
+    """The home screen's status loads no numpy or scipy (they take seconds to load in the app), and
+    the page carries the version from the start (1.6.3)."""
+    import subprocess
+    from pathlib import Path
+    import sys
+    code = ("import sys; from pathlib import Path; from wormscore import home; "
+            f"home.project_status(Path(r'{fresh_project}')); "
+            "print(sorted(m for m in ('numpy', 'scipy', 'PIL', 'tifffile') if m in sys.modules))")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True,
+                         cwd=Path(home.__file__).parents[1])
+    assert out.stdout.strip() == "[]", out.stdout + out.stderr
+
+
+def test_home_page_has_the_version_before_any_script_runs(desk):
+    from wormscore import __version__
+    st, page = call(desk["port"], "GET", "/")
+    assert st == 200 and f'id="ver">{__version__}</span>'.encode() in page
+    assert b'<html lang="en" data-theme="dark">' in page        # the saved theme (dark by default)

@@ -145,7 +145,6 @@ def project_status(path):
         st["form"] = form_summary(p, cfg)
     except (Exception, SystemExit) as exc:
         st.update(name=p.name, min_scored=0, config_error=str(exc), form=None)
-    heavy_imports()   # scorers loads numpy and scipy: never at the same time as the preload
     from .scorers import package_info, packages
     info = package_info(p)
     # A second scorer's package: only its own images and scores, so the page shows just Score.
@@ -818,8 +817,13 @@ class HomeApp:
             seen = max(seen, self.scoring[1].project.last_seen)
         return time.time() - seen
 
+    # Actions that never touch the image libraries: they answer at once, even while numpy and scipy
+    # are still loading in the background.
+    LIGHT_ROUTES = {"select", "dirty", "forget", "guide", "theme", "show", "settings", "update", "open"}
+
     def post(self, route, body):
-        heavy_imports()   # most actions load pipeline (numpy, scipy); one thread at a time, instant once loaded
+        if route not in self.LIGHT_ROUTES:
+            heavy_imports()   # pipeline loads numpy and scipy; one thread at a time, instant once loaded
         if route == "select":
             p = str(body.get("path", ""))
             if not (Path(p) / "config.json").is_file():
@@ -938,7 +942,9 @@ def make_handler(app):
             self.wfile.write(body)
 
         def send_file(self, path, ctype):
-            data = path.read_bytes()
+            self.send_bytes(path.read_bytes(), ctype)
+
+        def send_bytes(self, data, ctype):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
             self.send_header("Cache-Control", "no-store")
@@ -980,7 +986,13 @@ def make_handler(app):
             url = urlparse(self.path)
             parts = [p for p in url.path.split("/") if p]
             if not parts:
-                return self.send_file(STATIC / "home.html", "text/html; charset=utf-8")
+                # the version goes in before the page is sent, so it is never an empty pill
+                # and the saved theme, so a light-mode user never sees a dark flash first
+                theme = "light" if load_settings().get("theme") == "light" else "dark"
+                page = (STATIC / "home.html").read_text(encoding="utf-8").replace(
+                    '<span class="ver" id="ver"></span>', f'<span class="ver" id="ver">{__version__}</span>', 1
+                ).replace('<html lang="en" data-theme="dark">', f'<html lang="en" data-theme="{theme}">', 1)
+                return self.send_bytes(page.encode("utf-8"), "text/html; charset=utf-8")
             if parts[0] == "static" and len(parts) == 2 and parts[1] in HOME_FILES:
                 return self.send_file(STATIC / parts[1], HOME_FILES[parts[1]])
             if parts == ["favicon.ico"]:

@@ -18,7 +18,7 @@ import shutil
 from pathlib import Path
 
 from . import config as C
-from .pipeline import REPEAT_GAP, append_log, read_csv, write_csv
+from .files import append_log, read_csv, write_csv
 
 PACKAGE_FILE = "package.json"
 # Raw config sections a scorer needs: the form, what the images look like and how drawn regions
@@ -144,6 +144,7 @@ def own_order(codes, repeats, rng):
     """A new random order for the second scorer, with each repeat kept away from its original."""
     order = [c for c in codes]
     rng.shuffle(order)
+    from .pipeline import REPEAT_GAP
     gap = max(2, round(REPEAT_GAP * (len(codes) + len(repeats))))
     for rep, orig in sorted(repeats.items()):
         for _ in range(2000):

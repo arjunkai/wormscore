@@ -93,6 +93,7 @@ a { color: inherit; }
 }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: var(--text-lg); }
 .brand h1 { margin: 0; font: inherit; }   /* the page's top heading, styled as the brand */
+.ver:empty { display: none; }   /* never an empty grey pill */
 .ver {
   font-weight: 500; font-size: var(--text-xs); color: var(--muted); padding: 1px 8px;
   border: 1px solid var(--line); border-radius: 999px; font-variant-numeric: tabular-nums;
@@ -349,6 +350,18 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .toast .t-x { width: 24px; height: 24px; flex: none; margin: -2px -6px -2px 0; }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .loading { color: var(--muted); text-align: center; margin-top: 20vh; }
+
+/* Loading skeleton: the shape of the home screen while wormscore answers. It fades in only after
+   250 ms (a fast start shows nothing), and pulses with opacity alone, which the GPU handles
+   without layout work. Reduced motion: shown at once, no pulse (the rule at the end). */
+.skel { animation: skel-in 150ms ease-out 250ms both; }
+.sk { background: var(--raised); border-radius: var(--radius); animation: sk-pulse 1.6s ease-in-out 400ms infinite; }
+.sk-title { width: 260px; height: 26px; margin: 4px 0 10px; }
+.sk-path { width: 420px; max-width: 70%; height: 14px; margin-bottom: 28px; }
+.sk-step { height: 84px; margin-bottom: 10px; border-radius: var(--radius-lg); }
+.sk-proj { height: 64px; margin-top: 2px; }
+@keyframes skel-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sk-pulse { 50% { opacity: .55; } }
 
 /* ---------------------------------------------------------------- second scorer */
 .extra {

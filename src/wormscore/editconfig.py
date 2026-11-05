@@ -174,7 +174,7 @@ def form_change(project, old_raw, raw, form, reason=""):
 
 def save(project, body):
     from . import scoreform as S
-    from .pipeline import append_log
+    from .files import append_log
     project = Path(project)
     old_raw = _raw(project)
     raw = merged(project, body)
@@ -230,7 +230,7 @@ def write(project, raw):
 def preview(project, body):
     """How the rules sort the images already scanned: per folder, images per genotype and images
     left out. Works on the unsaved answers, so mistakes show before saving."""
-    from .pipeline import read_csv
+    from .files import read_csv
     project = Path(project)
     name, sources = clean(body)
     inv = project / "outputs" / "inventory.csv"

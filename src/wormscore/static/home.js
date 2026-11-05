@@ -1339,5 +1339,7 @@ $("#guideBtn").onclick = () => act("/api/guide", {});
 $("#updPill").onclick = () => { st.updOpen = true; st.updKey = ""; render(); };
 $("#settingsBtn").replaceChildren(icon("gear", 18));
 $("#settingsBtn").onclick = () => st.data && openSettings();
+// drawn now, from the theme the page was served with, so the button is never empty while loading
+$("#themeBtn").replaceChildren(icon(document.documentElement.dataset.theme === "dark" ? "sun" : "moon", 18));
 $("#themeBtn").onclick = () => act("/api/theme", { theme: st.data?.theme === "dark" ? "light" : "dark" });
 refresh();

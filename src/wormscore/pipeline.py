@@ -25,6 +25,7 @@ from . import __version__
 from . import config as C
 from . import measure as M
 from . import readers as R
+from .files import append_log, now, read_csv, write_csv  # noqa: F401  (re-exported)
 from .scoreform import form_log_lines
 
 INVENTORY_FIELDS = [
@@ -33,35 +34,6 @@ INVENTORY_FIELDS = [
     "z_step_um", "bits", "channel_names", "channel_roles", "marker_channel", "bf_channel", "settings", "zoom",
     "acquired", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes", "pixel_sha256",
 ]
-
-
-def now():
-    return dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-
-
-def write_csv(path, rows, fields=None):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fields = fields or list(dict.fromkeys(k for r in rows for k in r))
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
-        w.writeheader()
-        w.writerows(rows)
-
-
-def read_csv(path):
-    with open(path, encoding="utf-8") as fh:
-        return list(csv.DictReader(fh))
-
-
-def append_log(project, title, lines, cfg=None):
-    with open(Path(project) / "log.md", "a", encoding="utf-8") as fh:
-        fh.write(f"\n## {now()} {title}\n")
-        for line in lines:
-            fh.write(f"- {line}\n")
-        if cfg is not None:
-            fh.write("- Parameters (merged config.json at the time of this run):\n\n```json\n")
-            fh.write(json.dumps(cfg, indent=2))
-            fh.write("\n```\n")
 
 
 def software_versions():

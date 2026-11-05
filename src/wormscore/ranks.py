@@ -28,7 +28,6 @@ import math
 import re
 from collections import defaultdict
 
-from . import stats
 
 SCALE, COUNT = "scale", "count"
 RANK_TYPES = (SCALE, COUNT)
@@ -258,6 +257,7 @@ def mann_whitney(a, b, alternative="two-sided"):
 def tests(table, values, ro, reference="", comparisons=(), alternative="two-sided"):
     """Mann-Whitney tests between the same pairs as Fisher's exact tests (within each microscope),
     Bonferroni over the pairs of this outcome."""
+    from . import stats   # scipy: loaded only when tests run, not when a config is checked
     pairs = stats.planned_pairs(table, reference, comparisons)
     out = []
     for system, ra, rb in pairs:
@@ -277,6 +277,7 @@ def tests(table, values, ro, reference="", comparisons=(), alternative="two-side
 
 def cutoff_tests(table, ro, q, reference="", comparisons=(), alternative="two-sided"):
     """Fisher's exact test on animals at or above the cutoff vs below it."""
+    from . import stats   # scipy: loaded only when tests run, not when a config is checked
     pen = [{"system": r["system"], "genotype": r["genotype"], "animals": r["animals"],
             "animals_any_affected": r["animals_at_or_above_cutoff"]} for r in table]
     return [{"outcome": ro["name"], "test": "Fisher's exact, at or above the cutoff",

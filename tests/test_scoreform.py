@@ -297,8 +297,8 @@ def test_checking_the_form_unchanged_records_it_once(fresh_project):
 
 def save_after_scoring(project, body, monkeypatch):
     """Save with log.md entries stamped after the test scores (saved 2099-01-01 12:00)."""
-    from wormscore import pipeline
-    monkeypatch.setattr(pipeline, "now", lambda: "2100-01-01 00:00:00")
+    from wormscore import files
+    monkeypatch.setattr(files, "now", lambda: "2100-01-01 00:00:00")
     return E.save(project, body)
 
 

@@ -12,7 +12,8 @@ from statistics import median
 
 from . import config as C
 from . import methods, ranks, scoreform, stats
-from .pipeline import INTERACTION_LOG, PLAN_LOG, append_log, read_csv, write_csv
+from .files import append_log, read_csv, recorded, write_csv  # noqa: F401  (recorded re-exported)
+from .pipeline import INTERACTION_LOG, PLAN_LOG
 
 
 def stack_shapes(rows):
@@ -21,19 +22,6 @@ def stack_shapes(rows):
     for r in rows:
         shapes[r["settings_group"]][f"{r['n_z']} x {r['z_step_um']}"] += 1
     return shapes
-
-
-def recorded(project, first_score, prefix):
-    """The settings last written to log.md under this prefix before the first score was saved
-    (any time, if nothing is scored), or None if never recorded."""
-    log_path = project / "log.md"
-    rec, ts = None, ""
-    for line in (log_path.read_text(encoding="utf-8").splitlines() if log_path.exists() else []):
-        if line.startswith("## "):
-            ts = line[3:19]
-        elif line.startswith("- " + prefix) and (not first_score or ts <= first_score[:16]):
-            rec = line[2 + len(prefix):]
-    return rec
 
 
 def plan_status(project, cfg, history):
