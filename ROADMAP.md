@@ -4,14 +4,41 @@ What is planned for wormscore, roughly in order. Plans change; the
 [Releases page](https://github.com/arjunkai/wormscore/releases) lists what has shipped. Ideas and
 requests are welcome as [GitHub issues](https://github.com/arjunkai/wormscore/issues).
 
-New features are off by default, so a project that does not turn them on scores, measures and
-reports exactly as before.
+Updating never changes a project's results: new analysis options only run if you set them, so a
+project scores, measures and reports exactly as before. Screens and buttons may change.
 
 ## Planned
 
-- **Score form, later.** A short definition for each answer, shown while scoring; questions per
-  left/right cell; a counts-and-position preset.
-- **Reference images for "dim".** An optional panel of reference images the scorer can compare against.
+### Scoring criteria (from a review of published scoring schemes and tools, November 2026)
+
+- **A definition for every category, with an optional example image, shown while scoring.** Each
+  call and scale level gets its own short definition (today they share one free-text rules list),
+  and can carry a reference image the scorer can compare against, for example for "dim". Scoring
+  guidelines ask for clear boundaries between categories (Gibson-Corley, Olivier and Meyerholz 2013,
+  *Vet Pathol*), and published scales come with one reference image per score (Bijwadia, Morton and
+  Meyer 2021, *JoVE* 62894).
+- **Share criteria between projects and labs.** Export the scoring criteria as one file (questions,
+  answers, definitions, outcomes, primary outcome, a name, a version and an optional citation) and
+  import it into another project. Its checksum goes into `log.md` and the Methods draft, so a paper
+  can say exactly which criteria were used. This follows REDCap's data dictionary and Label Studio's
+  labeling configs.
+- **Preset wording that matches the literature** (new projects only; existing projects keep theirs):
+  fate reporter **on / dim / off**, with dim defined against wild type at the same settings (Reilly
+  et al. 2022, *PLoS Genet*); dendrite length **full length / short**, with "partial" optional
+  (Heiman and Shaham 2009, *Cell*; Low et al. 2019, *Development*); axon guidance questions phrased
+  around the target ("fails to reach the ventral cord?") plus a midline-crossing question (Schmitz,
+  Kinge and Hutter 2007, *PNAS*; Xu et al. 2015, *PLoS Genet*). Each preset names its source in the
+  app.
+- **A practice set.** Score a small set of images against an answer key before the real scoring
+  and see the agreement, as published scales provide (Bijwadia et al. 2021), to catch drift in how
+  categories are judged (Gibson-Corley et al. 2013).
+- **A warning for long scales.** Above 5 levels the builder warns that agreement between scorers
+  usually drops and points to the weighted kappa at unblinding (Gibson-Corley et al. 2013 suggest
+  about 4 to 5 levels).
+- **Also:** questions per left/right cell, and a counts-and-position preset.
+
+### Other planned features
+
 - **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
   several identity channels (for multi-color systems such as NeuroPAL).
 - **More 3D.** Depth of the brightest point under the cursor, and turning about the horizontal axis
@@ -27,7 +54,7 @@ reports exactly as before.
 
 1.0.0 is the version used from start to finish on a real blind-scoring project (0.14.0, then
 unblinded) plus the identity channel and marker presets. The list above continues as 1.x releases;
-each is off by default, so a project that does not turn it on works exactly as in 1.0.0.
+new analysis options only run if a project sets them, so its results stay as in 1.0.0.
 
 ## Recently shipped
 
