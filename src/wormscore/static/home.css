@@ -19,7 +19,7 @@
   --run: #5aa9ff;
   --run-soft: rgba(90, 169, 255, .14);
   /* neuron colours, as on the scoring page (the form preview uses them) */
-  --l1: #ff6b6b;
+  --l1: #ff79c6;
   --l2: #5aa9ff;
   --l3: #c58cff;
   --l4: #ffb347;
@@ -65,7 +65,7 @@
   --run: #2b6fc4;
   --run-soft: rgba(43, 111, 196, .12);
   --shadow: 0 10px 30px rgba(20, 30, 40, .15);
-  --l1: #c53030;
+  --l1: #b8287f;
   --l2: #1f66c2;
   --l3: #7a45c0;
   --l4: #a8590a;
@@ -206,8 +206,9 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 }
 .card-p .pick:hover { background: var(--raised); }
 .card-p.cur .pick { background: var(--accent-soft); border-color: var(--accent); cursor: default; }
-.card-p .nm { font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-p .pth { display: block; color: var(--faint); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+/* up to two lines, so the (folder) that tells identical names apart stays visible */
+.card-p .nm { font-weight: 600; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.card-p .pth { display: block; color: var(--faint); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-p .st { display: block; color: var(--muted); font-size: var(--text-xs); margin-top: 3px; }
 .card-p .x {
   position: absolute; right: 6px; top: 8px; width: 24px; height: 24px; display: grid; place-items: center;
@@ -332,6 +333,8 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .dialog.wide .m-foot { position: sticky; bottom: -16px; margin-bottom: -16px; padding: 12px 0 16px; background: var(--panel);
   border-top: 1px solid var(--line); }
 .dialog.sm { width: min(420px, 100%); }
+.dialog.sm.two { width: min(480px, 100%); }
+.dialog.sm .m-foot { flex-wrap: wrap; }
 .dialog.sm .m-choices { display: none; }
 .dialog.sm .m-foot { margin-top: 20px; }
 /* soft red: a light tint with red text, for actions that cannot be undone */
@@ -482,6 +485,7 @@ details.lo[open] summary { margin-bottom: 4px; }
 .sf-number { width: 5.5em; flex: none; }
 textarea.f-input { resize: vertical; line-height: 1.45; }
 .sf-more { gap: var(--space-sm); }
+.sf-more:not([open]) { padding-top: var(--space-md); padding-bottom: var(--space-md); }   /* closed: one slim row */
 .sf-more summary { cursor: pointer; font-size: var(--text-sm); font-weight: 600; min-height: 28px; display: flex; align-items: center; }
 .sf-more[open] summary { margin-bottom: var(--space-xs); }
 .sf-lock { display: flex; gap: var(--space-sm); align-items: baseline; margin-bottom: var(--space-md); font-size: var(--text-sm); color: var(--muted); text-wrap: pretty; }
@@ -523,10 +527,19 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
   .sf-prev { position: static; max-height: none; }
 }
 @media (max-width: 760px) {
-  .layout { grid-template-columns: minmax(0, 1fr); }
-  .side { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40vh; }
+  /* one scrolling page instead of a list and a main area that scroll separately */
+  html, body { height: auto; }
+  .layout { display: block; }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .recent, .main { overflow: visible; }
+  .card-p .pick { padding-top: var(--space-sm); padding-bottom: var(--space-sm); }
+  .card-p .pth { display: none; }   /* identical names already carry their folder */
+  .side-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: var(--space-sm) var(--space-md); }
+  .side-actions .btn { justify-content: center; }
   .step { grid-template-columns: 40px 1fr; }
   .s-act { grid-column: 2; align-items: flex-start; }
+  .x-head { flex-direction: column; gap: var(--space-md); }
+  .x-head > div:first-child { flex: none; }
   .rule { grid-template-columns: 1fr 30px; }
   .rule .arrow { display: none; }
   .rule .f-input + .arrow + .f-input { grid-column: 1; }
@@ -544,3 +557,54 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
 select.f-input, .sf-form select { font: inherit; appearance: none; -webkit-appearance: none; padding-right: 34px; cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M2.5 4.5 6 8l3.5-3.5%27 fill=%27none%27 stroke=%27%23959ca6%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E"); background-position: right 12px center; background-size: 12px 12px; background-repeat: no-repeat; }
 [data-theme="light"] select.f-input, [data-theme="light"] .sf-form select { background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M2.5 4.5 6 8l3.5-3.5%27 fill=%27none%27 stroke=%27%235b636e%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E"); }
+
+/* "?" next to a term: a short definition on click (terms.js). Fixed to the window so no panel clips it. */
+.tip { display: inline-flex; vertical-align: middle; margin-left: 4px; font-weight: 400; }
+.tip-btn {
+  width: 18px; height: 18px; margin: 3px; padding: 0; border-radius: 50%; border: 1px solid var(--line-strong);
+  background: none; color: var(--faint); font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1; cursor: pointer; flex: none;
+}
+.tip-btn:hover, .tip-btn[aria-expanded="true"] { color: var(--text); border-color: var(--muted); }
+.tip-bubble {
+  display: none; position: fixed; z-index: 60; max-width: min(320px, calc(100vw - 16px)); padding: 8px 11px;
+  background: var(--raised); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--radius);
+  font-size: var(--text-sm); font-weight: 400; line-height: 1.45; text-align: left; white-space: normal;
+  letter-spacing: normal; text-transform: none; box-shadow: 0 6px 20px rgb(0 0 0 / .3);
+}
+.tip-bubble.on { display: block; }
+
+/* Browse images while the project is scored blind: still clickable (it says why), but quiet */
+.btn.locked { color: var(--muted); }
+.btn.locked svg { vertical-align: -2px; }
+
+/* After unblinding: the headline numbers above the steps */
+.results-card {
+  margin-top: var(--space-lg); padding: var(--space-md) var(--space-lg); border-radius: var(--radius-lg); background: var(--panel);
+  border: 1px solid var(--accent);
+}
+.r-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); flex-wrap: wrap; }
+.r-top h3 { margin: 0; font-size: var(--text-lg); font-weight: 650; display: flex; align-items: center; }
+.r-sub { margin: var(--space-xs) 0 0; color: var(--muted); font-size: var(--text-sm); }
+.r-table { margin-top: var(--space-sm); border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.r-table th, .r-table td { padding: var(--space-xs) var(--space-lg) var(--space-xs) 0; text-align: left; border-bottom: 1px solid var(--line); }
+.r-table thead th { color: var(--muted); font-weight: 400; font-size: var(--text-sm); }
+.r-table tbody th { font-weight: 600; }
+.r-tests { margin: var(--space-sm) 0 0; padding-left: var(--space-lg); font-variant-numeric: tabular-nums; }
+.r-tests li { margin: var(--space-xs) 0; }
+.r-tests.one { padding-left: 0; }
+.r-tests.one p { margin: 0; }
+
+/* the Build question's warning line */
+.m-list p { margin: 0 0 var(--space-md); }
+.m-list p:last-child { margin-bottom: 0; }
+.m-warn { padding: var(--space-sm) var(--space-md); border-radius: var(--radius); background: var(--warn-soft); border: 1px solid var(--warn); }
+
+/* Project settings: links to the page's sections; the once-per-image box shows it opens */
+.ps-jump { color: var(--muted); font-size: var(--text-sm); margin: 0 0 var(--space-md); }
+.sf-more summary { list-style: none; gap: 8px; }
+.sf-more summary::-webkit-details-marker { display: none; }
+.sf-more summary::before {
+  content: ""; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg); transition: transform .15s; flex: none; margin-right: 2px;
+}
+.sf-more[open] summary::before { transform: rotate(45deg); }

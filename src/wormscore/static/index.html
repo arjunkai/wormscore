@@ -38,7 +38,7 @@
       <div class="seg" role="group" aria-label="Display range">
         <button data-range="full" title="Full detector range, same for every image from this microscope">Standard</button>
         <button data-range="enhanced" class="on" title="Background to typical bright spot, same for every image from this microscope">Enhanced</button>
-      </div>
+      </div><span id="rangeHelp"></span>
       <div class="seg hidden" id="chanSeg" role="group" aria-label="Channel">
         <button data-chan="reporter" title="The reporter being scored">Reporter</button><button data-chan="identity" title="The identity marker, for finding the cell">Identity</button><button data-chan="both">Both</button>
       </div>
@@ -53,18 +53,19 @@
   </section>
 
   <aside id="panel">
-    <div class="code" id="codeTitle">-</div>
+    <div class="code-row"><div class="code" id="codeTitle">-</div>
+      <button type="button" id="nextBtn" class="btn" title="Next image in the list (N)">Next image <span aria-hidden="true">&rarr;</span></button></div>
     <section id="browseInfo" class="browse-info hidden" aria-label="About this image"></section>
     <div class="tabs" role="tablist" aria-label="Steps for this image">
       <button data-tab="score" class="on" role="tab" aria-selected="true">1. Score</button>
-      <button data-tab="mark" id="markTab" role="tab" aria-selected="false">2. Mark cells</button>
+      <button data-tab="mark" id="markTab" role="tab" aria-selected="false">2. Mark cells (optional)</button>
     </div>
 
     <form id="scoreForm" class="tab" data-tab="score" autocomplete="off">
       <div id="flags"></div>
 
       <fieldset>
-        <legend>Usable image?</legend>
+        <legend>Usable image? <span id="usableHelp"></span></legend>
         <label><input type="radio" name="usable" value="yes"> Yes</label>
         <label><input type="radio" name="usable" value="no"> No</label>
         <select name="unusable_reason" id="reasonSelect" class="hidden"><option value="">Why not usable?</option></select>
@@ -79,7 +80,7 @@
       <div id="animalQs"></div>
 
       <fieldset>
-        <legend>Confidence</legend>
+        <legend>Confidence <span id="confHelp"></span></legend>
         <label><input type="radio" name="confidence" value="sure"> Sure</label>
         <label><input type="radio" name="confidence" value="fairly sure"> Fairly sure</label>
         <label><input type="radio" name="confidence" value="unsure"> Unsure</label>
@@ -107,7 +108,7 @@
         </div>
       </div>
       <p class="small">Circle: press and drag from the center. Outline: click points, double-click to close. Esc cancels.</p>
-      <label class="chk"><input id="sugToggle" type="checkbox" checked> Show suggested spots (S1 = brightest)</label>
+      <label class="chk"><input id="sugToggle" type="checkbox" checked> Show suggested spots (S1 = brightest)</label><span id="sugHelp"></span>
       <div id="sugList"></div>
       <div id="roiList"></div>
       <div id="measureOut"></div>
@@ -129,6 +130,7 @@
   </div>
 </div>
 <script src="/static/form.js"></script>
+<script src="/static/terms.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

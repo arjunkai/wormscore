@@ -122,7 +122,9 @@ The images are not part of this repository.
 ## Using it on your own images
 
 The app's home screen walks you through five steps in order, with progress and time left. Every step
-also has a command (in brackets) if you prefer the command line or want to script it.
+also has a command (in brackets) if you prefer the command line or want to script it. A small **?** next
+to a term (blind set, ROI, settings group, primary outcome and others) shows a one-sentence definition:
+click it or press Enter, and Escape closes it.
 
 **Before you start**
 
@@ -147,7 +149,8 @@ also has a command (in brackets) if you prefer the command line or want to scrip
    this step is optional: the criteria in `config.json` (the defaults unless you changed them) are
    recorded when you build the blind set.
 3. **Build blind set** (`wormscore prepare my_project`): applies the inclusion rules, gives every image a
-   random code, finds and measures suggested cells, and writes the sealed key. Excluded images and the
+   random code, finds and measures suggested cells, and writes the sealed key. The first build asks
+   before it starts, and offers to set the criteria first if you have not saved them. Excluded images and the
    reasons are in `outputs/excluded.csv`. To leave out images by name (for example a plate with the
    wrong reporter), add `"exclude": [{"match": "*pattern*", "reason": "why"}]` to that source. Images
    taken after scoring started can be added with **Add new images** (`wormscore prepare my_project
@@ -155,25 +158,29 @@ also has a command (in brackets) if you prefer the command line or want to scrip
    one. Once scoring has started, the folders and rules that built the blind set are locked, but you can
    still add a folder for new images.
 4. **Score** (`wormscore app my_project`): for each image, answer any yellow questions, score each
-   neuron, save, then outline each cell body (or accept a suggestion) and save the regions of interest (**Save ROIs**). Answers you have
+   neuron, save, then outline each cell body (or accept a suggestion) and save the regions of interest (**Save ROIs**).
+   Outlining is optional. **Next image** (or the N key) moves on, and **Save score** stays in view at the
+   bottom of the panel on small screens. Answers you have
    not saved yet are kept as a draft (`scoring_drafts/`, never counted as scores), so a crash or restart
    loses nothing: open the image again and click Save. If the connection to wormscore is lost, the
    window shows "Reconnecting..." and reconnects by itself; if wormscore is not running it says so, with
    a Start wormscore button (Windows app).
 5. **Unblind** (`wormscore unblind my_project --i-have-finished-scoring`), only when scoring is
    finished: reveals the genotypes and writes the results tables and a draft Methods paragraph (see
-   [Results](#results) below).
+   [Results](#results) below). The confirmation says how many images are scored and that unscored ones
+   are left out. Afterwards a **Results** card at the top of the project shows the penetrance per
+   genotype and the planned Fisher tests, with **Open results**.
 
 **Looking at images: Browse images** (`wormscore browse my_project`). After scanning, **Browse images**
-in the Scan data card opens the scoring viewer with each image's file name and genotype, for checking
+(next to Open folder and Project settings, at the top of the project) opens the scoring viewer with each image's file name and genotype, for checking
 images and setting the scoring criteria. It has the same views as scoring (planes, 3D, channels, both
 display ranges, suggested cells), and you can outline a cell to see its measurements on screen. Nothing
 is scored or saved. Before the blind set exists, Enhanced is set from each image alone, so compare
 brightness between images with Standard. Each image you open before the build is recorded in `log.md`
 and `outputs/browsed_images.csv`, and the Build log and the Methods draft say how many images were seen
 (ARRIVE 2.0 item 5 asks who knew the groups at each stage). Browse is off from Build blind set until
-Unblind, and in a second scorer's package. After unblinding it opens again from the Unblind card, to look
-up a code (for example W0010) with its genotype, file and saved score.
+Unblind (the button shows a lock and says why), and in a second scorer's package. After unblinding it
+opens again, to look up a code (for example W0010) with its genotype, file and saved score.
 
 **Optional: a second scorer** (inter-rater reliability). After building the blind set, use **Make a package...** in the
 **Second scorer** card on the home page (`wormscore export-scorer my_project D:\for_sam --scorer "Sam K"

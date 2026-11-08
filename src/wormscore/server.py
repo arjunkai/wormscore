@@ -19,7 +19,7 @@ from pathlib import Path
 from . import config as C
 
 STATIC = Path(__file__).resolve().parent / "static"
-STATIC_FILES = {"app.js": "text/javascript; charset=utf-8", "form.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8",
+STATIC_FILES = {"app.js": "text/javascript; charset=utf-8", "form.js": "text/javascript; charset=utf-8", "terms.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8",
                 "icon.svg": "image/svg+xml",
                 "icon-192.png": "image/png", "icon-512.png": "image/png",
                 "manifest.webmanifest": "application/manifest+json"}

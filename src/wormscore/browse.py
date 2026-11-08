@@ -144,8 +144,8 @@ class Browse:
                 ("Settings group", r.get("settings_group", "")) if it["coded"] else None,
                 ("Settings", r.get("settings", "")),
                 ("Objective", r.get("objective", "")),
-                ("Pixel size", f"{float(s.get('pixel_um') or 0):.3f} um"),
-                ("Planes", f"{n_z}, {z:g} um apart" if z else str(n_z)),
+                ("Pixel size", f"{float(s.get('pixel_um') or 0):.3f} µm"),
+                ("Planes", f"{n_z}, {z:g} µm apart" if z else str(n_z)),
                 ("Acquired", r.get("acquired", "")),
                 ("Included", it["note"] or ("Yes" if not it["coded"] else
                                             "Yes" if r.get("counted_by_default") == "True" else

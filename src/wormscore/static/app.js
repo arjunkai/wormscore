@@ -186,7 +186,22 @@ function loadValues(url, w, h, packed = true) {
 
 const radios = (name, options) => wsForm.radios(h, name, options);
 
+function addHelp() {
+  $("#rangeHelp").replaceChildren(wsHelp(h, "display", "Standard and Enhanced") || "");
+  $("#usableHelp").replaceChildren(wsHelp(h, "usable", "a usable image") || "");
+  $("#confHelp").replaceChildren(wsHelp(h, "confidence", "confidence") || "");
+  $("#sugHelp").replaceChildren(wsHelp(h, "suggested", "suggested spots") || "");
+  $("#markIntro").append(wsHelp(h, "roi", "an ROI") || "");
+}
+
+function nextImage() {
+  const i = st.worms.findIndex(w => w.code === st.code);
+  if (i + 1 < st.worms.length) openWorm(st.worms[i + 1].code);
+}
+$("#nextBtn").onclick = nextImage;
+
 function buildForm() {
+  addHelp();
   const sc = st.cfg.scoring;
   document.title = `Scoring: ${st.cfg.project_name} - wormscore`;   // the app finds its scoring windows by "Scoring"
   $("#projectName").textContent = st.cfg.project_name;
@@ -219,18 +234,19 @@ function setupBrowse() {
   $("#browseInfo").classList.remove("hidden");
   $("#saveKeys").classList.add("hidden");
   $(".progress .bar").classList.add("hidden");
-  $("#markIntro").textContent = "Outline a cell to measure it, with the same measurements as scoring. "
-    + "The numbers are shown here and not saved.";
+  // the "?" stays on the line of the word before it instead of wrapping onto a line of its own
+  $("#markIntro").replaceChildren("Outline a cell to measure it, with the same measurements as scoring. "
+    + "The numbers are shown here and not ", h("span", { class: "nowrap" }, "saved.", wsHelp(h, "roi", "an ROI")));
   $("#saveRois").textContent = "Measure";
   st.tab = "mark";
-  st.listFind = h("input", { type: "search", id: "listFind", class: "list-find", placeholder: "Find code, file or genotype",
+  st.listFind = h("input", { type: "search", id: "listFind", class: "list-find", placeholder: "Search images",
     "aria-label": "Find an image by code, file name or genotype", oninput: renderList });
 }
 
 // One line per image: its code (after unblinding) or file, then genotype, and whether it is left out.
 function browseRow(w) {
   const said = [w.coded ? w.code : null, w.genotype, w.file, w.location, w.note].filter(Boolean).join(", ");
-  return h("button", { class: `brow${w.code === st.code ? " cur" : ""}`, "aria-current": w.code === st.code ? "true" : null,
+  return h("button", { class: `brow${w.coded ? " coded" : ""}${w.code === st.code ? " cur" : ""}`, "aria-current": w.code === st.code ? "true" : null,
     title: said, "aria-label": said, onclick: () => openWorm(w.code) },
     h("span", { class: "b-main" }, w.coded ? w.code : w.file || w.code),
     h("span", { class: "b-sub" }, w.genotype || "no genotype"),
@@ -238,10 +254,28 @@ function browseRow(w) {
     w.note ? h("span", { class: "b-note" }, w.note.startsWith("Left out") ? "Left out" : w.note) : null);
 }
 
+// The criteria's own words for a saved answer's field (n1_call -> "Neuron 1: call").
+function answerLabel(k) {
+  const sc = st.cfg.scoring;
+  const fixed = { usable: "Usable", unusable_reason: "Why not usable", count_this_image: "Counted for this animal",
+    cells_seen: sc.count_question?.label || "Cells seen", confidence: "Confidence", notes: "Notes" };
+  if (fixed[k]) return fixed[k];
+  let m = /^n(\d+)_(.+)$/.exec(k);
+  if (m) {
+    const neuron = sc.neurons[+m[1] - 1] || `Neuron ${m[1]}`;
+    const q = m[2] === "call" ? "call" : m[2] === "side" ? "side" : (sc.neuron_questions || []).find(x => x.id === m[2])?.label || m[2];
+    return `${neuron}: ${q}`;
+  }
+  m = /^a_(.+)$/.exec(k);
+  if (m) return (sc.animal_questions || []).find(x => x.id === m[1])?.label || m[1];
+  return k;
+}
+
 function renderInfo(r) {
   const it = st.worms.find(w => w.code === st.code);
   const lines = [h("p", { class: "browse-note" }, "File names and genotypes are visible here. Nothing is saved."),
-    h("dl", {}, ...r.info.flatMap(x => [h("dt", {}, x.k), h("dd", {}, x.v)]))];
+    h("dl", {}, ...r.info.flatMap(x => [h("dt", {}, x.k, x.k === "Settings group" ? wsHelp(h, "settings_group", "a settings group") : null),
+      h("dd", {}, x.v)]))];
   if (r.meta.enhanced_this_image) lines.push(h("p", { class: "small" },
     "Enhanced is set from this image alone. Build blind set sets one Enhanced range per microscope, so "
     + "compare brightness between images with Standard."));
@@ -249,7 +283,7 @@ function renderInfo(r) {
     const skip = new Set(["saved", "flag_answers", "display_preset_when_saved"]);
     const rows = Object.entries(r.score).filter(([k, v]) => !skip.has(k) && v !== "" && v != null && typeof v !== "object");
     lines.push(h("h2", { class: "b-head" }, `Saved score (${r.score.saved})`),
-      h("dl", {}, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, String(v))])));
+      h("dl", {}, ...rows.flatMap(([k, v]) => [h("dt", {}, answerLabel(k)), h("dd", {}, String(v))])));
   } else if (it?.coded) lines.push(h("p", { class: "small" }, "No score was saved for this code."));
   $("#browseInfo").replaceChildren(...lines);
 }
@@ -298,7 +332,7 @@ function renderList() {
     const q = (st.listFind.value || "").trim().toLowerCase();
     const shown = st.worms.filter(w => !q || [w.code, w.file, w.genotype, w.location].some(x => (x || "").toLowerCase().includes(q)));
     nav.replaceChildren(st.listFind, ...shown.map(browseRow),
-      shown.length ? null : h("p", { class: "small" }, "No image matches."));
+      ...(shown.length ? [] : [h("p", { class: "small" }, "No image matches.")]));
     const coded = st.worms.filter(w => w.coded).length;
     $("#progText").textContent = `Browsing ${st.worms.length} images` + (coded ? ` (${coded} coded)` : "")
       + (st.cfg.stage === "before" ? ". Each image you open is recorded in log.md." : "");
@@ -317,7 +351,7 @@ function renderList() {
   const n = st.worms.filter(w => w.scored).length;
   const marked = st.worms.filter(w => w.scored && w.has_roi).length;
   $("#progFill").style.transform = `scaleX(${n / Math.max(st.worms.length, 1)})`;
-  $("#progText").textContent = `${n} / ${st.worms.length} scored, ${marked} with cells marked` +
+  $("#progText").textContent = `${n} of ${st.worms.length} scored \u00b7 cells outlined on ${marked} (optional)` +
     (n < st.cfg.min_scored ? ` (at least ${st.cfg.min_scored} before unblinding)` : "");
 }
 
@@ -1080,6 +1114,9 @@ function syncButtons() {
     : "Background to typical bright spot, same for every image from this microscope";
   $$("[data-zoom]").forEach(b => setOn(b, +b.dataset.zoom === st.zoom));
   $("#zSlider").disabled = st.view !== "plane";
+  const last = st.worms.findIndex(w => w.code === st.code) === st.worms.length - 1;
+  $("#nextBtn").disabled = !st.meta || last;
+  $("#nextBtn").title = last ? "This is the last image in the list" : "Next image in the list (N)";
   $("#zSlider").value = st.z;
   $("#zText").textContent = st.meta ? (st.view === "plane" ? `${st.z + 1} / ${st.meta.n_z}` : `all ${st.meta.n_z}`) : "-";
   const in3d = st.view === "3d", off3d = st.meta ? why3dOff() : "No image";
@@ -1206,10 +1243,14 @@ document.addEventListener("keydown", e => {
   else if (k === "e") { st.range = st.range === "full" ? "enhanced" : "full"; syncButtons(); draw(); }
   else if (k === "b" && st.meta.has_brightfield) { st.bf = !st.bf; syncButtons(); draw(); }
   else if (["1", "2", "3"].includes(k) && st.cfg.identity) setChan(["reporter", "identity", "both"][+k - 1]);
-  else if (k === "n" && !e.repeat) {
-    const i = st.worms.findIndex(w => w.code === st.code);
-    if (i + 1 < st.worms.length) openWorm(st.worms[i + 1].code);
-  } else if (k === "escape") { st.drawing = null; draw(); }
+  else if (k === "n" && !e.repeat) nextImage();
+  else if (k === "escape") { st.drawing = null; draw(); }
+});
+
+// The scoring rules box closes when you click elsewhere, so it never sits over the questions.
+document.addEventListener("click", e => {
+  const d = document.querySelector("details.defs[open]");
+  if (d && !d.contains(e.target)) d.removeAttribute("open");
 });
 
 // Resizing fires many events a second; draw at most once per frame.

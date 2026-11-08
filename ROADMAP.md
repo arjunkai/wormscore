@@ -39,6 +39,9 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Other planned features
 
+- **Analysis settings in the app.** The analysis plan, hidden repeats and the reference genotype
+  set in Project settings instead of `config.json`. These are recorded when the blind set is built,
+  so this needs its own plan for how they lock.
 - **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
   several identity channels (for multi-color systems such as NeuroPAL).
 - **More 3D.** Depth of the brightest point under the cursor, and turning about the horizontal axis
@@ -64,6 +67,12 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.8.0: **Interface pass.** A small ? next to each term shows a one-sentence definition. After
+  Unblind, a Results card shows penetrance per genotype and the planned tests. Build blind set and
+  Unblind ask first and say what happens (how many images are unscored). The scoring window has a
+  Next image button, and Save score stays in view on small screens. Browse images moved to the top
+  of the project and shows a lock while it is off. Neuron 1 is pink instead of red, so it does not
+  read as an error. Clearer wording throughout, and a home screen that fits narrow windows.
 - 1.7.0: **Browse images.** See each image with its file name and genotype in the scoring viewer
   (planes, 3D, channels, both display ranges, suggested cells), and measure a region on screen,
   without scoring or saving anything. It works before the blind set is built (to check images and

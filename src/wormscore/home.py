@@ -23,7 +23,7 @@ from . import update as U
 from .server import CODE, LOCAL_HOSTS, STATIC, LocalServer, heavy_imports
 
 SETTINGS = Path.home() / ".wormscore.json"
-HOME_FILES = {"home.js": "text/javascript; charset=utf-8", "form.js": "text/javascript; charset=utf-8", "home.css": "text/css; charset=utf-8",
+HOME_FILES = {"home.js": "text/javascript; charset=utf-8", "form.js": "text/javascript; charset=utf-8", "terms.js": "text/javascript; charset=utf-8", "home.css": "text/css; charset=utf-8",
               "icon.svg": "image/svg+xml",
               "icon-192.png": "image/png", "icon-512.png": "image/png",
               "manifest.webmanifest": "application/manifest+json"}
@@ -165,7 +165,44 @@ def project_status(path):
     st["unblinded"] = (p / "outputs" / "unblinded" / "summary.txt").is_file()
     from .browse import browse_state
     st["browse"] = browse_state(p)[0]       # the wording is in home.js, so this state never names genotypes
+    st["results"] = results_summary(p, st["scored"], st["coded"]) if st["unblinded"] else None
     return st
+
+
+def _p(v):
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    return f"{x:.1e}" if 0 < x < 0.001 else f"{x:.3g}"
+
+
+def _csv_rows(path):
+    import csv
+    with open(path, newline="", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
+def results_summary(p, scored, coded):
+    """Headline numbers for the home screen once a project is unblinded: penetrance per microscope
+    and genotype, and the planned Fisher tests. Read from the results tables, never from the key."""
+    out = Path(p) / "outputs" / "unblinded"
+    try:
+        pen = [{"system": r["system"], "genotype": r["genotype"], "animals": int(r["animals"]),
+                "affected": int(r["animals_any_affected"]), "pct": r["penetrance_pct"]}
+               for r in _csv_rows(out / "penetrance.csv") if r.get("genotype")]
+        tests = []
+        for r in (_csv_rows(out / "fisher_tests.csv") if (out / "fisher_tests.csv").is_file() else []):
+            pk = next((k for k in r if k.startswith("p_fisher")), None)
+            if not pk or not r.get("genotype_a"):
+                continue
+            tests.append({"system": r["system"], "a": f"{r['genotype_a']} {r['a_affected']}",
+                          "b": f"{r['genotype_b']} {r['b_affected']}", "p": _p(r[pk]),
+                          "p_corr": _p(r.get("p_bonferroni", "")), "n": int(float(r.get("n_tests") or 1)),
+                          "role": r.get("outcome_role", "")})
+    except (OSError, KeyError, ValueError):
+        return None
+    return {"penetrance": pen, "tests": tests, "scored": scored, "coded": coded} if pen else None
 
 
 # ------------------------------------------------------------------ background steps

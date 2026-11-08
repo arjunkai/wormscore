@@ -26,6 +26,7 @@ const ICONS = {
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
@@ -112,6 +113,8 @@ function ask(title, body, choices, cancel = "Cancel", opts = {}) {
     const simple = choices.length > 0 && choices.every(c => !c.desc);
     $("#modal .dialog").classList.toggle("sm", simple && !opts.wide);
     $("#modal .dialog").classList.toggle("wide", !!opts.wide);
+    // two choices plus Cancel need a little more room than one
+    $("#modal .dialog").classList.toggle("two", simple && !opts.wide && choices.length > 1);
     const box = simple ? $("#mFootChoices") : $("#mChoices");
     (simple ? $("#mChoices") : $("#mFootChoices")).replaceChildren();
     box.replaceChildren(...choices.map(c => simple
@@ -180,15 +183,25 @@ async function forgetProject(name, path) {
   if (go) act("/api/forget", { path });
 }
 
+// The end of a path, where a project's own folder name is: "...\\parent\\folder".
+function shortPath(path) {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  const sep = path.includes("\\") ? "\\" : "/";
+  return parts.length > 2 ? "\u2026" + sep + parts.slice(-2).join(sep) : path;
+}
+
 function renderSide(d) {
   const cur = d.project?.path;
-  const list = d.recent.map(p => {
-    const name = p.name || p.path.split(/[\\/]/).pop();
+  const names = d.recent.map(p => p.name || p.path.split(/[\\/]/).pop());
+  const list = d.recent.map((p, i) => {
+    const folder = p.path.split(/[\\/]/).filter(Boolean).pop();
+    // two projects with the same name are told apart by their folder name
+    const name = names[i] + (names.filter(n => n === names[i]).length > 1 && folder !== names[i] ? ` (${folder})` : "");
     return h("div", { class: "card-p" + (p.path === cur ? " cur" : "") },
       h("button", { class: "pick", "data-k": `pick:${p.path}`, "aria-current": p.path === cur ? "true" : null,
         onclick: async () => p.path !== cur && await canLeaveSettings() && act("/api/select", { path: p.path }) },
         h("span", { class: "nm" }, name),
-        h("span", { class: "pth", title: p.path }, h("bdi", { dir: "ltr" }, p.path)),
+        h("span", { class: "pth", title: p.path }, shortPath(p.path)),
         h("span", { class: "st" }, cardStatus(p))),
       h("button", {
         class: "x", "data-k": `x:${p.path}`, title: "Remove from this list (the folder itself is not changed)",
@@ -227,6 +240,31 @@ function stepCard(n, state, title, desc, fact, actions, extra) {
       fact ? h("div", { class: "s-fact" }, fact) : null,
       extra || null),
     h("div", { class: "s-act" }, actions));
+}
+
+// After unblinding: the headline numbers, so the end of the work is visible here. The full tables,
+// the other outcomes and the draft Methods text are in the results folder.
+function resultsCard(p) {
+  const r = p.results;
+  const systems = [...new Set(r.penetrance.map(x => x.system))];
+  const many = systems.length > 1;
+  const pct = x => `${x.affected}/${x.animals} (${x.pct}%)`;
+  return h("section", { class: "results-card", "aria-labelledby": "resHead" },
+    h("div", { class: "r-top" },
+      h("h3", { id: "resHead" }, "Results"),
+      h("button", { class: "primary", "data-k": "results-top", onclick: () => act("/api/open", { what: "results" }) }, "Open results")),
+    h("p", { class: "r-sub" }, `Penetrance: the share of animals with at least one affected neuron. ${r.scored} of ${r.coded} images were scored.`),
+    h("table", { class: "r-table" },
+      h("thead", {}, h("tr", {}, many ? h("th", { scope: "col" }, "Microscope") : null, h("th", { scope: "col" }, "Genotype"),
+        h("th", { scope: "col" }, "Affected animals"))),
+      h("tbody", {}, ...r.penetrance.map(x => h("tr", {}, many ? h("td", {}, x.system) : null,
+        h("th", { scope: "row" }, x.genotype), h("td", {}, pct(x)))))),
+    // one test reads as a sentence; several as a list
+    r.tests.length ? h(r.tests.length > 1 ? "ul" : "div", { class: "r-tests" + (r.tests.length > 1 ? "" : " one") },
+      ...r.tests.map(t => h(r.tests.length > 1 ? "li" : "p", {},
+      `${many ? t.system + ": " : ""}${t.a} vs ${t.b}: Fisher's exact p = ${t.p}` + (t.n > 1 ? `, corrected p = ${t.p_corr} (${t.n} tests)` : "")
+      + (t.role ? ` (${t.role})` : "")))) : null,
+    h("p", { class: "r-sub" }, "The results folder has the full tables and a draft Methods text. Fill in the [brackets] in the Methods before you use it."));
 }
 
 // The scoring criteria card: what the scorer answers, then whether they are recorded or locked.
@@ -268,49 +306,54 @@ function renderMain(d) {
   const s4 = stepRunning("unblind") ? "running" : p.unblinded ? "done" : allScored ? "next" : "wait";
 
   const steps = h("ol", { class: "steps" },
-    stepCard(1, s1, "Scan data", "List every file and image and identify channels from metadata.",
+    stepCard(1, s1, ["Scan data", wsHelp(h, "scan", "Scan data")], "Find every image in your folders and read its channels from the file's metadata.",
       needFolders ? "First tell wormscore where your images are and how file names show the genotype."
         : scanned ? `${plural(p.scanned, "raw image")} found. Scan again if you added files.` : null,
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
-        scanned ? "Scan again" : "Scan data"),
-       scanned ? h("button", { class: "btn", "data-k": "browse", disabled: busy || !ok, onclick: browse,
-         title: "See each image with its file name and genotype, without scoring" }, "Browse images") : null]),
-    stepCard(2, sF, "Set scoring criteria", "Choose what the scorer answers for each image: the calls, the questions and what counts as a defect. They are recorded in log.md and lock at the first score.",
+        scanned ? "Scan again" : "Scan data")]),
+    stepCard(2, sF, ["Set scoring criteria", wsHelp(h, "criteria", "scoring criteria")], "Choose what the scorer answers for each image: the calls, the questions and what counts as a defect. They are written to log.md and locked once the first image is scored.",
       f ? formFact(f) : null,
       [h("button", { class: sF === "next" ? "primary" : "btn", "data-k": "form", disabled: busy || !ok, onclick: () => openProjectSettings("form") },
         f?.locked ? "View criteria" : formDone ? "Edit criteria..." : "Set criteria...")]),
-    stepCard(3, s2, "Build blind set", "Apply the inclusion rules, give every image a random code, and record the analysis plan and scoring criteria in log.md.",
+    stepCard(3, s2, ["Build blind set", wsHelp(h, "blind_set", "a blind set")], "Apply the inclusion rules, give every image a random code, and record the analysis plan and scoring criteria in log.md.",
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
       [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
         !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")]),
-    stepCard(4, s3, "Score", "Score each coded image in the scoring window. File names and genotypes stay hidden.",
+    stepCard(4, s3, ["Score", wsHelp(h, "score", "Score")], "Score each coded image in the scoring window. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
       [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },
-        p.scored ? "Continue scoring" : "Start scoring")],
+        allScored ? "Open scoring" : p.scored ? "Continue scoring" : "Start scoring")],
       built && p.coded && !building ? h("div", { class: "mini" }, h("div", { style: `width:${Math.min(100, 100 * p.scored / p.coded)}%` })) : null),
-    stepCard(5, s4, "Unblind", "Reveal which genotype each code was, then write the results tables and a draft Methods text. Do this only when scoring is finished.",
+    stepCard(5, s4, ["Unblind", wsHelp(h, "unblind", "Unblind")], "Reveal which genotype each code was, then write the results tables and a draft Methods text. Do this only when scoring is finished.",
       p.unblinded ? "Results are in the outputs\\unblinded folder." + ((p.second_scorers || []).some(s => s.imported)
         ? " Agreement with second scorers is in between_scorers.csv." : "") : null,
-      [h("label", { class: "check" },
-        h("input", { type: "checkbox", "data-k": "finished", checked: st.finished, onchange: e => { st.finished = e.target.checked; render(); } }),
-        "I have finished scoring"),
-       h("button", { class: s4 === "next" && st.finished ? "primary" : "btn", "data-k": "step4", disabled: busy || !built || !p.scored || !st.finished,
-         onclick: unblind }, p.unblinded ? "Unblind again" : "Unblind"),
-       p.unblinded ? h("button", { class: "btn", "data-k": "results", onclick: () => act("/api/open", { what: "results" }) }, "Open results") : null,
-       p.unblinded && p.browse === "after" ? h("button", { class: "btn", "data-k": "browse5", disabled: busy, onclick: browse,
-         title: "Look up a code with its genotype and file" }, "Browse images") : null]));
+      p.unblinded
+        ? [h("button", { class: p.results ? "btn" : "primary", "data-k": "results", onclick: () => act("/api/open", { what: "results" }) }, "Open results"),
+           h("button", { class: "btn subtle", "data-k": "step4", disabled: busy || !built || !p.scored,
+             title: "Run the results again, for example after more images were scored", onclick: () => unblind(true) }, "Unblind again...")]
+        : [h("label", { class: "check" },
+            h("input", { type: "checkbox", "data-k": "finished", checked: st.finished, onchange: e => { st.finished = e.target.checked; render(); } }),
+            "I have finished scoring"),
+           h("button", { class: s4 === "next" && st.finished ? "primary" : "btn", "data-k": "step4", disabled: busy || !built || !p.scored || !st.finished,
+             onclick: () => unblind() }, "Unblind")]));
 
   main.replaceChildren(h("div", { class: "wrap" },
     h("div", { class: "p-head" },
       h("div", {}, h("h2", {}, p.name || "Project"), h("div", { class: "p-path" }, breakable(p.path))),
       h("div", { class: "p-tools" },
         h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"),
+        p.browse && p.browse !== "none" ? h("button", {
+          class: "btn" + (p.browse === "locked" ? " locked" : ""), "data-k": "browse", disabled: busy || !ok, onclick: browse,
+          title: p.browse === "locked" ? "Off while this project is being scored blind. It opens again after Unblind."
+            : p.browse === "after" ? "Look up a code with its genotype and file" : "See each image with its file name and genotype, without scoring",
+        }, p.browse === "locked" ? [icon("lock", 14), " Browse images"] : "Browse images") : null,
         h("button", { class: "btn", "data-k": "settings", disabled: !p.has_config || busy, onclick: () => openProjectSettings() }, "Project settings..."))),
     !p.has_config ? h("div", { class: "banner" }, "This folder has no config.json. Open another project or make a new one.") : null,
     p.config_error ? h("div", { class: "banner" }, "config.json needs a fix before the next step:\n" + p.config_error) : null,
     busy && !runningHere ? h("div", { class: "banner" }, `"${job.title}" is running for another project.`) : null,
     activity(job),
+    p.unblinded && p.results && !busy ? resultsCard(p) : null,
     steps,
     built && !building ? secondScorerCard(p, busy) : null));
   const log = $("#log");
@@ -354,7 +397,7 @@ function secondScorerCard(p, busy) {
   return h("section", { class: "extra" },
     h("div", { class: "x-head" },
       h("div", {},
-        h("div", { class: "s-title" }, "Second scorer", h("span", { class: "chip wait" }, "Optional")),
+        h("div", { class: "s-title" }, "Second scorer", wsHelp(h, "second_scorer", "a second scorer"), h("span", { class: "chip wait" }, "Optional")),
         h("div", { class: "s-desc" }, "Another person scores some of the coded images on their own, from a package with no key. "
           + "Unblinding compares their answers with yours (inter-rater agreement: percent agreement and Cohen's kappa); your results never use them.")),
       h("div", { class: "x-act" },
@@ -638,7 +681,7 @@ function formSection(info) {
     const names = outcomes();
     if (m.primary && m.primary !== "calls" && !names.includes(m.primary)) m.primary = "";
     return h("div", { class: "s-card sf-card" },
-      h("label", { class: "f-label", for: "sfPrimary" }, "Primary outcome"),
+      h("div", { class: "f-label" }, h("label", { for: "sfPrimary" }, "Primary outcome"), wsHelp(h, "primary_outcome", "a primary outcome")),
       h("div", { class: "f-help" }, "Name the one result the study is about before scoring starts. The results "
         + "and Methods then label it primary and every other test secondary."),
       h("select", { id: "sfPrimary", class: "f-input sf-select", disabled: off, onchange: e => { m.primary = e.target.value; } },
@@ -647,7 +690,7 @@ function formSection(info) {
   };
 
   const moreCard = () => h("details", { class: "s-card sf-card sf-more" },
-    h("summary", {}, "Count question, rules and unusable reasons"),
+    h("summary", {}, "Asked once per image: the count question, scoring rules and reasons an image is unusable"),
     h("label", { class: "f-label", for: "sfCount" }, "Count question (one per image)"),
     text(m.count.label, v => { m.count.label = v; }, { id: "sfCount" }),
     text(m.count.options.join(", "), v => { m.count.options = splitList(v); }, { placeholder: "Answers, separated by commas", "aria-label": "Count answers" }),
@@ -687,7 +730,9 @@ function formSection(info) {
     try {
       const active = document.activeElement;
       const focus = active && edit.contains(active) ? active.getAttribute("aria-label") : null;
-      edit.replaceChildren(...[start(), neuronsCard(), callsCard(), questionsCard(), resultsCard(), moreCard()].filter(Boolean));
+      // same order as the scorer's panel (and the preview): what is asked once per image, then each
+      // neuron, then the extra questions; the primary outcome picks from those, so it comes last
+      edit.replaceChildren(...[start(), moreCard(), neuronsCard(), callsCard(), questionsCard(), resultsCard()].filter(Boolean));
       if (focus) edit.querySelector(`[aria-label="${CSS.escape(focus)}"]`)?.focus();
       drawPreview();
     } finally {
@@ -750,7 +795,11 @@ function formSection(info) {
 const blankSource = () => ({ name: "", path: "", original_path: "", genotypes: [{ match: "", genotype: "" }],
   default_genotype: "UNKNOWN", exclude: [], from: null });
 
-function previewText(pv, scanned) {
+// shown where the counts will be; the folder field above already says what to do
+const NO_FOLDER = ["", "The number of images per genotype appears here once you choose the folder."];
+
+function previewText(pv, scanned, src) {
+  if (src && !String(src.path || "").trim()) return NO_FOLDER;
   if (!pv) return "";
   if (!pv.folder_found) return ["warn", "Folder not found. Check the path or choose it with Browse."];
   if (!scanned || pv.images === null) return ["", "Not scanned with these settings yet. Save, then run Scan data to see how the rules sort the images."];
@@ -770,7 +819,9 @@ async function openProjectSettings(section) {
     return;
   }
   const scanned = st.data.project?.scanned !== null && st.data.project?.scanned !== undefined;
-  const model = { project_name: cur.project_name, sources: cur.sources.map((s, i) => ({ ...s, from: i })) };
+  const example = p => /^[A-Za-z]:[\\/]path[\\/]to[\\/]/.test(p || "");
+  const model = { project_name: cur.project_name,
+    sources: cur.sources.map((s, i) => ({ ...s, path: example(s.path) ? "" : s.path, from: i })) };
   if (!model.sources.length) model.sources.push(blankSource());
   const locked = cur.locked;
   const form = formSection(cur.form);
@@ -786,16 +837,25 @@ async function openProjectSettings(section) {
     clearTimeout(pvTimer);
     err.hidden = true;           // the message was about the answers before this change
     pvTimer = setTimeout(async () => {
+      // no folder anywhere yet: nothing to count, so do not ask the server
+      if (model.sources.every(s => !String(s.path || "").trim())) {
+        $$(".ps .pv").forEach(el => { el.className = "pv"; el.textContent = NO_FOLDER[1]; });
+        return;
+      }
       try {
         const r = await api("/api/project-settings", { action: "preview", ...payload() });
         previews = r.sources;
         $$(".ps .pv").forEach((el, i) => {
-          const [cls, text] = previewText(previews[i], r.scanned) || ["", ""];
+          const [cls, text] = previewText(previews[i], r.scanned, model.sources[i]) || ["", ""];
           el.className = `pv ${cls}`;
           el.textContent = text;
         });
       } catch {     // a half-filled row: old counts would mislead, so say why there are none
-        $$(".ps .pv").forEach(el => { el.className = "pv"; el.textContent = "Fill in every name, folder and rule to see the counts."; });
+        $$(".ps .pv").forEach((el, i) => {
+          const empty = !String(model.sources[i]?.path || "").trim();
+          el.className = "pv";
+          el.textContent = empty ? NO_FOLDER[1] : "Fill in every name, folder and rule to see the counts.";
+        });
       }
     }, 300);
   };
@@ -814,7 +874,7 @@ async function openProjectSettings(section) {
   const draw = focusLast => {
     const cards = model.sources.map((s, i) => {
       const off = i < locked;
-      const [cls, text] = previewText(previews[i], scanned) || ["", ""];
+      const [cls, text] = previewText(previews[i], scanned, s) || ["", ""];
       return h("div", { class: "s-card src" + (off ? " locked" : "") },
         h("div", { class: "src-head" },
           h("label", { class: "f-label", for: `srcName${i}` }, "Folder name"),
@@ -839,11 +899,14 @@ async function openProjectSettings(section) {
           rules(s, "exclude", "match", "reason", ["Pattern, e.g. *test*", "Reason", "Add a rule"], off)),
         h("div", { class: `pv ${cls}`, "aria-live": "polite" }, text));
     });
+    const jump = (id, label) => h("button", { class: "linkish", onclick: () => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }) }, label);
     box.replaceChildren(
-      h("h4", {}, "Project"),
+      h("nav", { class: "ps-jump", "aria-label": "Sections of this page" }, "Go to: ",
+        jump("psProj", "Project"), " \u00b7 ", jump("psFolders", "Image folders"), " \u00b7 ", jump("sfHead", "Scoring criteria")),
+      h("h4", { id: "psProj" }, "Project"),
       h("div", { class: "s-card src" }, h("label", { class: "f-label", for: "psName" }, "Project name"),
         field(model, "project_name", { id: "psName" })),
-      h("h4", {}, "Image folders"),
+      h("h4", { id: "psFolders" }, "Image folders"),
       ...cards,
       h("button", { class: "btn add-src", onclick: () => { model.sources.push(blankSource()); draw("src"); } }, "Add image folder"),
       h("h4", { id: "sfHead" }, "Scoring criteria"),
@@ -876,7 +939,7 @@ async function openProjectSettings(section) {
       return false;
     }
     toast(r.after_lock ? "Saved. The change and your reason are in log.md."
-      : r.form_changed ? "Saved. The scoring criteria are recorded in log.md and lock at the first score."
+      : r.form_changed ? "Saved. The scoring criteria are written to log.md and locked once the first image is scored."
       : scanned ? "Saved. Run Scan data again so the new folders and rules are used." : "Saved. Next: Scan data.", "ok");
     leave();
     refresh(true);
@@ -1147,6 +1210,7 @@ function render() {
   document.documentElement.dataset.theme = d.theme;
   $("#themeBtn").replaceChildren(icon(d.theme === "dark" ? "sun" : "moon", 18));
   $("#themeBtn").title = d.theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  $("#themeBtn").setAttribute("aria-label", $("#themeBtn").title);   // screen readers hear the same as the tooltip
   $("#ver").textContent = d.version;
   // "I have finished scoring" is about one project: switching projects clears it.
   const path = d.project?.path ?? null;
@@ -1194,7 +1258,18 @@ async function scan() {
 async function build() {
   const p = st.data.project;
   let mode = "new";
-  if (p.coded !== null && p.coded !== undefined) {
+  if (p.coded === null || p.coded === undefined) {
+    const f = p.form;
+    const saved = !!f && (f.recorded || !!f.locked);
+    const go = await ask("Build the blind set?", h("div", { class: "m-list" },
+      h("p", {}, `Each scanned image that passes the inclusion rules gets a random code (${plural(p.scanned || 0, "image")} scanned). The analysis plan and scoring criteria are written to log.md, and the key stays sealed until Unblind.`),
+      saved ? null : h("p", { class: "m-warn" }, "You have not saved scoring criteria yet, so the ones shown in Project settings will be used. You can still change them until the first image is scored."),
+      h("p", {}, "After this, ", h("b", {}, "Browse images"), " is off until you unblind.")),
+      saved ? [{ value: "go", label: "Build blind set" }]
+        : [{ value: "form", label: "Set criteria first", plain: true }, { value: "go", label: "Build with these criteria" }]);
+    if (go === "form") return openProjectSettings("form");
+    if (go !== "go") return;
+  } else {
     if (p.scoring_started) {
       mode = await ask("Scoring has already started",
         "Existing codes never change once scoring has started. Do not score while this runs.", [
@@ -1240,17 +1315,23 @@ async function browse() {
   if (r?.url) toast("Browse images is open. File names and genotypes are visible there.", "ok");
 }
 
-async function unblind() {
+async function unblind(again = false) {
   const p = st.data.project;
+  const left = Math.max(0, (p.coded || 0) - p.scored);
+  const counts = `${p.scored} of ${p.coded} images are scored.`;
   let anyway = false;
   if (p.scored < p.min_scored) {
     anyway = await ask("Fewer images scored than planned",
-      `Only ${p.scored} images are scored; the project plan says at least ${p.min_scored}.\nUnblinding anyway is recorded in log.md.`,
+      h("div", { class: "m-list" }, h("p", {}, counts),
+        h("p", {}, `Your plan set a minimum of ${p.min_scored}. If you unblind anyway, log.md notes that you did.`)),
       [{ value: true, label: "Unblind anyway", danger: true }]);
     if (!anyway) return;
   } else {
-    const go = await ask("Unblind now?", "This reveals which genotype each code was. Do it only when scoring is finished; scores saved later are a separate, unblinded look.",
-      [{ value: true, label: "Unblind" }]);
+    const go = await ask(again ? "Unblind again?" : "Unblind now?",
+      h("div", { class: "m-list" },
+        h("p", {}, counts + (left ? ` The ${plural(left, "unscored image")} ${left === 1 ? "is" : "are"} left out of the results.` : "")),
+        h("p", {}, "You will see which genotype each code was. A score saved after this is no longer blind: report it as a separate, unblinded look.")),
+      [{ value: true, label: left ? `Unblind with ${plural(p.scored, "scored image")}` : "Unblind", danger: left > 0 }]);
     if (!go) return;
   }
   startStep({ step: "unblind", finished: true, anyway: anyway === true });

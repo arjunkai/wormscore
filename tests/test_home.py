@@ -272,3 +272,53 @@ def test_home_page_has_the_version_before_any_script_runs(desk):
     st, page = call(desk["port"], "GET", "/")
     assert st == 200 and f'id="ver">{__version__}</span>'.encode() in page
     assert b'<html lang="en" data-theme="dark">' in page        # the saved theme (dark by default)
+
+
+def _score_all(project):
+    from wormscore.server import Project
+    p = Project(project)
+    for d in sorted(project.joinpath("blind").iterdir()):
+        p.save_score(d.name, {"usable": "yes", "cells_seen": "2", "n1_call": "normal", "n2_call": "dim",
+                              "confidence": "sure", "flag_answers": {}, "count_this_image": "yes"})
+
+
+def test_results_card_numbers_come_from_the_results_tables_not_the_key(desk):
+    from wormscore.pipeline import read_csv
+    from wormscore.unblind import unblind
+    port, project = desk["port"], desk["project"]
+    call(port, "POST", "/api/select", {"path": str(project)})
+    assert state(port)["project"]["results"] is None          # nothing to show before Unblind
+    assert home.results_summary(project, 0, 6) is None
+    _score_all(project)
+    unblind(project, finished=True, anyway=True, log=lambda *a: None)
+    r = state(port)["project"]["results"]
+    assert (r["scored"], r["coded"]) == (6, 6)
+    # The summary works without the key: it reads only the unblinded results tables.
+    import shutil
+    shutil.rmtree(project / "key")
+    assert home.results_summary(project, 6, 6) == r
+    table = [x for x in read_csv(project / "outputs" / "unblinded" / "penetrance.csv") if x.get("genotype")]
+    assert sorted((x["genotype"], x["animals"], x["affected"]) for x in r["penetrance"]) \
+        == sorted((x["genotype"], int(x["animals"]), int(x["animals_any_affected"])) for x in table)
+    assert r["tests"] and all("p" in t and " vs " not in t["a"] for t in r["tests"])
+
+
+def test_help_definitions_are_served_to_every_window(desk):
+    from wormscore import browse
+    from wormscore.server import make_server
+    assert call(desk["port"], "GET", "/static/terms.js")[0] == 200
+    project = desk["project"]
+    for srv in (make_server(project, port=0), None):
+        if srv is None:          # Browse: open after Unblind
+            from wormscore.unblind import unblind
+            _score_all(project)
+            unblind(project, finished=True, anyway=True, log=lambda *a: None)
+            srv = browse.make_server(project, port=0)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            status, data = call(srv.server_address[1], "GET", "/static/terms.js")
+            assert status == 200 and b"WS_TERMS" in data
+            assert b"terms.js" in call(srv.server_address[1], "GET", "/")[1]
+        finally:
+            srv.shutdown()
+            srv.server_close()
