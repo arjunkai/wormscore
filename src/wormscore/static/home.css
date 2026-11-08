@@ -80,7 +80,7 @@ body {
   font: var(--text-md)/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
   display: flex; flex-direction: column;
 }
-button, input { font: inherit; color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; }
 /* the box itself shows the hand too, not only its label */
 input[type="checkbox"], input[type="radio"] { cursor: pointer; }
 input:disabled { cursor: not-allowed; }

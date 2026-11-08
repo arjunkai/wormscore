@@ -67,6 +67,11 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.8.1: **Browse images fixes.** Browse stays off when the key is moved away during scoring.
+  After Unblind, images that are not in the blind set (for example newly scanned ones) are
+  recorded when viewed, like images viewed before the build. An image is recorded before it is
+  shown, so a failed write never hides a view. A window of another project no longer keeps
+  Browse open. In the criteria builder, the count question's answers have their own label.
 - 1.8.0: **Interface pass.** A small ? next to each term shows a one-sentence definition. After
   Unblind, a Results card shows penetrance per genotype and the planned tests. Build blind set and
   Unblind ask first and say what happens (how many images are unscored). The scoring window has a

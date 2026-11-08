@@ -37,6 +37,7 @@ def unbuilt(project):
     """The project as it was after Scan data, before Build blind set."""
     shutil.rmtree(project / "key")
     shutil.rmtree(project / "blind")
+    shutil.rmtree(project / "scoring", ignore_errors=True)   # nothing is scored before the build
     return project
 
 
@@ -245,3 +246,63 @@ def test_identity_channel_is_shown_as_the_build_shows_it(tmp_path):
     code = next(r["code"] for r in read_csv(q / "key" / "key.csv")
                 if (r["local_path"], r["location_in_file"]) == (it["local_path"], it["location_in_file"]))
     assert got["files"]["identity_mip.png"] == (q / "blind" / code / "identity_mip.png").read_bytes()
+
+
+def test_browse_stays_off_when_the_key_is_moved_away_during_scoring(fresh_project, tmp_path):
+    p = fresh_project
+    shutil.move(str(p / "key"), str(tmp_path / "key_kept_elsewhere"))   # a lab keeping the key sealed
+    state, why = B.browse_state(p)
+    assert state == "locked" and "key" in why
+    with pytest.raises(SystemExit):
+        B.make_server(p, port=0)
+    assert home.project_status(p)["browse"] == "locked"
+
+
+def test_images_not_in_the_blind_set_are_recorded_after_unblinding(fresh_project, served):
+    import os
+    p = fresh_project
+    score_all(p)
+    unblind(p, finished=True, anyway=True, log=QUIET)
+    # an image scanned after the build: it is in the inventory but has no code yet
+    key_csv = p / "key" / "key.csv"
+    lines = key_csv.read_text(encoding="utf-8").splitlines(keepends=True)
+    key_csv.write_text("".join(lines[:-1]), encoding="utf-8")
+    t = (p / "outputs" / "unblinded" / "summary.txt").stat().st_mtime
+    os.utime(key_csv, (t - 5, t - 5))
+    assert B.browse_state(p)[0] == "after"
+    port = served(p)
+    worms = get_json(port, "/api/worms")["worms"]
+    new = [w for w in worms if not w["coded"] and not w.get("note")]
+    assert new
+    log_before = (p / "log.md").read_text(encoding="utf-8")
+    get_json(port, f"/api/worm/{new[0]['code']}")
+    get_json(port, f"/api/worm/{[w for w in worms if w['coded']][0]['code']}")   # coded images: not recorded
+    rows = read_csv(p / "outputs" / B.BROWSED)
+    assert [x["file"] for x in rows] == [new[0]["file"]]
+    added = (p / "log.md").read_text(encoding="utf-8")[len(log_before):]
+    assert "after unblinding, for images not in the blind set" in added
+    assert "Viewed openly before this build" in "\n".join(B.browse_log_line(p))
+
+
+def test_an_image_is_not_shown_until_its_view_is_written_down(fresh_project, served):
+    p = unbuilt(fresh_project)
+    port = served(p)
+    first = get_json(port, "/api/worms")["worms"][0]["code"]
+    (p / "outputs" / B.BROWSED).mkdir()            # the record cannot be written (as if locked by Excel)
+    status, data = request(port, "GET", f"/api/worm/{first}")
+    assert status == 500 and b"meta" not in data
+    assert request(port, "GET", f"/img/{first}/mip.png")[0] == 500
+    (p / "outputs" / B.BROWSED).rmdir()
+    get_json(port, f"/api/worm/{first}")             # tried again: written, then shown
+    assert len(read_csv(p / "outputs" / B.BROWSED)) == 1
+
+
+def test_another_projects_window_does_not_keep_browse_alive(fresh_project, served):
+    p = unbuilt(fresh_project)
+    port = served(p)
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
+    conn.request("GET", "/api/ping", headers={"X-Wormscore-Project": "someotherproject"})
+    res = conn.getresponse()
+    res.read()
+    conn.close()
+    assert res.status == 409

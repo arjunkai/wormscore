@@ -179,8 +179,9 @@ is scored or saved. Before the blind set exists, Enhanced is set from each image
 brightness between images with Standard. Each image you open before the build is recorded in `log.md`
 and `outputs/browsed_images.csv`, and the Build log and the Methods draft say how many images were seen
 (ARRIVE 2.0 item 5 asks who knew the groups at each stage). Browse is off from Build blind set until
-Unblind (the button shows a lock and says why), and in a second scorer's package. After unblinding it
-opens again, to look up a code (for example W0010) with its genotype, file and saved score.
+Unblind (the button shows a lock and says why), and in a second scorer's package. It also stays off if
+the key folder is moved away during scoring (some labs keep the key elsewhere to keep it sealed). After
+unblinding it opens again, to look up a code (for example W0010) with its genotype, file and saved score.
 
 **Optional: a second scorer** (inter-rater reliability). After building the blind set, use **Make a package...** in the
 **Second scorer** card on the home page (`wormscore export-scorer my_project D:\for_sam --scorer "Sam K"

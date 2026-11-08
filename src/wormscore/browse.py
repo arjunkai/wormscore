@@ -35,6 +35,8 @@ BROWSED_FIELDS = ["viewed", "session", "genotype", "source", "file", "location_i
 LOCKED_WHY = ("Browsing is off while this project is scored blind: it shows file names and genotypes. "
               "It opens again after Unblind.")
 PACKAGE_WHY = "This is a second scorer's package. It is scored blind, so browsing is off."
+KEY_AWAY_WHY = ("Browsing is off: this project has a blind set, but its key is not in the key folder. "
+                "Put the key back and unblind to browse again.")
 CACHE_SIZE = 3
 
 
@@ -46,6 +48,11 @@ def browse_state(project):
         return "locked", PACKAGE_WHY
     key = p / "key" / "key.csv"
     if not key.is_file():
+        # Labs often move the key away while scoring, to keep it sealed. A blind set or saved
+        # scores without a key means blind scoring, so browsing stays off.
+        blind = p / "blind"
+        if (blind.is_dir() and any(blind.iterdir())) or (p / "scoring").is_dir():
+            return "locked", KEY_AWAY_WHY
         if not (p / "outputs" / "inventory.csv").is_file():
             return "none", "Run Scan data first."
         return "before", ""
@@ -91,6 +98,7 @@ class Browse:
         self.id = hashlib.sha256(("browse:" + str(self.path.resolve()).lower()).encode()).hexdigest()[:16]
         self.session = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.viewed = set()          # images recorded in this session
+        self.logged = set()          # states whose log.md line this session has written
         self.cache = OrderedDict()   # rendered images, newest last (memory only)
         state, why = browse_state(self.path)
         if state in ("locked", "none"):
@@ -251,21 +259,29 @@ class Browse:
 
     # ------------------------------------------------------------ the record
     def record_view(self, item_id):
-        """Before the build, each image opened is written down (once per session)."""
+        """Each image that is not coded is written down once per session, before it is shown:
+        before the build, and after Unblind (newly scanned images may be coded later)."""
         it = self.items[item_id]
-        if it["coded"] or self.state() != "before" or item_id in self.viewed:
+        if it["coded"]:
             return
-        s = it["img"]
-        out = self.path / "outputs"
-        out.mkdir(exist_ok=True)
+        state = self.state()
+        if state not in ("before", "after"):
+            return
         with self.lock:
-            if not self.viewed:
+            if item_id in self.viewed:
+                return
+            s = it["img"]
+            out = self.path / "outputs"
+            out.mkdir(exist_ok=True)
+            if state not in self.logged:
+                when = ("before the blind set was built" if state == "before"
+                        else "after unblinding, for images not in the blind set")
                 append_log(self.path, "browse images", [
                     f"Software: wormscore {__version__}",
-                    "Images viewed with file names and genotypes visible, before the blind set was built "
+                    f"Images viewed with file names and genotypes visible, {when} "
                     f"(each image viewed is listed in outputs/{BROWSED}).",
                 ])
-            self.viewed.add(item_id)
+                self.logged.add(state)
             f = out / BROWSED
             new = not f.exists()
             with open(f, "a", newline="", encoding="utf-8") as fh:
@@ -274,6 +290,8 @@ class Browse:
                     w.writeheader()
                 w.writerow({"viewed": dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "session": self.session,
                             **{k: s.get(k, "") for k in BROWSED_FIELDS[2:]}})
+            # only now: if the write failed, the next request tries again and shows nothing until it works
+            self.viewed.add(item_id)
 
 
 def make_handler(b):
@@ -302,14 +320,19 @@ def make_handler(b):
             host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
             return host in LOCAL_HOSTS
 
-        def refused(self):
-            """Another project's window, or the project is now being scored blind."""
+        def other_project(self):
+            """A page from another project's window, left open on this port."""
             sent = self.headers.get("X-Wormscore-Project")
             if sent and sent != b.id:
                 self.send_json({"ok": False, "error": "other project"}, 409)
                 return True
-            if b.state() not in ("before", "after"):
-                self.send_json({"ok": False, "error": LOCKED_WHY}, 423)
+            return False
+
+        def refused(self):
+            """The project is now being scored blind (or its key is away)."""
+            state, why = browse_state(b.path)
+            if state not in ("before", "after"):
+                self.send_json({"ok": False, "error": why or LOCKED_WHY}, 423)
                 return True
             return False
 
@@ -336,6 +359,8 @@ def make_handler(b):
         def get(self):
             if not self.local_request():
                 return self.send_error(403)
+            if self.other_project():
+                return
             b.last_seen = time.time()
             parts = [p for p in self.path.split("?")[0].split("/") if p]
             if parts == ["api", "ping"]:
@@ -359,13 +384,14 @@ def make_handler(b):
             if parts == ["api", "worms"]:
                 return self.send_json({"worms": [b.summary(it) for it in b.items.values()]})
             if len(parts) == 3 and parts[:2] == ["api", "worm"] and parts[2] in b.items:
+                b.record_view(parts[2])      # written down before anything about it is sent
                 got = b.get(parts[2])
-                b.record_view(parts[2])
                 score, rois = b.saved(parts[2])
                 return self.send_json({"meta": got["meta"], "img_v": got["v"], "info": b.info(b.items[parts[2]]),
                                        "score": score, "rois": rois, "draft": None})
             if parts[0] == "img" and 3 <= len(parts) <= 4 and parts[1] in b.items \
                     and all(re.fullmatch(r"[A-Za-z0-9_.]+", p) and ".." not in p for p in parts[2:]):
+                b.record_view(parts[1])      # an image asked for directly is recorded too
                 data = b.file(parts[1], "/".join(parts[2:]))
                 if data is not None:
                     return self.send_bytes(data, "image/png")
@@ -376,7 +402,7 @@ def make_handler(b):
             if not self.local_request() or self.headers.get("Content-Type", "").split(";")[0] != "application/json" \
                     or (origin and origin.split("://")[-1].rsplit(":", 1)[0] not in LOCAL_HOSTS):
                 return self.send_error(403)
-            if self.refused():
+            if self.other_project() or self.refused():
                 return
             b.last_seen = time.time()
             parts = [p for p in self.path.split("/") if p]

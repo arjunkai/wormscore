@@ -693,7 +693,9 @@ function formSection(info) {
     h("summary", {}, "Asked once per image: the count question, scoring rules and reasons an image is unusable"),
     h("label", { class: "f-label", for: "sfCount" }, "Count question (one per image)"),
     text(m.count.label, v => { m.count.label = v; }, { id: "sfCount" }),
-    text(m.count.options.join(", "), v => { m.count.options = splitList(v); }, { placeholder: "Answers, separated by commas", "aria-label": "Count answers" }),
+    // its own label, so the answers do not read as a second line of the question
+    h("label", { class: "f-label", for: "sfCountAnswers" }, "Its answers, separated by commas"),
+    text(m.count.options.join(", "), v => { m.count.options = splitList(v); }, { id: "sfCountAnswers", placeholder: "For example: 0, 1, 2, 3+" }),
     h("label", { class: "f-label", for: "sfRules" }, "Rules shown above the questions, one per line"),
     h("textarea", { id: "sfRules", class: "f-input", rows: 4, disabled: off,
       oninput: e => { m.rules = splitLines(e.target.value); drawPreview(); } }, m.rules.join("\n")),
