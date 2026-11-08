@@ -58,6 +58,11 @@ project scores, measures and reports exactly as before. Screens and buttons may 
   A review of other tools and of image.sc (November 2026) found no request for it: every ordinary
   viewer already scores openly, and what people ask for is stronger blinding. It will be built if
   users ask for it.
+- **Open a single image, under consideration.** View one file in wormscore's viewer (both display
+  ranges, suggested cells, 3D, measurements) without making a project, as Fiji, QuPath and napari
+  allow. It would refuse, or warn and record the view, for a file inside a project that is being
+  scored blind, so it cannot get around the Browse lock. Fiji already covers quick looks, so it will
+  be built if users ask for it.
 
 ## Version 1.0.0
 
