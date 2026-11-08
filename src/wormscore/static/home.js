@@ -273,7 +273,9 @@ function renderMain(d) {
         : scanned ? `${plural(p.scanned, "raw image")} found. Scan again if you added files.` : null,
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
-        scanned ? "Scan again" : "Scan data")]),
+        scanned ? "Scan again" : "Scan data"),
+       scanned ? h("button", { class: "btn", "data-k": "browse", disabled: busy || !ok, onclick: browse,
+         title: "See each image with its file name and genotype, without scoring" }, "Browse images") : null]),
     stepCard(2, sF, "Set scoring criteria", "Choose what the scorer answers for each image: the calls, the questions and what counts as a defect. They are recorded in log.md and lock at the first score.",
       f ? formFact(f) : null,
       [h("button", { class: sF === "next" ? "primary" : "btn", "data-k": "form", disabled: busy || !ok, onclick: () => openProjectSettings("form") },
@@ -295,7 +297,9 @@ function renderMain(d) {
         "I have finished scoring"),
        h("button", { class: s4 === "next" && st.finished ? "primary" : "btn", "data-k": "step4", disabled: busy || !built || !p.scored || !st.finished,
          onclick: unblind }, p.unblinded ? "Unblind again" : "Unblind"),
-       p.unblinded ? h("button", { class: "btn", "data-k": "results", onclick: () => act("/api/open", { what: "results" }) }, "Open results") : null]));
+       p.unblinded ? h("button", { class: "btn", "data-k": "results", onclick: () => act("/api/open", { what: "results" }) }, "Open results") : null,
+       p.unblinded && p.browse === "after" ? h("button", { class: "btn", "data-k": "browse5", disabled: busy, onclick: browse,
+         title: "Look up a code with its genotype and file" }, "Browse images") : null]));
 
   main.replaceChildren(h("div", { class: "wrap" },
     h("div", { class: "p-head" },
@@ -1212,6 +1216,28 @@ async function build() {
 async function score() {
   const r = await act("/api/score", {});
   if (r?.url) toast("The scoring window is open. Keep this app open while you score.", "ok");
+}
+
+// Browse images: file names and genotypes visible, nothing scored. Off between Build blind set and
+// Unblind (the server refuses too); before the build each image opened is recorded.
+async function browse() {
+  const state = st.data.project.browse, pkg = !!st.data.project.package;
+  if (state === "locked") {
+    const open = pkg ? [] : [{ value: true, label: "Open scoring" }];
+    const why = pkg ? "This is a second scorer's package. It is scored blind, so browsing is off."
+      : "Browsing is off while this project is scored blind, because it shows file names and genotypes. "
+        + "It opens again after Unblind. You can keep scoring the coded images.";
+    if (await ask("Browse images is off", why,
+      open, open.length ? "Cancel" : "Close")) score();
+    return;
+  }
+  if (state === "before" && !(await ask("Browse images?",
+    "Browse shows each image with its file name and genotype. Looking before the blind set is built is normal, "
+    + "for example to check the images and set the scoring criteria. Each image you open is recorded in log.md "
+    + "and outputs\\browsed_images.csv, and the Methods draft says so. Once the blind set is built, Browse is off until Unblind.",
+    [{ value: true, label: "Browse images" }]))) return;
+  const r = await act("/api/browse", {});
+  if (r?.url) toast("Browse images is open. File names and genotypes are visible there.", "ok");
 }
 
 async function unblind() {

@@ -37,6 +37,7 @@ HOME_PORT = 47311
 SCORE_PORT = 47312
 HOME_TITLE = "wormscore"         # the home window's title
 SCORE_TITLE = "Scoring"          # scoring windows' titles start with this
+BROWSE_TITLE = "Browse"          # the same window, browsing images (browse.py)
 PROGRESS_LINE = re.compile(r"\((\d+)/(\d+)\)\s*$")
 
 
@@ -162,6 +163,8 @@ def project_status(path):
         st["scored"] = 0
     st["scoring_started"] = (p / "scoring").is_dir() and any((p / "scoring").iterdir())
     st["unblinded"] = (p / "outputs" / "unblinded" / "summary.txt").is_file()
+    from .browse import browse_state
+    st["browse"] = browse_state(p)[0]       # the wording is in home.js, so this state never names genotypes
     return st
 
 
@@ -290,7 +293,7 @@ def app_window_kind(hwnd):
     user32.GetWindowTextW(hwnd, buf, 256)
     title = buf.value
     kind = "home" if title == HOME_TITLE else "scoring" if (
-        title.startswith(SCORE_TITLE + ":") and title.endswith(" - wormscore")) else None
+        title.startswith((SCORE_TITLE + ":", BROWSE_TITLE + ":")) and title.endswith(" - wormscore")) else None
     # Before its page has loaded, Edge titles a new app window with its address.
     if kind is None and title.startswith("127.0.0.1:"):
         port = title.split(":", 1)[1].split("/", 1)[0]
@@ -559,7 +562,8 @@ def dpi_aware():
 class HomeApp:
     def __init__(self, open_windows=True, pick=pick_folder, opener=open_path, check_updates=False):
         self.job = Job()
-        self.scoring = None          # (project path, server, url)
+        self.scoring = None          # (project path, server, url): the scoring or browse window's server
+        self.viewer = "score"        # what that server is: "score" or "browse" (Browse images)
         self.last_seen = time.time()
         self.open_windows = open_windows
         self.pick = pick
@@ -709,6 +713,8 @@ class HomeApp:
         from .unblind import unblind
         p = self.need_project()
         step = body.get("step")
+        if self.viewer == "browse" and self.scoring and self.scoring[0] == str(p):
+            self.stop_scoring()       # Browse lists what Scan, Build and Unblind change
         if step == "scan":
             fn = lambda: inventory(p, log=self.job.say, progress=self.job.progress)
             title = "Scan data"
@@ -762,13 +768,17 @@ class HomeApp:
             raise ValueError("Another step is still running.")
         return {"ok": True}
 
-    def start_scoring(self):
-        from .server import make_server
+    def start_scoring(self, viewer="score"):
+        """Open the scoring window, or (viewer="browse") the same window browsing images."""
+        if viewer == "browse":
+            from .browse import make_server
+        else:
+            from .server import make_server
         p = str(self.need_project())
         if self.job.running:
-            raise ValueError("A step is still running. Open scoring when it is done.")
+            raise ValueError(f"A step is still running. Open {'Browse images' if viewer == 'browse' else 'scoring'} when it is done.")
         started = time.time()
-        same = bool(self.scoring and self.scoring[0] == p)
+        same = bool(self.scoring and self.scoring[0] == p and self.viewer == viewer)
         if not same:
             self.stop_scoring()
             try:
@@ -781,6 +791,7 @@ class HomeApp:
             srv.project.can_start = self.can_start
             threading.Thread(target=srv.serve_forever, daemon=True).start()
             self.scoring = (p, srv, f"http://127.0.0.1:{srv.server_address[1]}")
+            self.viewer = viewer
         if self.open_windows:
             self.show_scoring_window(started, new_server=not same)
         return {"ok": True, "url": self.scoring[2]}
@@ -792,7 +803,8 @@ class HomeApp:
         project = self.scoring[1].project
         if DESKTOP:
             # the app's own scoring window: reloaded when its server is new (another project)
-            DESKTOP.open("scoring", self.scoring[2], f"Scoring: {project.cfg['project_name']} - wormscore",
+            DESKTOP.open("scoring", self.scoring[2], f"{BROWSE_TITLE if self.viewer == 'browse' else SCORE_TITLE}: "
+                         f"{project.cfg['project_name']} - wormscore",
                          (1500, 900), reload=new_server)
             return
         windows = find_app_windows(SCORE_TITLE)
@@ -913,6 +925,8 @@ class HomeApp:
             return self.run_step(body)
         elif route == "score":
             return self.start_scoring()
+        elif route == "browse":
+            return self.start_scoring("browse")
         elif route == "open":
             p = self.need_project()
             target = {"folder": p, "config": p / "config.json", "results": p / "outputs" / "unblinded"}.get(body.get("what"))

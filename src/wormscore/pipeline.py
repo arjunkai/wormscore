@@ -26,6 +26,7 @@ from . import config as C
 from . import measure as M
 from . import readers as R
 from .files import append_log, now, read_csv, write_csv  # noqa: F401  (re-exported)
+from .browse import browse_log_line
 from .scoreform import form_log_lines
 
 INVENTORY_FIELDS = [
@@ -364,6 +365,35 @@ def saturation_for(img, cfg):
     return cfg["saturation_value"].get(img["system"], 2 ** img["bits"] - 1)
 
 
+def read_for_viewer(s, cfg):
+    """Read one image and make what the viewer shows and measures: the marker stack (raw and
+    median-filtered), its projection, brightfield, the identity channel and the suggested cells.
+    Build blind set saves these as the coded image; Browse images shows them without saving."""
+    mc, ident = cfg["measurement"], cfg.get("identity")
+    raw = R.read(s, s["marker_channel"])
+    filt = M.median_filter_stack(raw, mc["median_filter_px"])
+    mip = raw.max(0)
+    bf = M.brightfield_plane(R.read(s, s["bf_channel"]), cfg) if s["bf_channel"] is not None else None
+    # Identity channel: shown for display only (8-bit, scaled per image), and, with spots_from
+    # "identity", the place where suggested cells are found. The reporter is then measured in
+    # those regions, so a dim or missing reporter cell is still found and measured.
+    spot_mip = filt.max(0)
+    has_identity = ident is not None and s.get("identity_channel") is not None
+    id_planes = id_mip = None
+    if has_identity:
+        iraw = R.read(s, s["identity_channel"])
+        if iraw.shape != raw.shape:
+            raise SystemExit(f"{s['relative_path']} {s['location_in_file']}: the {ident['label']} identity channel "
+                             f"has shape {iraw.shape}, the marker {raw.shape}.")
+        id_planes, id_mip = M.identity_display(iraw, cfg)
+        if ident["spots_from"] == "identity":
+            spot_mip = M.median_filter_stack(iraw, mc["median_filter_px"]).max(0)
+        del iraw
+    cands = M.candidate_spots(spot_mip, s["pixel_um"], cfg)
+    return {"raw": raw, "filt": filt, "mip": mip, "bf": bf, "has_identity": has_identity,
+            "id_planes": id_planes, "id_mip": id_mip, "cands": cands}
+
+
 def prepare(project, reassign=False, add=False, log=print):
     """Build the blind set. add=True codes and renders only images not yet in the key, keeping
     every existing code, image, settings-group letter and display range."""
@@ -430,40 +460,23 @@ def prepare(project, reassign=False, add=False, log=print):
         code, d = s["code"], blind / s["code"]
         (d / "planes").mkdir(parents=True)
         sat = saturation_for(s, cfg)
-        raw = R.read(s, s["marker_channel"])
+        v = read_for_viewer(s, cfg)
+        raw, filt, mip, bf_disp, cands, has_identity = v["raw"], v["filt"], v["mip"], v["bf"], v["cands"], v["has_identity"]
         px = s["pixel_um"]
-        filt = M.median_filter_stack(raw, mc["median_filter_px"])
-        mip, mip_f = raw.max(0), filt.max(0)
         stats.setdefault(s["system"], []).append((float(np.median(mip)), float(np.percentile(mip, 99.9))))
 
         for z in range(raw.shape[0]):
             Image.fromarray(M.pack16(raw[z])).save(d / "planes" / f"z{z:02d}.png")
         Image.fromarray(M.pack16(mip)).save(d / "mip.png")
-        bf_disp = None
-        if s["bf_channel"] is not None:
-            bf_disp = M.brightfield_plane(R.read(s, s["bf_channel"]), cfg)
+        if bf_disp is not None:
             Image.fromarray(bf_disp).save(d / "brightfield.png")
-
-        # Identity channel: saved for display only (8-bit, scaled per image), and, with spots_from
-        # "identity", the place where suggested cells are found. The reporter is then measured in
-        # those regions, so a dim or missing reporter cell is still found and measured.
-        spot_mip = mip_f
-        has_identity = ident is not None and s.get("identity_channel") is not None
         if has_identity:
-            iraw = R.read(s, s["identity_channel"])
-            if iraw.shape != raw.shape:
-                raise SystemExit(f"{s['relative_path']} {s['location_in_file']}: the {ident['label']} identity channel "
-                                 f"has shape {iraw.shape}, the marker {raw.shape}.")
-            iplanes, imip = M.identity_display(iraw, cfg)
             (d / "identity").mkdir()
-            for z in range(iplanes.shape[0]):
-                Image.fromarray(iplanes[z]).save(d / "identity" / f"z{z:02d}.png")
-            Image.fromarray(imip).save(d / "identity_mip.png")
-            if ident["spots_from"] == "identity":
-                spot_mip = M.median_filter_stack(iraw, mc["median_filter_px"]).max(0)
-            del iraw, iplanes, imip
+            for z in range(v["id_planes"].shape[0]):
+                Image.fromarray(v["id_planes"][z]).save(d / "identity" / f"z{z:02d}.png")
+            Image.fromarray(v["id_mip"]).save(d / "identity_mip.png")
+        del v
 
-        cands = M.candidate_spots(spot_mip, px, cfg)
         exclude = np.zeros(mip.shape, bool)
         for c in cands:
             exclude |= c["mask"]
@@ -527,7 +540,7 @@ def prepare(project, reassign=False, add=False, log=print):
         })
         log(f"{code} ({n}/{len(todo)})")
         # Free this image's stacks before the next one is read, so two never sit in memory at once.
-        del raw, filt, mip, mip_f, cands, exclude, bf_disp
+        del raw, filt, mip, cands, exclude, bf_disp
 
     # Fixed display ranges, one pair per microscope, computed over all included images.
     # When adding, microscopes already in the project keep their ranges, so images that
@@ -616,7 +629,7 @@ def prepare(project, reassign=False, add=False, log=print):
         "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
         f"Settings groups: {len(letters)} (key/settings_groups.csv).",
         f"Display ranges: {json.dumps(ranges)}",
-    ] + identity_log_lines(cfg) + interaction_log_lines(cfg) + form_log_lines(cfg), cfg)
+    ] + browse_log_line(project) + identity_log_lines(cfg) + interaction_log_lines(cfg) + form_log_lines(cfg), cfg)
     log(f"{len(images)} images in blind/ {per_system}" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
         + f"; {len(excluded)} excluded.")
     return ranges

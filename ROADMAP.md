@@ -49,6 +49,12 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 - **Imaging-session tools.** Optional flat-field or reference-slide correction per imaging session,
   and a check for gut autofluorescence.
 - **Example data.** An optional NeuroPAL example download, if its license allows.
+- **Open (non-blind) scoring, under consideration.** An optional project type for pilots or
+  phenotypes that cannot be hidden, chosen when the project is created. Every output and the
+  Methods draft would state that scoring was not blind to genotype. Blind scoring stays the default.
+  A review of other tools and of image.sc (November 2026) found no request for it: every ordinary
+  viewer already scores openly, and what people ask for is stronger blinding. It will be built if
+  users ask for it.
 
 ## Version 1.0.0
 
@@ -58,6 +64,13 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.7.0: **Browse images.** See each image with its file name and genotype in the scoring viewer
+  (planes, 3D, channels, both display ranges, suggested cells), and measure a region on screen,
+  without scoring or saving anything. It works before the blind set is built (to check images and
+  set the scoring criteria) and after unblinding (to look up a code). It is off between Build blind
+  set and Unblind, and in a second scorer's package. Browsing before the build is recorded in
+  `log.md` and `outputs/browsed_images.csv`, and the Build log and Methods draft say so. Projects
+  that never browse give exactly the same results.
 - 1.6.3: the home screen appears at once: the project list no longer waits for the image libraries
   (about 2 s to 0.2 s here), a skeleton of the screen shows while it loads, and the version and theme
   are there from the first frame.

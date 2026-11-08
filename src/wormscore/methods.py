@@ -226,6 +226,22 @@ def form_sentences(cfg, form_status, form_changes=()):
     return out
 
 
+def browsed_sentence(project):
+    """[sentence, table row] when images were viewed with genotypes visible before coding (Browse
+    images), else []. ARRIVE 2.0 item 5 asks who knew the groups at each stage."""
+    from .browse import BROWSED, browsed_summary
+    b = browsed_summary(project)
+    if not b:
+        return []
+    n, _, first, last = b
+    span = f"on {first}" if first == last else f"between {first} and {last}"
+    imgs = f"{n} image{'s were' if n != 1 else ' was'}"
+    return [f"Before the images were coded, {imgs} viewed with file names and genotypes visible {span} "
+            f"(wormscore Browse images; each is listed in outputs/{BROWSED}) [state why, for example to check "
+            "image quality and set the scoring criteria].",
+            f"| Before coding | {imgs} viewed with file names and genotypes visible (outputs/{BROWSED}) |"]
+
+
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
               dim_rows=(), dim_skipped=0, second_scorers=(), between=(), form_status="yes", rank_tests=(),
@@ -246,11 +262,12 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "[State whether the person who imaged the animals knew their genotype.]")
     ref = cfg["unblinding"]["reference_genotype"]
     rel_blind, rel_stat = reliability_sentences(cfg, n_repeats, reliability)
+    looked = browsed_sentence(project)
     lines = [
         "# Methods text (draft; check every statement before use)",
         "",
         "**Blinded scoring.** "
-        f"{imaging} Images were then coded and scored blind with wormscore {__version__} "
+        f"{imaging} " + "".join(x + " " for x in looked[:1]) + f"Images were then coded and scored blind with wormscore {__version__} "
         "(https://github.com/arjunkai/wormscore). Inclusion rules were set before scoring and applied "
         f"without regard to genotype: {n_included} of {n_included + n_excluded} images were included"
         + (" (the reason for each exclusion is listed in excluded.csv)" if n_excluded else "")
@@ -302,6 +319,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "| Stage | Blinded? |",
         "|---|---|",
         f"| Imaging | {imaging} |",
+        *looked[1:],
         f"| Coding | {who('coded_by', '[name]')} ran the coding step; codes were random (seed kept in the key) |",
         f"| Scoring (outcome assessment) | Blind: {who('scored_by', '[name]')} saw coded images only |",
         "| Analysis | Measurements were computed automatically and joined to genotypes only at unblinding |",

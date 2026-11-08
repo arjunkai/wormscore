@@ -99,6 +99,22 @@ text reports each added batch. Limit: the scorer can tell which images arrived l
 all one genotype, blinding is weaker for it, so mix genotypes in each batch where possible, or add all
 images before scoring starts.
 
+**Browse images** (optional, from the home screen or `wormscore browse`). A separate viewer, served by
+its own local server, shows images with their file name, genotype and acquisition settings, and measures
+regions on screen without saving them. Before the blind set is built it reads each scanned image when
+it is opened, with the same code that builds the blind set, and keeps the last three in memory only
+(nothing is written to disk). The Standard range is the same as in scoring; Enhanced uses the build's
+formula (median to 99.9th percentile of the projection) on that image alone, because the per-microscope
+range does not exist yet. Each image opened before the build is recorded once per session in
+`outputs/browsed_images.csv` (time, session, genotype, file, location), with one `log.md` entry per
+session; the next build's log entry and the Methods draft (a sentence and a "Before coding" row of the
+ARRIVE table) give the number of images viewed. After unblinding it lists the coded images from the key
+with their saved scores, and the images that were left out. It refuses to start, and refuses every
+request, while the project has a key that is newer than its last unblinding (that is, from Build blind
+set until Unblind, and again after a rebuild or added images), and in a second scorer's package. The
+scoring server is unchanged and still never receives genotypes or file names. Projects that are never
+browsed produce the same files as before.
+
 **Hidden repeats** (optional, `reliability.repeat_fraction`, off by default). When coding, this share
 of each genotype's images (at least one per genotype) is chosen at random and coded a second time, mixed
 in with the rest. Each repeat is placed at least 15% of the set away from its original in code order (the

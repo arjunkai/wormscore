@@ -114,6 +114,32 @@ def roi_mask(roi, h, w, cands):
     return np.array(im, bool)
 
 
+def measure_regions(code, raw, cands, meta, rois, cfg):
+    """Measure drawn or suggested regions on one image stack. cands maps "arr_<rank-1>" to the
+    suggested cells' masks. Used when a scorer saves regions, and by Browse images (not saved)."""
+    np, _, _, M = heavy_imports()
+    filt = M.median_filter_stack(raw, cfg["measurement"]["median_filter_px"])
+    h, w = raw.shape[1:]
+    masks = {r["label"]: roi_mask(r, h, w, cands) for r in rois}
+    cells = {k: m for k, m in masks.items() if k != "background" and m.any()}
+    exclude = np.zeros((h, w), bool)
+    for m in cells.values():
+        exclude |= m
+    user_bg = masks.get("background")
+    rows = []
+    for label, m in cells.items():
+        r = M.measure_region(raw, filt, m, exclude, meta["pixel_um"], meta["saturation_value"], cfg)
+        if user_bg is not None and user_bg.any():
+            bz = r["best_z"]
+            r["user_bg_mip"] = float(np.median(raw.max(0)[user_bg]))
+            r["user_bg_best_plane"] = float(np.median(raw[bz][user_bg]))
+            r["mean_mip_minus_user_bg"] = round(r["mean_mip"] - r["user_bg_mip"], 2)
+            r["mean_best_minus_user_bg"] = round(r["mean_best_plane"] - r["user_bg_best_plane"], 2)
+        source = next((x.get("source", "drawn") for x in rois if x["label"] == label), "drawn")
+        rows.append({"code": code, "region": label, "source": source, **r})
+    return rows
+
+
 class Project:
     def __init__(self, path):
         self.path = Path(path)
@@ -206,27 +232,7 @@ class Project:
         meta = self.meta(code)
         d = self.blind / code
         raw = np.stack([M.unpack16(np.array(Image.open(d / "planes" / f"z{z:02d}.png"))) for z in range(meta["n_z"])])
-        filt = M.median_filter_stack(raw, self.cfg["measurement"]["median_filter_px"])
-        h, w = raw.shape[1:]
-        cands = np.load(d / "candidates.npz")
-        masks = {r["label"]: roi_mask(r, h, w, cands) for r in rois}
-        cells = {k: m for k, m in masks.items() if k != "background" and m.any()}
-        exclude = np.zeros((h, w), bool)
-        for m in cells.values():
-            exclude |= m
-        user_bg = masks.get("background")
-        rows = []
-        for label, m in cells.items():
-            r = M.measure_region(raw, filt, m, exclude, meta["pixel_um"], meta["saturation_value"], self.cfg)
-            if user_bg is not None and user_bg.any():
-                bz = r["best_z"]
-                r["user_bg_mip"] = float(np.median(raw.max(0)[user_bg]))
-                r["user_bg_best_plane"] = float(np.median(raw[bz][user_bg]))
-                r["mean_mip_minus_user_bg"] = round(r["mean_mip"] - r["user_bg_mip"], 2)
-                r["mean_best_minus_user_bg"] = round(r["mean_best_plane"] - r["user_bg_best_plane"], 2)
-            source = next((x.get("source", "drawn") for x in rois if x["label"] == label), "drawn")
-            rows.append({"code": code, "region": label, "source": source, **r})
-        return rows
+        return measure_regions(code, raw, np.load(d / "candidates.npz"), meta, rois, self.cfg)
 
     def save_rois(self, code, rois):
         check_writable(*(self.scoring / n for n in ("rois.json", "roi_measurements.json", "roi_measurements.csv")))

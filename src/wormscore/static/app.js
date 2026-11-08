@@ -1,5 +1,7 @@
 // wormscore scoring page. Talks only to the local server. Shows images and saves
 // answers; it never receives brightness numbers.
+// The same page runs Browse images (browse.py) when the server says mode "browse": file names,
+// genotypes and measurements are shown, and nothing can be saved.
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
@@ -45,6 +47,8 @@ const st = {
   angle: 0, rot: new Map(),   // 3D: the turn in degrees, and turned projections already drawn for this image
   next: null,   // the next image's projection and brightfield, decoded ahead: { code, mip, bfVals }
 };
+
+const browsing = () => st.cfg?.mode === "browse";
 
 const cv = $("#cv");
 const ctx = cv.getContext("2d");
@@ -126,7 +130,8 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) chec
 function otherProject() {
   st.otherProject = true;
   $("#connStart").classList.add("hidden");
-  $("#connText").textContent = "This scoring window belongs to another project. Close it, then click Continue scoring in the wormscore window.";
+  $("#connText").textContent = browsing() ? "This window belongs to another project. Close it, then open it again from the wormscore window."
+    : "This scoring window belongs to another project. Close it, then click Continue scoring in the wormscore window.";
   $("#conn").classList.remove("hidden");
 }
 
@@ -185,6 +190,7 @@ function buildForm() {
   const sc = st.cfg.scoring;
   document.title = `Scoring: ${st.cfg.project_name} - wormscore`;   // the app finds its scoring windows by "Scoring"
   $("#projectName").textContent = st.cfg.project_name;
+  if (browsing()) setupBrowse();
   $("#rules").replaceChildren(...sc.rules.map(r => h("li", {}, r)));
   $("#reasonSelect").append(...sc.unusable_reasons.map(r => h("option", {}, r)));
   $("#countLabel").textContent = sc.count_question.label;
@@ -204,6 +210,83 @@ function buildForm() {
     l === "background" ? "Background" : l)));
 }
 
+// Browse images: the panel shows what the image is and measures regions on screen; no score form.
+function setupBrowse() {
+  document.title = `Browse: ${st.cfg.project_name} - wormscore`;     // the app finds this window by "Browse"
+  document.body.classList.add("browse");
+  $(".tabs").classList.add("hidden");
+  $("#scoreForm").classList.add("hidden");
+  $("#browseInfo").classList.remove("hidden");
+  $("#saveKeys").classList.add("hidden");
+  $(".progress .bar").classList.add("hidden");
+  $("#markIntro").textContent = "Outline a cell to measure it, with the same measurements as scoring. "
+    + "The numbers are shown here and not saved.";
+  $("#saveRois").textContent = "Measure";
+  st.tab = "mark";
+  st.listFind = h("input", { type: "search", id: "listFind", class: "list-find", placeholder: "Find code, file or genotype",
+    "aria-label": "Find an image by code, file name or genotype", oninput: renderList });
+}
+
+// One line per image: its code (after unblinding) or file, then genotype, and whether it is left out.
+function browseRow(w) {
+  const said = [w.coded ? w.code : null, w.genotype, w.file, w.location, w.note].filter(Boolean).join(", ");
+  return h("button", { class: `brow${w.code === st.code ? " cur" : ""}`, "aria-current": w.code === st.code ? "true" : null,
+    title: said, "aria-label": said, onclick: () => openWorm(w.code) },
+    h("span", { class: "b-main" }, w.coded ? w.code : w.file || w.code),
+    h("span", { class: "b-sub" }, w.genotype || "no genotype"),
+    w.coded ? null : h("span", { class: "b-sub" }, w.location),
+    w.note ? h("span", { class: "b-note" }, w.note.startsWith("Left out") ? "Left out" : w.note) : null);
+}
+
+function renderInfo(r) {
+  const it = st.worms.find(w => w.code === st.code);
+  const lines = [h("p", { class: "browse-note" }, "File names and genotypes are visible here. Nothing is saved."),
+    h("dl", {}, ...r.info.flatMap(x => [h("dt", {}, x.k), h("dd", {}, x.v)]))];
+  if (r.meta.enhanced_this_image) lines.push(h("p", { class: "small" },
+    "Enhanced is set from this image alone. Build blind set sets one Enhanced range per microscope, so "
+    + "compare brightness between images with Standard."));
+  if (r.score) {
+    const skip = new Set(["saved", "flag_answers", "display_preset_when_saved"]);
+    const rows = Object.entries(r.score).filter(([k, v]) => !skip.has(k) && v !== "" && v != null && typeof v !== "object");
+    lines.push(h("h2", { class: "b-head" }, `Saved score (${r.score.saved})`),
+      h("dl", {}, ...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, String(v))])));
+  } else if (it?.coded) lines.push(h("p", { class: "small" }, "No score was saved for this code."));
+  $("#browseInfo").replaceChildren(...lines);
+}
+
+const MEASURE_COLS = [["region", "Region"], ["area_um2", "Area (µm²)"], ["mean_best_minus_bg", "Mean − bg, sharpest plane"],
+  ["stack_sum_minus_bg", "Sum − bg, all planes"], ["peak_minus_bg", "Peak − bg"], ["best_z", "Sharpest plane"],
+  ["saturated_px_mip", "Saturated pixels"]];
+
+function measureCell(k, r) {
+  const v = r[k];
+  if (k === "best_z") return `${v + 1} / ${st.meta.n_z}`;
+  return typeof v === "number" ? String(Math.round(v * 10) / 10) : String(v ?? "");
+}
+
+function renderMeasure(rows) {
+  const out = $("#measureOut");
+  if (!rows) return out.replaceChildren();
+  if (!rows.length) return out.replaceChildren(h("p", { class: "small" }, "Draw a cell region to measure it."));
+  const head = h("tr", {}, ...MEASURE_COLS.map(([, t]) => h("th", { scope: "col" }, t)));
+  const body = rows.map(r => h("tr", {}, ...MEASURE_COLS.map(([k]) =>
+    k === "region" ? h("th", { scope: "row" }, measureCell(k, r)) : h("td", {}, measureCell(k, r)))));
+  out.replaceChildren(h("div", { class: "m-wrap" }, h("table", { class: "m-table" }, h("thead", {}, head), h("tbody", {}, ...body))));
+}
+
+async function measure() {
+  const code = st.code;
+  roiMessage("Measuring...");
+  try {
+    const r = await api(`/api/worm/${code}/measure`, { rois: st.rois });
+    if (st.code !== code) return;
+    renderMeasure(r.rows);
+    roiMessage(r.rows.length ? "Not saved" : "");
+  } catch (err) {
+    roiMessage(`Could not measure: ${err.message}`, true);
+  }
+}
+
 async function loadList() {
   st.worms = (await api("/api/worms")).worms;
   renderList();
@@ -211,6 +294,16 @@ async function loadList() {
 
 function renderList() {
   const nav = $("#list");
+  if (browsing()) {
+    const q = (st.listFind.value || "").trim().toLowerCase();
+    const shown = st.worms.filter(w => !q || [w.code, w.file, w.genotype, w.location].some(x => (x || "").toLowerCase().includes(q)));
+    nav.replaceChildren(st.listFind, ...shown.map(browseRow),
+      shown.length ? null : h("p", { class: "small" }, "No image matches."));
+    const coded = st.worms.filter(w => w.coded).length;
+    $("#progText").textContent = `Browsing ${st.worms.length} images` + (coded ? ` (${coded} coded)` : "")
+      + (st.cfg.stage === "before" ? ". Each image you open is recorded in log.md." : "");
+    return;
+  }
   nav.replaceChildren(...st.worms.map(w => {
     // A saved score is what counts, so it gets the tick. Marked cells are said in the label and
     // counted in the header; an image with no visible cells has nothing to mark.
@@ -286,18 +379,24 @@ async function openWorm(code) {
   $("#loadErr").classList.add("hidden");
   $("#bfToggle").disabled = !st.meta.has_brightfield;
   $("#bfToggle").parentElement.title = st.meta.has_brightfield ? "" : "No brightfield channel was recorded for this image";
-  $("#codeTitle").textContent = code;
+  const item = browsing() ? st.worms.find(w => w.code === code) : null;
+  $("#codeTitle").textContent = item && !item.coded ? item.file || code : code;
   cv.setAttribute("aria-label", `Image ${code}`);
   $("#zSlider").max = st.meta.n_z - 1;
   syncButtons();
-  fillForm();
-  renderFlags();
-  markMissing([]);       // outlines from pressing Save on the last image do not carry over
-  if (r.draft) applyDraft(r.draft);
+  if (browsing()) {
+    renderInfo(r);
+    renderMeasure(null);
+  } else {
+    fillForm();
+    renderFlags();
+    markMissing([]);       // outlines from pressing Save on the last image do not carry over
+    if (r.draft) applyDraft(r.draft);
+  }
   renderSuggestions();
   renderRoiList();
   $("#roiMsg").textContent = "";
-  setTab(st.score ? st.tab : "score");
+  setTab(browsing() ? "mark" : st.score ? st.tab : "score");
   renderList();
   try {
     const ahead = st.next && st.next.code === code ? await st.next.ready : null;
@@ -340,6 +439,7 @@ function loadImages(code, meta, v) {
 // Decode the next image in the list while this one is being scored, so moving on is instant.
 // Only pixels are kept ahead; its answers and regions are always fetched fresh when it opens.
 function loadNext(code) {
+  if (browsing()) return;     // Browse reads (and records) an image only when it is opened
   const i = st.worms.findIndex(w => w.code === code);
   const next = st.worms[i + 1];
   if (!next) return;
@@ -702,8 +802,12 @@ function commitRoi(r) {
     return;
   }
   st.rois = st.rois.filter(o => o.label !== r.label).concat([r]);
-  st.roisDirty = true;
-  roiMessage("Unsaved changes");
+  if (browsing()) {
+    roiMessage("Click Measure to see the numbers.");
+  } else {
+    st.roisDirty = true;
+    roiMessage("Unsaved changes");
+  }
   renderRoiList();
   draw();
 }
@@ -781,14 +885,17 @@ function renderRoiList() {
       h("span", { class: "small" }, r.source),
       h("span", { class: "btns" }, h("button", { type: "button", onclick: () => {
         st.rois = st.rois.filter(x => x !== r);
-        st.roisDirty = true;
-        roiMessage("Unsaved changes");
+        if (!browsing()) {
+          st.roisDirty = true;
+          roiMessage("Unsaved changes");
+        }
         renderRoiList();
         draw();
       } }, "Remove")))));
 }
 
 $("#saveRois").onclick = async () => {
+  if (browsing()) return measure();
   try {
     await api(`/api/worm/${st.code}/rois`, { rois: st.rois });
     st.roisDirty = false;
@@ -968,6 +1075,9 @@ function setOn(b, on) {
 function syncButtons() {
   $$("[data-view]").forEach(b => setOn(b, b.dataset.view === st.view));
   $$("[data-range]").forEach(b => setOn(b, b.dataset.range === st.range));
+  const own = !!st.meta?.enhanced_this_image;
+  $("[data-range=enhanced]").title = own ? "Background to typical bright spot of this image only: the blind set will use one range per microscope"
+    : "Background to typical bright spot, same for every image from this microscope";
   $$("[data-zoom]").forEach(b => setOn(b, +b.dataset.zoom === st.zoom));
   $("#zSlider").disabled = st.view !== "plane";
   $("#zSlider").value = st.z;
@@ -1129,7 +1239,7 @@ async function start() {
     }
     await loadList();
     st.ready = true;
-    const first = st.worms.find(w => !w.scored) || st.worms[0];
+    const first = browsing() ? st.worms[0] : st.worms.find(w => !w.scored) || st.worms[0];
     if (first) openWorm(first.code);
     else $("#codeTitle").textContent = "No images";
   } catch (err) {

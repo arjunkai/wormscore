@@ -36,6 +36,11 @@ def main(argv=None):
     s.add_argument("project")
     s.add_argument("--port", type=int, default=8765)
     s.add_argument("--no-browser", action="store_true")
+    s = sub.add_parser("browse", help="view images with file names and genotypes, without scoring "
+                       "(before Build blind set or after Unblind; browsing before the build is logged)")
+    s.add_argument("project")
+    s.add_argument("--port", type=int, default=8765)
+    s.add_argument("--no-browser", action="store_true")
     s = sub.add_parser("unblind", help="join scores, measurements and the key (after scoring)")
     s.add_argument("project")
     s.add_argument("--i-have-finished-scoring", dest="finished", action="store_true")
@@ -85,6 +90,9 @@ def main(argv=None):
         elif a.cmd == "app":
             from .server import serve
             serve(a.project, port=a.port, open_browser=not a.no_browser)
+        elif a.cmd == "browse":
+            from .browse import serve as browse
+            browse(a.project, port=a.port, open_browser=not a.no_browser)
         elif a.cmd == "unblind":
             from .unblind import unblind
             unblind(a.project, finished=a.finished, anyway=a.anyway)

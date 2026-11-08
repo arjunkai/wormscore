@@ -164,6 +164,17 @@ also has a command (in brackets) if you prefer the command line or want to scrip
    finished: reveals the genotypes and writes the results tables and a draft Methods paragraph (see
    [Results](#results) below).
 
+**Looking at images: Browse images** (`wormscore browse my_project`). After scanning, **Browse images**
+in the Scan data card opens the scoring viewer with each image's file name and genotype, for checking
+images and setting the scoring criteria. It has the same views as scoring (planes, 3D, channels, both
+display ranges, suggested cells), and you can outline a cell to see its measurements on screen. Nothing
+is scored or saved. Before the blind set exists, Enhanced is set from each image alone, so compare
+brightness between images with Standard. Each image you open before the build is recorded in `log.md`
+and `outputs/browsed_images.csv`, and the Build log and the Methods draft say how many images were seen
+(ARRIVE 2.0 item 5 asks who knew the groups at each stage). Browse is off from Build blind set until
+Unblind, and in a second scorer's package. After unblinding it opens again from the Unblind card, to look
+up a code (for example W0010) with its genotype, file and saved score.
+
 **Optional: a second scorer** (inter-rater reliability). After building the blind set, use **Make a package...** in the
 **Second scorer** card on the home page (`wormscore export-scorer my_project D:\for_sam --scorer "Sam K"
 --percent 30`). Choose a name and a share of each genotype's images (1 to 100%, at least one image per
@@ -255,6 +266,7 @@ All of these are recorded as an analysis plan before scoring and locked once sco
 | `config.json` | every parameter | yes |
 | `log.md` | every run: parameters, software versions, counts | yes |
 | `outputs/manifest.csv`, `inventory.csv`, `excluded.csv` | what was found and what was left out | yes |
+| `outputs/browsed_images.csv` | images viewed with Browse images before the build (only if you browsed) | yes |
 | `outputs/auto_measurements.csv` | numbers for suggested spots | avoid until done |
 | `blind/` | images for scoring, named by code | used by the app |
 | `scoring/` | your scores, regions and their measurements | scores yes; avoid `roi_measurements.csv` |
