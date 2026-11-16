@@ -149,7 +149,18 @@ def project_status(path):
     from .scorers import package_info, packages
     info = package_info(p)
     # A second scorer's package: only its own images and scores, so the page shows just Score.
-    st["package"] = {"scorer": str(info.get("scorer", ""))} if info else None
+    st["package"] = {"scorer": str(info.get("scorer", "")), "practice": bool(info.get("practice"))} if info else None
+    # a practice set: how far along, and (only once every image is scored) the comparison with its key
+    st["practice_set"] = None
+    st["practice"] = None
+    from . import practice as PR
+    if info and info.get("practice"):
+        try:
+            st["practice_set"] = PR.result(p, verify=False)
+        except (Exception, SystemExit) as exc:
+            st["practice_set"] = {"error": str(exc)}
+    elif not info:
+        st["practice"] = PR.summary(p)
     inv = p / "outputs" / "inventory.csv"
     st["scanned"] = _rows(inv) if inv.is_file() else None
     blind = p / "blind"
@@ -218,6 +229,7 @@ class Job:
         self.lines = []
         self.frac = None
         self.started = 0.0
+        self.ended = 0.0
         self.outcome = ""
 
     def say(self, text):
@@ -235,7 +247,7 @@ class Job:
             if self.running:
                 return False
             self.running, self.title, self.project = True, title, str(project)
-            self.frac, self.started, self.outcome = None, time.time(), ""
+            self.frac, self.started, self.ended, self.outcome = None, time.time(), 0.0, ""
         self.say(f"--- {title} ---")
 
         def work():
@@ -250,12 +262,15 @@ class Job:
                 self.say(f"Error: {type(exc).__name__}: {exc}")
                 self.outcome = "error"
             finally:
+                self.ended = time.time()
                 self.running = False
         threading.Thread(target=work, daemon=True).start()
         return True
 
     def snapshot(self, since):
-        elapsed = time.time() - self.started if self.started else 0
+        # a finished step keeps the time it took (it used to keep counting, so "Done in" grew and
+        # the home page redrew on every poll)
+        elapsed = ((self.ended if not self.running and self.ended else time.time()) - self.started) if self.started else 0
         eta = elapsed * (1 - self.frac) / self.frac if self.running and self.frac and self.frac > 0.02 else None
         return {"running": self.running, "title": self.title, "project": self.project, "outcome": self.outcome,
                 "lines": self.lines[since:], "next": len(self.lines), "frac": self.frac,
@@ -805,6 +820,35 @@ class HomeApp:
             raise ValueError("Another step is still running.")
         return {"ok": True}
 
+    def practice(self, body):
+        """Make a practice set from this (finished) project, or record a finished practice set."""
+        from . import practice as PR
+        from .scorers import package_info
+        p = self.need_project()
+        if package_info(p):
+            raise ValueError("This folder is a package or practice set: it can only be scored.")
+        if body.get("action") == "make":
+            n, sure = body.get("n"), body.get("sure_only", True)
+            if isinstance(n, bool) or not isinstance(n, int) or not PR.MIN_IMAGES <= n <= PR.MAX_IMAGES:
+                raise ValueError(f"A practice set has {PR.MIN_IMAGES} to {PR.MAX_IMAGES} images.")
+            d = self.pick("Choose a new, empty folder for the practice set (outside the project)")
+            if not d:
+                return {"ok": False}
+            fn = lambda: PR.make_practice_set(p, d, n=n, sure_only=sure is not False, log=self.job.say)
+            if not self.job.start("Make practice set", p, fn):
+                raise ValueError("Another step is still running.")
+            return {"ok": True}
+        if body.get("action") == "add":
+            d = self.pick("Choose the practice set folder you scored")
+            if not d:
+                return {"ok": False}
+            try:
+                rec = PR.add_result(p, d, log=lambda *a: None)
+            except SystemExit as exc:
+                raise ValueError(str(exc))
+            return {"ok": True, "result": rec}
+        raise ValueError("unknown practice action")
+
     def start_scoring(self, viewer="score"):
         """Open the scoring window, or (viewer="browse") the same window browsing images."""
         if viewer == "browse":
@@ -974,6 +1018,8 @@ class HomeApp:
             raise ValueError("unknown settings action")
         elif route == "second-scorer":
             return self.second_scorer(body)
+        elif route == "practice":
+            return self.practice(body)
         elif route == "run":
             return self.run_step(body)
         elif route == "score":

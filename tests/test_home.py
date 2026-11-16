@@ -322,3 +322,21 @@ def test_help_definitions_are_served_to_every_window(desk):
         finally:
             srv.shutdown()
             srv.server_close()
+
+
+def test_a_finished_step_keeps_the_time_it_took(monkeypatch):
+    """Before 1.13.0 "Done in" kept counting after a step ended, and the home page redrew on every
+    poll because the state changed."""
+    import time as _time
+    job = home.Job()
+    now = [1000.0]
+    monkeypatch.setattr(home.time, "time", lambda: now[0])
+    assert job.start("Quick step", "p", lambda: None)
+    for _ in range(200):
+        if not job.running:
+            break
+        _time.sleep(0.01)
+    assert not job.running and job.outcome == "done"
+    first = job.snapshot(0)["elapsed_s"]
+    now[0] += 60
+    assert job.snapshot(0)["elapsed_s"] == first == 0

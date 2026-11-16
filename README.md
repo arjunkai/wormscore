@@ -201,6 +201,20 @@ agreement and Cohen's kappa for each answer, `scorer_disagreements.csv` lists ea
 answers differ (codes only), and the Methods draft gets a sentence about it. All results tables still
 use only your answers.
 
+**Optional: a practice set** (training against an answer key). Before scoring for real, a new
+scorer can practise on images someone has already scored. In a finished (unblinded) project, **Make a
+practice set...** in the **Practice set** card (`wormscore make-practice my_project D:\practice --n 20`)
+copies that many coded images, taken in turn from each genotype, with your saved answers as the
+answer key (only images you marked sure, unless you untick it or add `--any-confidence`). The set has
+no genotypes, file names or analysis plan; the key is in `practice_key.json`. The new scorer opens the
+folder in wormscore and scores every image; then the set shows the agreement with the key for each
+answer (percent agreement and Cohen's kappa) and lists each image where the answers differ, with both
+answers. In their own project, before scoring, **Add a practice result...** (`wormscore add-practice
+my_project D:\practice`) checks the set, computes the agreement again from its files and writes it to
+`log.md` with the key's SHA-256 (the same value is in the log of the project the set was made from),
+and the Methods draft says the scorer practised. Projects without a practice result report exactly as
+before.
+
 ## Scoring criteria
 
 **Edit criteria...** on step 2 opens the scoring criteria on their own page (Project settings has the

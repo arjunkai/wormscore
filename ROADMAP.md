@@ -11,10 +11,7 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Scoring criteria (from a review of published scoring schemes and tools, November 2026)
 
-- **A practice set.** Score a small set of images against an answer key before the real scoring
-  and see the agreement, as published scales provide (Bijwadia et al. 2021), to catch drift in how
-  categories are judged (Gibson-Corley et al. 2013).
-- **Also:** questions per left/right cell, and a counts-and-position preset.
+- **Questions per left/right cell,** and a counts-and-position preset.
 
 ### Other planned features
 
@@ -51,6 +48,18 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.13.0: **Practice sets.** In a finished (unblinded) project, **Make a practice set...** copies a
+  few coded images, taken in turn from each genotype, with your saved answers as the answer key (by
+  default only images you marked sure). The set has no genotypes, file names or analysis plan. A new
+  scorer opens it like a second-scorer package and scores it; once every image is scored, the set
+  shows the agreement with the key for each answer and each image where the answers differ, side by
+  side. In their own project, **Add a practice result...** computes the agreement again from the
+  set's files and writes it to `log.md` with the key's checksum (also in the log of the project the
+  set came from), and the Methods draft says the scorer practised before scoring. Published scales
+  come with training images and a key (Bijwadia, Morton and Meyer 2021), and agreement checks catch
+  drift in how categories are judged (Gibson-Corley, Olivier and Meyerholz 2013). Projects without a
+  practice result report exactly as before. Also: a finished step's "Done in" time no longer keeps
+  counting, and another project's last step is no longer shown.
 - 1.12.3: Project settings cards look like the Scoring criteria cards (the panel colour, a stronger
   edge, the same padding), so the boxes to type in stand out from the card instead of matching it.
 - 1.12.2: a new or changed project name is kept to 80 characters (it appears in window titles, the

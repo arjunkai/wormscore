@@ -396,6 +396,12 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .pk-text { flex: 1; min-width: 0; }
 .pk-text b { margin-right: 8px; }
 .pk-meta { color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+.extra + .extra { margin-top: 10px; }
+/* practice sets */
+.pr-made { margin: 12px 0 0; }
+.pr-n { max-width: 120px; }
+.pr-sure { margin-top: 10px; }
+.pr-h { margin: var(--space-lg) 0 0; font-size: var(--text-sm); font-weight: 600; }
 .note {
   margin-top: 16px; padding: 12px 14px; border-radius: var(--radius); font-size: var(--text-sm);
   background: var(--run-soft); border: 1px solid var(--run); text-wrap: pretty;

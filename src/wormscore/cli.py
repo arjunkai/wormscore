@@ -53,6 +53,14 @@ def main(argv=None):
     s = sub.add_parser("import-scorer", help="bring a second scorer's finished package back into the project")
     s.add_argument("project")
     s.add_argument("package")
+    s = sub.add_parser("make-practice", help="make a practice set (images + answer key) from a finished project")
+    s.add_argument("project")
+    s.add_argument("destination", help="a new, empty folder outside the project")
+    s.add_argument("--n", type=int, default=20, help="number of images, 5 to 100 (default 20)")
+    s.add_argument("--any-confidence", action="store_true", help="also use images not marked sure")
+    s = sub.add_parser("add-practice", help="record a scored practice set's agreement in a project")
+    s.add_argument("project")
+    s.add_argument("practice_set")
     s = sub.add_parser("update", help="check GitHub for a newer version; --install or --rollback the downloaded app")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--install", action="store_true", help="download, check and install it when this command ends")
@@ -104,6 +112,14 @@ def main(argv=None):
         elif a.cmd == "import-scorer":
             from .scorers import import_scores
             import_scores(a.project, a.package)
+        elif a.cmd == "make-practice":
+            from .practice import make_practice_set
+            make_practice_set(a.project, a.destination, n=a.n, sure_only=not a.any_confidence)
+            print(f"Give {a.destination} to the new scorer. When they have scored it, record it in their project: "
+                  f"wormscore add-practice <their project> {a.destination}")
+        elif a.cmd == "add-practice":
+            from .practice import add_result
+            add_result(a.project, a.practice_set)
         elif a.cmd == "update":
             update_command(a)
     except FileNotFoundError as exc:

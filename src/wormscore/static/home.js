@@ -162,6 +162,7 @@ function duration(s) {
 
 function cardStatus(p) {
   if (!p.has_config) return "Folder or config.json missing";
+  if (p.package?.practice) return `Practice set: scored ${p.practice_set?.scored ?? p.scored} of ${p.practice_set?.total ?? p.coded ?? 0}`;
   if (p.package) return `Second-scorer package: scored ${p.scored} of ${p.coded ?? 0}`;
   if (p.unblinded) return "Unblinded";
   if (p.coded !== null && p.coded !== undefined) return `Scored ${p.scored} of ${p.coded}`;
@@ -356,13 +357,16 @@ function renderMain(d) {
     activity(job),
     p.unblinded && p.results && !busy ? resultsCard(p) : null,
     steps,
-    built && !building ? secondScorerCard(p, busy) : null));
+    built && !building ? secondScorerCard(p, busy) : null,
+    built && !building && p.practice ? practiceCard(p, busy) : null));
   const log = $("#log");
   if (log) log.scrollTop = log.scrollHeight;
 }
 
 function activity(job) {
   if (!st.log.length) return null;
+  // the last step of another project is not shown here (while it runs, a banner says so)
+  if (job.project && st.data?.project?.path && job.project !== st.data.project.path) return null;
   const done = !job.running;
   const pct = job.frac !== null && job.frac !== undefined ? Math.round(100 * job.frac) : null;
   const cls = done ? (job.outcome === "done" ? " ok" : job.outcome ? " bad" : "") : "";
@@ -442,8 +446,101 @@ async function importScores() {
   act("/api/second-scorer", { action: "import" });
 }
 
+// ---------------------------------------------------------------- practice sets (1.13.0)
+
+// In a project: record a practice set you scored (before scoring), or make one from this project
+// once it is unblinded, to train a new scorer.
+function practiceCard(p, busy) {
+  const pr = p.practice;
+  const rows = pr.results.map(r => h("li", { class: "pk" },
+    h("div", { class: "pk-text" }, h("b", {}, `${plural(r.total, "image")} from \u201c${r.source}\u201d`),
+      h("span", { class: "pk-meta" }, [r.measure ? `${r.percent}% agreement on ${r.measure}s` + (r.kappa !== "" ? `, kappa ${r.kappa}` : "") : "",
+        r.practised].filter(Boolean).join(" \u00b7 "))),
+    r.same_criteria ? null : h("span", { class: "chip wait", title: "The practice set used other scoring criteria than this project" }, "Other criteria")));
+  return h("section", { class: "extra" },
+    h("div", { class: "x-head" },
+      h("div", {},
+        h("div", { class: "s-title" }, "Practice set", wsHelp(h, "practice", "a practice set"), h("span", { class: "chip wait" }, "Optional")),
+        h("div", { class: "s-desc" }, p.unblinded
+          ? "Train a new scorer with some of these images, using your saved answers as the key."
+          : "Scored a practice set before this project? Record it, and the Methods draft says so.")),
+      h("div", { class: "x-act" },
+        p.unblinded ? h("button", { class: "btn", "data-k": "pr-make", disabled: busy, onclick: makePracticeSet }, "Make a practice set...")
+          : h("button", { class: "btn", "data-k": "pr-add", disabled: busy, onclick: addPracticeResult }, "Add a practice result..."))),
+    rows.length ? h("ul", { class: "pk-list" }, rows) : null,
+    pr.sets_made && p.unblinded ? h("p", { class: "pk-meta pr-made" }, `${plural(pr.sets_made, "practice set")} made from this project.`) : null);
+}
+
+async function makePracticeSet() {
+  const n = h("input", { type: "number", id: "prN", class: "f-input pr-n", min: "5", max: "100", step: "1", value: "20" });
+  const sure = h("input", { type: "checkbox", id: "prSure", checked: true });
+  const body = h("div", { class: "form" },
+    h("label", { class: "f-label", for: "prN" }, "Number of images"), n,
+    h("label", { class: "check pr-sure" }, sure, "Only images you marked sure"),
+    h("p", { class: "f-help" }, "Images are taken in turn from each genotype, with your saved answers as the answer key. "
+      + "The set has no genotypes or file names. Next, choose a new, empty folder outside this project."));
+  const go = await ask("Make a practice set", body, [{ value: true, label: "Choose folder..." }], "Cancel", {
+    check: () => { const v = Number(n.value); return Number.isInteger(v) && v >= 5 && v <= 100 ? null : "Choose 5 to 100 images."; } });
+  if (!go) return;
+  st.log = []; st.since = 0; st.showLog = false;
+  act("/api/practice", { action: "make", n: Number(n.value), sure_only: sure.checked });
+}
+
+async function addPracticeResult() {
+  const go = await ask("Add a practice result",
+    "Choose the practice set folder you scored. wormscore compares your answers with its answer key again and "
+    + "writes the result to log.md; the Methods draft then says you practised.",
+    [{ value: true, label: "Choose folder..." }]);
+  if (!go) return;
+  const r = await act("/api/practice", { action: "add" });
+  if (r?.result) toast(`Practice result recorded (${plural(r.result.total, "image")}).`, "ok");
+}
+
+const MEASURE_NAMES = { usable: "Usable image?", "animal affected (primary)": "Animal affected",
+  "animal affected (secondary)": "Animal affected (secondary)", "neuron call": "Neuron calls", "cells seen": "Cells seen" };
+
+// A practice set's own view: Score, then (once every image is scored) the comparison with the key.
+function practiceView(p, job) {
+  const busy = job.running, r = p.practice_set || {};
+  const total = r.total ?? p.coded ?? 0, scored = r.scored ?? p.scored, all = !!r.done;
+  const k = v => v === "" || v === null || v === undefined ? "\u2013" : v;
+  const compare = all && r.measures ? h("section", { class: "results-card", "aria-labelledby": "prHead" },
+    h("div", { class: "r-top" }, h("h3", { id: "prHead" }, "Your answers and the key")),
+    h("table", { class: "r-table" },
+      h("thead", {}, h("tr", {}, ...["Answer", "Same", "Agreement", "Kappa"].map(t => h("th", { scope: "col" }, t)))),
+      h("tbody", {}, ...r.measures.map(m => h("tr", {}, h("th", { scope: "row" }, MEASURE_NAMES[m.measure] || m.measure),
+        h("td", {}, `${m.same_answer} of ${m.pairs}`), h("td", {}, `${m.percent_agreement}%`), h("td", {}, k(m.kappa)))))),
+    r.differences.length
+      ? [h("h4", { class: "pr-h" }, `Where you differed (${r.differences.length})`),
+         h("table", { class: "r-table" },
+           h("thead", {}, h("tr", {}, ...["Image", "Answer", "Yours", "Key"].map(t => h("th", { scope: "col" }, t)))),
+           h("tbody", {}, ...r.differences.map(d => h("tr", {}, h("th", { scope: "row" }, d.code), h("td", {}, d.answer),
+             h("td", {}, d.yours), h("td", {}, d.key)))))]
+      : h("p", { class: "r-sub" }, "Every answer matched the key."),
+    h("p", { class: "r-sub" }, "Open scoring to look at an image again. To record this practice in your own project, "
+      + "open it and use Add a practice result.")) : null;
+  return h("div", { class: "wrap" },
+    h("div", { class: "p-head" },
+      h("div", { class: "p-name" }, h("h2", { title: p.name || null }, p.name || "Practice set"), h("div", { class: "p-path" }, breakable(p.path))),
+      h("div", { class: "p-tools" },
+        h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"))),
+    all ? null : h("div", { class: "note" }, h("b", {}, "Practice set"),
+      h("span", {}, "Score every image on your own. When all are scored, your answers are compared with the answer key here.")),
+    r.error ? h("div", { class: "banner" }, r.error) : null,
+    p.config_error ? h("div", { class: "banner" }, "config.json needs a fix:\n" + p.config_error) : null,
+    activity(job),
+    compare,
+    h("ol", { class: "steps" },
+      stepCard(1, all ? "done" : "next", "Score", "Score each coded image.",
+        all ? `All ${total} scored.` : `Scored ${scored} of ${total}.`,
+        [h("button", { class: all ? "btn" : "primary", "data-k": "step3", disabled: busy || !total, onclick: score },
+          all ? "Open scoring" : scored ? "Continue scoring" : "Start scoring")],
+        total ? h("div", { class: "mini" }, h("div", { style: `width:${Math.min(100, 100 * scored / total)}%` })) : null)));
+}
+
 // A second scorer's own view of a package: only Score, and how to send it back.
 function packageView(p, job) {
+  if (p.package?.practice) return practiceView(p, job);
   const busy = job.running;
   const all = p.coded > 0 && p.scored >= p.coded;
   return h("div", { class: "wrap" },

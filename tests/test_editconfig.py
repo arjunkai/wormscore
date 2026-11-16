@@ -117,7 +117,7 @@ def test_home_routes_for_settings_and_second_scorers(desk, tmp_path):
 
     call(port, "POST", "/api/select", {"path": str(tmp_path / "pkg")})
     p = state(port)["project"]
-    assert p["package"] == {"scorer": "Sam"} and p["coded"] == 4 and p["second_scorers"] == []
+    assert p["package"] == {"scorer": "Sam", "practice": False} and p["coded"] == 4 and p["second_scorers"] == []
     assert call(port, "POST", "/api/project-settings", {"action": "load"})[0] == 400
     assert call(port, "POST", "/api/second-scorer", {"action": "import"})[0] == 400
     text = json.dumps(state(port))
