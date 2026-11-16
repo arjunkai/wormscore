@@ -16,6 +16,10 @@ from . import config as C
 
 FIELDS = ("name", "path", "original_path", "genotypes", "default_genotype", "exclude")
 MAX_TEXT = 500
+# A project name is shown in window titles, the project list and package names, and is the
+# default name of exported criteria (at most 80): a new or changed name is kept to 80 characters.
+# A longer name already in config.json is kept as it is, so older projects still open and save.
+MAX_NAME = 80
 
 
 def scoring_started(project):
@@ -100,6 +104,9 @@ def merged(project, body):
     if "sources" not in body and "project_name" not in body:
         return raw                       # the Scoring criteria page: only the criteria change
     name, sources = clean(body)
+    if len(name) > MAX_NAME and name != raw.get("project_name"):
+        raise ValueError(f"The project name is longer than {MAX_NAME} characters. Shorten it; "
+                         "the full title of the study can go in the Methods.")
     old = raw.get("sources", [])
     locked = info["locked"]
     if locked:

@@ -231,6 +231,9 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 /* ---------------------------------------------------------------- project header */
 .p-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .p-head h2 { margin: 0; font-size: var(--text-2xl); font-weight: 600; letter-spacing: -.01em; }
+/* a long project name: at most two lines here (the full name is its tooltip), like the project list */
+.p-name { min-width: 0; flex: 1 1 320px; }
+.p-name h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .p-path { color: var(--muted); font-size: var(--text-xs); margin-top: 2px; font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; overflow-wrap: anywhere; }
 /* a folder name stays on one line and the path wraps between folders; a name longer than the
    line still breaks (Safari does not break inside nowrap) */

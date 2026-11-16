@@ -133,3 +133,19 @@ def test_new_project_opens_settings_not_a_text_editor(desk, tmp_path):
     assert s == 200 and r["settings"] is True and desk["opened"] == []
     p = state(desk["port"])["project"]
     assert p["folders_found"] == 0          # the template's placeholder folder: the page asks for folders first
+
+
+def test_a_new_project_name_is_kept_to_80_characters_but_an_old_long_one_still_saves(fresh_project):
+    """1.12.2: a new or changed name over 80 characters is refused (it is used in window titles,
+    package names and as the default name of exported criteria); a longer name already in
+    config.json is kept, so older projects still save their folders."""
+    import json as _json
+    cur = E.current(fresh_project)
+    body = lambda name: {"project_name": name, "sources": [dict(s, **{"from": i}) for i, s in enumerate(cur["sources"])]}
+    with pytest.raises(ValueError, match="longer than 80"):
+        E.save(fresh_project, body("x" * 81))
+    E.save(fresh_project, body("y" * 80))
+    raw = _json.loads((fresh_project / "config.json").read_text(encoding="utf-8"))
+    raw["project_name"] = "z" * 120                      # written by an older version or by hand
+    (fresh_project / "config.json").write_text(_json.dumps(raw), encoding="utf-8")
+    assert E.save(fresh_project, body("z" * 120))["ok"]

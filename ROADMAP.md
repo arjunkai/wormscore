@@ -51,6 +51,10 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.12.2: a new or changed project name is kept to 80 characters (it appears in window titles, the
+  project list and package names, and is the default name of exported criteria, which allow 80); a
+  longer name already in `config.json` is kept, so older projects still open and save. A long name
+  takes at most two lines at the top of the project, with the full name as its tooltip.
 - 1.12.1: the home screen's project list reads like the recent-projects lists of other desktop apps
   (JetBrains, VS Code, GitHub Desktop): one row per project with a folder icon, its name and its
   status, a fill on hover and a soft green fill for the open project; the full path is the row's

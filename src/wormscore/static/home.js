@@ -341,7 +341,7 @@ function renderMain(d) {
 
   main.replaceChildren(h("div", { class: "wrap" },
     h("div", { class: "p-head" },
-      h("div", {}, h("h2", {}, p.name || "Project"), h("div", { class: "p-path", title: p.path }, shortPath(p.path))),
+      h("div", { class: "p-name" }, h("h2", { title: p.name || null }, p.name || "Project"), h("div", { class: "p-path", title: p.path }, shortPath(p.path))),
       h("div", { class: "p-tools" },
         h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"),
         p.browse && p.browse !== "none" ? h("button", {
@@ -448,7 +448,7 @@ function packageView(p, job) {
   const all = p.coded > 0 && p.scored >= p.coded;
   return h("div", { class: "wrap" },
     h("div", { class: "p-head" },
-      h("div", {}, h("h2", {}, p.name || "Package"), h("div", { class: "p-path" }, breakable(p.path))),
+      h("div", { class: "p-name" }, h("h2", { title: p.name || null }, p.name || "Package"), h("div", { class: "p-path" }, breakable(p.path))),
       h("div", { class: "p-tools" },
         h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"))),
     h("div", { class: "note" }, h("b", {}, `Second-scorer package for ${p.package.scorer}`),
@@ -781,7 +781,7 @@ function formSection(info) {
     const src = m.source || {};
     const body = h("div", { class: "sf-export" },
       h("p", {}, "One file with these criteria, their definitions and reference images, for another project or lab to import."),
-      ...field("sfExName", "Name", src.name || info.project_name || "", null),
+      ...field("sfExName", "Name", src.name || (info.project_name || "").slice(0, 80), null),
       ...field("sfExVersion", "Version (optional)", src.version || "", "For example 1.0. Change it when the criteria change."),
       ...field("sfExCite", "Citation (optional)", src.citation || "", "The paper or protocol these criteria come from."));
     const val = id => body.querySelector(`#${id}`).value.trim();
@@ -1028,7 +1028,7 @@ async function openProjectSettings(section) {
     if (criteria) return box.replaceChildren(form.el);
     box.replaceChildren(
       h("div", { class: "s-card src" }, h("label", { class: "f-label", for: "psName" }, "Project name"),
-        field(model, "project_name", { id: "psName" })),
+        field(model, "project_name", { id: "psName", maxlength: "80" })),
       h("h4", { id: "psFolders" }, "Image folders"),
       ...cards,
       h("button", { class: "btn add-src", onclick: () => { model.sources.push(blankSource()); draw("src"); } }, "Add image folder"),
