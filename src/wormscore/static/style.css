@@ -93,6 +93,8 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
   font-variant-numeric: tabular-nums;
 }
 #list button:hover { background: var(--raised); }
+/* the open image, scrolled into view in a long list, keeps a row of context above and below */
+#list button { scroll-margin-block: 36px; }
 #list button.cur { background: var(--raised); outline: 1px solid var(--accent); }
 /* not scored: empty ring; started, not saved: half-filled; scored: filled dot with a tick */
 .dot { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--muted); flex: none; position: relative; }

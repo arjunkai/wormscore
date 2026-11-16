@@ -49,3 +49,16 @@ def test_side_list_sits_on_the_border_line_on_both_pages():
     for name in ("style.css", "home.css"):
         css = (STATIC / name).read_text(encoding="utf-8")
         assert re.search(r"fieldset\.neuron > select\.side \{ position: absolute; top: -19px;", css), name
+
+
+def test_projects_on_the_home_screen_are_rows_with_a_folder_icon():
+    """1.12.1: the project list reads like other apps' recent-projects lists (a folder icon, the
+    name and the status, a fill for hover and for the open project), not a stack of boxes; it
+    scrolls on its own."""
+    css = (STATIC / "home.css").read_text(encoding="utf-8")
+    js = (STATIC / "home.js").read_text(encoding="utf-8")
+    pick = re.search(r"\.card-p \.pick \{([^}]*)\}", css).group(1)
+    assert "border: 0" in pick
+    assert 'icon("folder", 16)' in js and "folder:" in js
+    assert re.search(r"\.card-p\.cur \.pick \{[^}]*background: var\(--accent-soft\)", css)
+    assert re.search(r"\.recent \{[^}]*overflow-y: auto", css)

@@ -199,17 +199,22 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .side-actions { display: grid; gap: 8px; padding: 14px; border-top: 1px solid var(--line); }
 .side-actions .btn { justify-content: flex-start; }
 
-.card-p { position: relative; margin-bottom: 4px; border-radius: var(--radius); }
+/* one row per project, as in other apps' recent-projects lists: a folder icon, the name and the
+   status, no box; a fill on hover and a soft green fill for the open project */
+.card-p { position: relative; margin-bottom: 2px; border-radius: var(--radius); }
 .card-p .pick {
-  display: block; width: 100%; text-align: left; cursor: pointer; background: none;
-  border: 1px solid transparent; border-radius: var(--radius); padding: 10px 34px 10px 12px;
+  display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 10px; align-items: start;
+  width: 100%; text-align: left; cursor: pointer; background: none; color: inherit; font: inherit;
+  border: 0; border-radius: var(--radius); padding: 8px 36px 8px 10px;
 }
+.card-p .ic { display: flex; height: 1.45em; align-items: center; color: var(--muted); }
+.card-p .txt { min-width: 0; }
 .card-p .pick:hover { background: var(--raised); }
-.card-p.cur .pick { background: var(--accent-soft); border-color: var(--accent); cursor: default; }
+.card-p.cur .pick { background: var(--accent-soft); cursor: default; }
+.card-p.cur .ic { color: var(--accent); }
 /* up to two lines, so the (folder) that tells identical names apart stays visible */
 .card-p .nm { font-weight: 600; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
-.card-p .pth { display: block; color: var(--faint); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-p .st { display: block; color: var(--muted); font-size: var(--text-xs); margin-top: 3px; }
+.card-p .st { display: block; color: var(--muted); font-size: var(--text-xs); margin-top: 1px; }
 .card-p .x {
   position: absolute; right: 6px; top: 8px; width: 24px; height: 24px; display: grid; place-items: center;
   border: 0; border-radius: var(--radius-sm); background: none; color: var(--faint); cursor: pointer; opacity: 0;
@@ -597,8 +602,6 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
   .layout { display: block; }
   .side { border-right: 0; border-bottom: 1px solid var(--line); }
   .recent, .main { overflow: visible; }
-  .card-p .pick { padding-top: var(--space-sm); padding-bottom: var(--space-sm); }
-  .card-p .pth { display: none; }   /* identical names already carry their folder */
   .side-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); padding: var(--space-sm) var(--space-md); }
   .side-actions .btn { justify-content: center; }
   .step { grid-template-columns: 40px 1fr; }

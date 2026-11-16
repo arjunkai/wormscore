@@ -26,6 +26,7 @@ const ICONS = {
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  folder: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/>',
   lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
@@ -198,11 +199,12 @@ function renderSide(d) {
     // two projects with the same name are told apart by their folder name
     const name = names[i] + (names.filter(n => n === names[i]).length > 1 && folder !== names[i] ? ` (${folder})` : "");
     return h("div", { class: "card-p" + (p.path === cur ? " cur" : "") },
-      h("button", { class: "pick", "data-k": `pick:${p.path}`, "aria-current": p.path === cur ? "true" : null,
+      // a row like a recent-projects list (JetBrains, VS Code, GitHub Desktop): folder icon, name,
+      // status; the full path is the tooltip and sits under the project's name on the right
+      h("button", { class: "pick", "data-k": `pick:${p.path}`, "aria-current": p.path === cur ? "true" : null, title: p.path,
         onclick: async () => p.path !== cur && await canLeaveSettings() && act("/api/select", { path: p.path }) },
-        h("span", { class: "nm" }, name),
-        h("span", { class: "pth", title: p.path }, shortPath(p.path)),
-        h("span", { class: "st" }, cardStatus(p))),
+        h("span", { class: "ic" }, icon("folder", 16)),
+        h("span", { class: "txt" }, h("span", { class: "nm" }, name), h("span", { class: "st" }, cardStatus(p)))),
       h("button", {
         class: "x", "data-k": `x:${p.path}`, title: "Remove from this list (the folder itself is not changed)",
         "aria-label": `Remove ${name} from the list`, onclick: () => forgetProject(name, p.path),

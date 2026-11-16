@@ -386,6 +386,12 @@ function renderList() {
       h("span", { class: w.scored ? "dot done" : w.draft ? "dot draft" : "dot", "aria-hidden": "true" }), w.code,
       w.unanswered_flags ? h("span", { class: "flagmark", title: "questions to confirm" }, `${w.unanswered_flags}?`) : null);
   }));
+  // A new image opened (Next, Ctrl+Enter, the N key) is scrolled into view in a long list; a list
+  // the scorer scrolled on purpose stays where it is when the same image is redrawn.
+  if (st.listShown !== st.code) {
+    st.listShown = st.code;
+    nav.querySelector("button.cur")?.scrollIntoView({ block: "nearest" });
+  }
   const n = st.worms.filter(w => w.scored).length;
   const marked = st.worms.filter(w => w.scored && w.has_roi).length;
   $("#progFill").style.transform = `scaleX(${n / Math.max(st.worms.length, 1)})`;

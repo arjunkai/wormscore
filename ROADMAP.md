@@ -51,6 +51,12 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.12.1: the home screen's project list reads like the recent-projects lists of other desktop apps
+  (JetBrains, VS Code, GitHub Desktop): one row per project with a folder icon, its name and its
+  status, a fill on hover and a soft green fill for the open project; the full path is the row's
+  tooltip and stays under the project's name on the right. The list scrolls on its own when it is
+  longer than the window. In a long image list the scoring window keeps the open image in view, with
+  a row of context around it (Next image, the N key, Ctrl+Enter).
 - 1.12.0: **A wording pass and a tidier score panel.** Each step card and its "?" help now say
   different things instead of the same thing twice; the welcome screen no longer asks a new user about
   `config.json`; the Build dialog no longer points to Project settings for the criteria; what you draw
