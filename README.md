@@ -205,6 +205,14 @@ a live preview of the score panel. (Older versions and `log.md` call this the sc
   **Axon guidance** (yes/no questions about the axon), **Neurodegeneration** (each dendrite scored 0 to
   6), **Dendrite length** (full / partial / short) or **Blank**.
 - **Neurons and calls:** name the neurons and the calls, and tick which calls count as a defect.
+- **What each answer means:** each call, and each answer of a Choice or Scale question, can have a
+  short definition and a **reference image** (PNG or JPEG) to compare against, for example what "dim"
+  looks like. The scoring page shows them in a **What each answer means** box above the neurons (click
+  a thumbnail to see it larger, beside the image being scored), and a definition is also the answer's tooltip. Take reference
+  images from outside the blind set, such as a pilot or a published figure. Images are copied into the
+  project's `criteria/` folder and go into second-scorer packages; the definitions and each image's
+  SHA-256 are written to `log.md` with the criteria, and the Methods draft says they were shown.
+  The general **rules** list stays for instructions that are not about one answer.
 - **Extra questions,** each asked **for each neuron** or **once per animal**, with an optional "can't
   tell" answer (never counted as an answer: that neuron or animal is left out), whether it is required,
   and calls for which it is skipped (for example "not seen"). Four answer types:
@@ -228,7 +236,7 @@ a live preview of the score panel. (Older versions and `log.md` call this the sc
 cannot change while you score. Every save is written to `log.md`. If you really must change them
 afterwards, **change them anyway...** on the locked criteria asks for a reason and writes the change and the
 reason to `log.md`; unblinding lists each change with its reason in the summary and the Methods draft.
-Fixing wording (question text, rules) keeps the planned tests. Any other change, in the app or by
+Fixing wording (question text, rules, an answer's definition or reference image) keeps the planned tests. Any other change, in the app or by
 editing `config.json` by hand, means unblinding runs no planned test and says why (descriptive tables
 are still written, and changing the criteria back runs the tests again). It is not offered once a
 second-scorer package exists. Leaving Project settings with unsaved changes asks whether to save them.

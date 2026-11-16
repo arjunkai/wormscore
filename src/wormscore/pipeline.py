@@ -612,7 +612,7 @@ def prepare(project, reassign=False, add=False, log=print):
             "Images added after scoring began can be recognised as a later batch by the scorer; if a batch is "
             "one genotype, blinding is weaker for it.",
             f"Display ranges: {json.dumps(ranges)}",
-        ] + identity_log_lines(cfg) + interaction_log_lines(cfg) + form_log_lines(cfg), cfg)
+        ] + identity_log_lines(cfg) + interaction_log_lines(cfg) + form_log_lines(cfg, project), cfg)
         log(f"Added {len(todo)} images {added}; {len(images)} images in blind/ in total.")
         return ranges
     n_counted = sum(s["counted_by_default"] for s in images)
@@ -629,7 +629,7 @@ def prepare(project, reassign=False, add=False, log=print):
         "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
         f"Settings groups: {len(letters)} (key/settings_groups.csv).",
         f"Display ranges: {json.dumps(ranges)}",
-    ] + browse_log_line(project) + identity_log_lines(cfg) + interaction_log_lines(cfg) + form_log_lines(cfg), cfg)
+    ] + browse_log_line(project) + identity_log_lines(cfg) + interaction_log_lines(cfg) + form_log_lines(cfg, project), cfg)
     log(f"{len(images)} images in blind/ {per_system}" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
         + f"; {len(excluded)} excluded.")
     return ranges

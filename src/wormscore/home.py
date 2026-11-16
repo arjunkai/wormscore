@@ -952,6 +952,9 @@ class HomeApp:
                 if r.get("after_lock") and self.scoring and self.scoring[0] == str(p):
                     self.stop_scoring()   # the open scoring window still shows the old form
                 return r
+            if action == "criteria-image":
+                from .scoreform import save_image
+                return {"ok": True, "path": save_image(p, body.get("data"), str(body.get("name") or "")[:100])}
             if action == "browse":
                 d = self.pick("Choose the folder with the images")
                 return {"ok": bool(d), "path": d or ""}
@@ -1048,6 +1051,12 @@ def make_handler(app):
                 return self.send_file(STATIC / parts[1], HOME_FILES[parts[1]])
             if parts == ["favicon.ico"]:
                 return self.send_file(STATIC / "icon.svg", "image/svg+xml")
+            if parts[0] == "criteria" and len(parts) == 2:
+                from .scoreform import image_file
+                p = app.current()
+                f = image_file(p, "criteria/" + parts[1]) if p else None
+                if f is not None and f.is_file():
+                    return self.send_file(f, "image/png" if f.suffix == ".png" else "image/jpeg")
             if parts == ["api", "state"]:
                 since = parse_qs(url.query).get("since", ["0"])[0]
                 return self.send_json(app.state(int(since) if since.isdigit() else 0))

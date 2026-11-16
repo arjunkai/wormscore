@@ -471,10 +471,12 @@ function formForPreview(m) {
     id: `p${i}`, label: q.label || "Untitled question", type: q.type, required: q.required,
     skip_when_calls: q.ask === "animal" ? [] : q.skip_when,
     options: [...answersOf(q), ...(q.cant_tell ? [q.cant_tell] : [])],
+    definitions: DEFINED.includes(q.type) ? q.defs || {} : {},
   });
   return {
     neurons: m.neurons.length ? m.neurons.map((n, i) => n || `Neuron ${i + 1}`) : ["Neuron 1"],
     calls: m.calls.map(c => c.text || "(call)"),
+    call_definitions: Object.fromEntries(m.calls.map(c => [c.text || "(call)", { text: c.def || "", image: c.image || "" }])),
     sides: m.sides ? ["left", "right"] : [],
     count_question: { label: m.count.label || "(count question)", options: m.count.options },
     neuron_questions: m.questions.map(asQ).filter((_, i) => m.questions[i].ask !== "animal"),
@@ -493,6 +495,7 @@ function countAnswers(c) {
 }
 const answersOf = q => q.type === "yesno" ? ["yes", "no"] : q.type === "count" ? countAnswers(q.count) : q.options;
 const RANKED = ["scale", "count"];
+const DEFINED = ["choice", "scale"];     // answer types whose answers can each have a definition and image
 const TYPE_NAMES = { yesno: "Yes / No", choice: "Choice", scale: "Scale", count: "Count" };
 const ROLLUP_NAMES = {
   worst: "Worst neuron (the highest level of any neuron)", mean: "Mean level of the neurons that were assessed",
@@ -538,6 +541,53 @@ function formSection(info) {
     h("input", { type: "checkbox", checked: !!checked, disabled: off, ...attrs, onchange: e => { set(e.target.checked); drawAll(); } }), label);
   const outcomes = () => [...new Set(m.questions.map(q => q.outcome).filter(Boolean))];
 
+  // One answer's definition and optional reference image, under the answer. get() is {text, image};
+  // put(patch) changes it. The image is copied into the project's criteria/ folder when it is added.
+  const addImage = (what, put, btn) => {
+    const busy = on => { btn.disabled = on; btn.textContent = on ? "Adding..." : "Add image"; };
+    const pick = h("input", { type: "file", accept: "image/png,image/jpeg", hidden: true, onchange: () => {
+      const file = pick.files?.[0];
+      if (!file) return;
+      busy(true);
+      const read = new FileReader();
+      read.onload = async () => {
+        try {
+          const r = await api("/api/project-settings", { action: "criteria-image", data: read.result, name: file.name });
+          put({ image: r.path });
+          drawAll();
+        } catch (e) { busy(false); toast(e.message); }
+      };
+      read.onerror = () => { busy(false); toast("That file could not be read."); };
+      read.readAsDataURL(file);
+    } });
+    document.body.append(pick);
+    pick.click();
+    setTimeout(() => pick.remove(), 60000);
+  };
+  const defLine = (what, get, put) => {
+    const d = get();
+    return h("div", { class: "sf-def" },
+      h("span", { class: "sf-def-k", "aria-hidden": "true" }, "means"),
+      text(d.text, v => put({ text: v }), { placeholder: "Definition (optional): what it looks like", "aria-label": `${what}: definition`, maxlength: 300 }),
+      d.image ? h("span", { class: "sf-img" },
+        h("button", { class: "sf-thumb", title: "Show the reference image", "aria-label": `Show the reference image for ${what}`,
+          onclick: () => wsForm.zoom(h, d.image, what, d.text) }, h("img", { src: "/" + d.image, alt: "" })),
+        off ? null : h("button", { class: "ghost icon sm", title: "Remove the image", "aria-label": `Remove the reference image for ${what}`,
+          onclick: () => { put({ image: "" }); drawAll(); } }, icon("close", 14)))
+        : off ? null : h("button", { class: "btn subtle sm sf-add-img", title: "A PNG or JPEG example of this answer, shown to the scorer",
+          "aria-label": `Add a reference image for ${what}`, onclick: e => addImage(what, put, e.currentTarget) }, "Add image"));
+  };
+  const callDef = (c, j) => defLine(`Call ${j + 1}`, () => ({ text: c.def || "", image: c.image || "" }),
+    p => { if ("text" in p) c.def = p.text; if ("image" in p) c.image = p.image; });
+  const answerDef = (q, j, a) => defLine(`Question ${j + 1}, answer ${a}`, () => (q.defs ||= {})[a] || { text: "", image: "" },
+    p => { q.defs ||= {}; q.defs[a] = { text: "", image: "", ...q.defs[a], ...p }; });
+  // a renamed answer keeps its definition
+  const renameDef = (q, from, to) => {
+    if (!q.defs || from === to || !q.defs[from] || q.defs[to]) return;
+    q.defs[to] = q.defs[from];
+    delete q.defs[from];
+  };
+
   const neuronsCard = () => h("div", { class: "s-card sf-card" },
     h("div", { class: "f-label" }, "Neurons in each image"),
     h("div", { class: "f-help" }, "Each one gets its own call and questions, in this order."),
@@ -550,17 +600,19 @@ function formSection(info) {
   const callsCard = () => h("div", { class: "s-card sf-card" },
     h("div", { class: "f-label" }, "Call for each neuron"),
     h("div", { class: "f-help" }, "Tick the calls that count as a defect. Keep them in order from normal to not seen: "
-      + "the last call means the neuron was not seen."),
-    m.calls.map((c, j) => h("div", { class: "sf-row" },
+      + "the last call means the neuron was not seen. Each call can have a definition and a reference image, shown to "
+      + "the scorer. Take the image from outside this blind set (a pilot or a published figure); the scorer compares "
+      + "its shape, since its brightness depends on how it was saved."),
+    m.calls.flatMap((c, j) => [h("div", { class: "sf-row" },
       text(c.text, v => {
         for (const q of m.questions) q.skip_when = q.skip_when.map(s => s === c.text ? v : s);
         c.text = v;
       }, { "aria-label": `Call ${j + 1}`, onchange: () => drawAll() }),
       h("label", { class: "sf-check tight" }, h("input", { type: "checkbox", checked: c.defect, disabled: off,
         onchange: e => { c.defect = e.target.checked; drawAll(); } }), "defect"),
-      tools(m.calls, j, `call ${j + 1}`, 2))),
+      tools(m.calls, j, `call ${j + 1}`, 2)), callDef(c, j)]),
     off ? null : h("button", { class: "btn subtle add", onclick: () => {
-      m.calls.splice(Math.max(m.calls.length - 1, 0), 0, { text: "", defect: true });
+      m.calls.splice(Math.max(m.calls.length - 1, 0), 0, { text: "", defect: true, def: "", image: "" });
       drawAll();
     } }, "Add call"));
 
@@ -616,9 +668,15 @@ function formSection(info) {
           v => { q.ask = v; if (v === "animal") { q.skip_when = []; q.rollup = ""; } else if (ranked && !q.rollup) q.rollup = ROLLUPS[q.type][0]; })),
         ...row("Answers",
           radioRow(j, "Type", "answer type", Object.entries(TYPE_NAMES), q.type, t => setType(q, t)),
-          q.type === "choice" ? text(q.options.join(", "), v => { q.options = splitList(v); },
+          q.type === "choice" ? text(q.options.join(", "), v => {
+            const old = q.options, nu = splitList(v);
+            nu.forEach((a, k) => { if (old[k] !== undefined && !nu.includes(old[k])) renameDef(q, old[k], a); });
+            q.options = nu;
+          },
             { placeholder: "Answers, separated by commas", "aria-label": `Question ${j + 1}: answers`,
               onchange: () => { q.defect = q.defect.filter(d => q.options.includes(d)); drawAll(); } }) : null,
+          q.type === "choice" && q.options.length ? h("div", { class: "sf-defs", role: "group", "aria-label": `Question ${j + 1}: definitions` },
+            q.options.map(a => h("div", {}, h("div", { class: "sf-def-term" }, a), answerDef(q, j, a)))) : null,
           q.type === "scale" ? levelsEditor(q, j) : null,
           q.type === "count" ? countInputs(q, j) : null,
           check(!!q.cant_tell, `Add a “can't tell” answer (that ${perAnimal ? "animal" : "neuron"} is left out of the results)`,
@@ -645,10 +703,11 @@ function formSection(info) {
 
   // A scale's levels, one per row, best at the top and worst at the bottom: the order is what the test compares.
   const levelsEditor = (q, j) => h("div", { class: "sf-levels", role: "group", "aria-label": `Question ${j + 1}: levels, best first` },
-    q.options.map((lv, k) => h("div", { class: "sf-row" },
+    q.options.flatMap((lv, k) => [h("div", { class: "sf-row" },
       h("span", { class: "sf-end" }, k === 0 ? "best" : k === q.options.length - 1 ? "worst" : ""),
-      text(lv, v => { q.options[k] = v.trim(); }, { "aria-label": `Question ${j + 1}: level ${k + 1}`, onchange: () => drawAll() }),
-      tools(q.options, k, `level ${k + 1}`, 2))),
+      text(lv, v => { renameDef(q, q.options[k], v.trim()); q.options[k] = v.trim(); },
+        { "aria-label": `Question ${j + 1}: level ${k + 1}`, onchange: () => drawAll() }),
+      tools(q.options, k, `level ${k + 1}`, 2)), h("div", { class: "sf-level-def" }, answerDef(q, j, lv))]),
     off || q.options.length >= info.max_levels ? null : h("button", { class: "btn subtle add sm", onclick: () => {
       q.options.push("");
       drawAll();
@@ -670,7 +729,7 @@ function formSection(info) {
       off || (nNeuron >= info.max_questions && nAnimal >= info.max_questions) ? null : h("button", { class: "btn subtle add", onclick: () => {
         const last = m.calls.at(-1)?.text;
         m.questions.push({ id: null, label: "", type: "yesno", ask: nNeuron >= info.max_questions ? "animal" : "neuron",
-          options: [], count: null, cant_tell: "can't tell", defect: ["no"], required: true,
+          options: [], count: null, cant_tell: "can't tell", defect: ["no"], required: true, defs: {},
           skip_when: last && nNeuron < info.max_questions ? [last] : [], outcome: "", rollup: "", cutoff: "" });
         drawAll();
         $$(".sf-q").at(-1)?.querySelector("input")?.focus();
@@ -690,13 +749,14 @@ function formSection(info) {
   };
 
   const moreCard = () => h("details", { class: "s-card sf-card sf-more" },
-    h("summary", {}, "Asked once per image: the count question, scoring rules and reasons an image is unusable"),
+    h("summary", {}, "Asked once per image: the count question, general rules and reasons an image is unusable"),
     h("label", { class: "f-label", for: "sfCount" }, "Count question (one per image)"),
     text(m.count.label, v => { m.count.label = v; }, { id: "sfCount" }),
     // its own label, so the answers do not read as a second line of the question
     h("label", { class: "f-label", for: "sfCountAnswers" }, "Its answers, separated by commas"),
     text(m.count.options.join(", "), v => { m.count.options = splitList(v); }, { id: "sfCountAnswers", placeholder: "For example: 0, 1, 2, 3+" }),
-    h("label", { class: "f-label", for: "sfRules" }, "Rules shown above the questions, one per line"),
+    h("label", { class: "f-label", for: "sfRules" }, "General rules shown above the questions, one per line"),
+    h("div", { class: "f-help" }, "What each call or level means goes with that answer, below."),
     h("textarea", { id: "sfRules", class: "f-input", rows: 4, disabled: off,
       oninput: e => { m.rules = splitLines(e.target.value); drawPreview(); } }, m.rules.join("\n")),
     h("label", { class: "f-label", for: "sfReasons" }, "Reasons an image is not usable, one per line"),
@@ -718,7 +778,7 @@ function formSection(info) {
       onchange: e => { if (/^n\d+_call$/.test(e.target.name)) wsForm.syncSkips(f, sc); } },
       sc.rules.length ? h("ul", { class: "sf-rules" }, sc.rules.map(r => h("li", {}, r))) : null,
       h("fieldset", {}, h("legend", {}, sc.count_question.label), h("div", {}, wsForm.radios(h, "cells_seen", sc.count_question.options))),
-      ...wsForm.neurons(h, sc), ...wsForm.animal(h, sc));
+      ...wsForm.meanings(h, sc), ...wsForm.neurons(h, sc), ...wsForm.animal(h, sc));
     wsForm.syncSkips(f, sc);
     prev.replaceChildren(h("div", { class: "sf-prev-head" }, h("span", { class: "f-label" }, "Preview"),
       h("span", { class: "f-help" }, "What the scorer answers for each image. Click a call to see the skips.")), f);
@@ -749,7 +809,7 @@ function formSection(info) {
     const go = await ask("Change the scoring criteria after scoring began?", h("div", { class: "sf-unlock" },
       h("p", {}, "The criteria were recorded in log.md before the first score, and the planned tests depend on them. "
         + "The usual way is to keep them, or to start a new blind set."),
-      h("p", {}, h("b", {}, "Wording only"), " (question text or rules): safe. The planned tests still run."),
+      h("p", {}, h("b", {}, "Wording only"), " (question text, rules, or an answer's definition or image): safe. The planned tests still run."),
       h("p", {}, h("b", {}, "Answers, neurons, required or skipped questions, or what counts as a defect"),
         ": unblinding then writes only descriptive tables and runs no planned test, and the summary and Methods say why. "
         + "Images already scored keep their old answers. Changing the criteria back runs the tests again."),

@@ -170,6 +170,27 @@ select, textarea {
 textarea { width: 100%; resize: vertical; }
 select { appearance: none; -webkit-appearance: none; padding-right: 34px; cursor: pointer;
   background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M2.5 4.5 6 8l3.5-3.5%27 fill=%27none%27 stroke=%27%23959ca6%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E"); background-position: right 12px center; background-size: 12px 12px; background-repeat: no-repeat; }
+/* what each answer means: one box above the neurons, a row per defined answer, thumbnails to compare */
+.meanings { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 var(--space-md); padding: 6px var(--space-md) var(--space-sm); }
+.meanings summary { cursor: pointer; color: var(--muted); font-size: var(--text-xs); }
+.meanings summary:hover { color: var(--text); }
+.meanings[open] summary { margin-bottom: 4px; }
+.m-head { margin: 8px 0 2px; color: var(--muted); font-size: var(--text-xs); font-weight: 600; }
+.m-row { display: grid; grid-template-columns: minmax(56px, auto) 1fr auto; gap: 4px 10px; align-items: start; padding: 4px 0; border-top: 1px solid var(--line); font-size: var(--text-sm); line-height: 1.4; }
+.m-group .m-head + .m-row { border-top: 0; }
+.m-term { font-weight: 600; overflow-wrap: anywhere; }
+.m-text { color: var(--muted); overflow-wrap: anywhere; }
+.m-thumb { padding: 0; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #000; cursor: zoom-in; line-height: 0; }
+.m-thumb:hover { border-color: var(--line-strong); }
+.m-thumb img { width: 56px; height: 42px; object-fit: cover; border-radius: inherit; }
+/* the reference panel: bottom-left, beside the image being scored rather than over it */
+.m-zoom { position: fixed; inset: auto auto 16px 16px; z-index: 30; margin: 0; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: var(--space-md); background: var(--panel); color: var(--text); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow); }
+.m-close { display: inline-grid; place-items: center; width: 36px; height: 36px; flex: none; padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--muted); cursor: pointer; }
+.m-close:hover { background: var(--raised); color: var(--text); }
+.m-zoom-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-md); margin-bottom: var(--space-sm); }
+.m-zoom img { display: block; width: 100%; height: auto; max-height: 55vh; object-fit: contain; background: #000; border-radius: var(--radius-sm); }
+.m-zoom p { margin: var(--space-sm) 0 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.45; }
+.m-zoom .m-zoom-note { color: var(--faint); font-size: var(--text-xs); }
 .neuron.n1 legend { color: var(--l1); }
 .neuron.n2 legend { color: var(--l2); }
 .neuron.n3 legend { color: var(--l3); }

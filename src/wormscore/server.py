@@ -335,6 +335,11 @@ def make_handler(project):
                 p = (project.blind / parts[1]).joinpath(*parts[2:])
                 if p.suffix == ".png" and p.is_file() and project.blind.resolve() in p.resolve().parents:
                     return self.send_file(p, "image/png")
+            if parts[0] == "criteria" and len(parts) == 2:
+                from .scoreform import image_file
+                f = image_file(project.path, "criteria/" + parts[1])
+                if f is not None and f.is_file():
+                    return self.send_file(f, "image/png" if f.suffix == ".png" else "image/jpeg")
             if parts == ["api", "config"]:
                 sc = project.cfg["scoring"]
                 return self.send_json({"project_name": project.cfg["project_name"], "project_id": project.id,

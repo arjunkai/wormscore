@@ -11,12 +11,6 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Scoring criteria (from a review of published scoring schemes and tools, November 2026)
 
-- **A definition for every category, with an optional example image, shown while scoring.** Each
-  call and scale level gets its own short definition (today they share one free-text rules list),
-  and can carry a reference image the scorer can compare against, for example for "dim". Scoring
-  guidelines ask for clear boundaries between categories (Gibson-Corley, Olivier and Meyerholz 2013,
-  *Vet Pathol*), and published scales come with one reference image per score (Bijwadia, Morton and
-  Meyer 2021, *JoVE* 62894).
 - **Share criteria between projects and labs.** Export the scoring criteria as one file (questions,
   answers, definitions, outcomes, primary outcome, a name, a version and an optional citation) and
   import it into another project. Its checksum goes into `log.md` and the Methods draft, so a paper
@@ -72,6 +66,16 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.9.0: **A definition and a reference image for every answer.** Each call, and each answer of a
+  Choice or Scale question, can have its own short definition and a reference image (PNG or JPEG)
+  to compare against, set in the scoring criteria. The scoring page shows them in a **What each answer
+  means** box above the neurons, with thumbnails that open larger beside the image being scored. Scoring guidelines ask for clear
+  boundaries between categories (Gibson-Corley, Olivier and Meyerholz 2013, *Vet Pathol*), and
+  published scales come with a reference image per score (Bijwadia, Morton and Meyer 2021, *JoVE*
+  62894). Definitions are wording: they can be fixed after the lock without stopping the planned tests.
+  They are written to `log.md` with each image's SHA-256, go into second-scorer packages, and the
+  Methods draft says they were shown. The presets now put each call's and level's definition with
+  it instead of in the rules list. Existing projects give identical results.
 - 1.8.1: **Browse images fixes.** Browse stays off when the key is moved away during scoring.
   After Unblind, images that are not in the blind set (for example newly scanned ones) are
   recorded when viewed, like images viewed before the build. An image is recorded before it is

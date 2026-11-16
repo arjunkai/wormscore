@@ -14,10 +14,19 @@ Integrity rules:
   change made by hand in config.json is caught at unblinding (form_status): no test runs, the
   descriptive tables are still written, and every test file says the form changed.
 - Only the structure is locked (what is stored and how it is analysed). Wording (question labels,
-  the count question's label, rules text, unusable reasons) may still be corrected.
+  the count question's label, rules text, unusable reasons, and the definition and reference image of
+  each call and answer) may still be corrected.
+
+Definitions (1.9.0): each call, and each answer of a Choice or Scale question, can have a short
+definition and a reference image, shown on the scoring page. They live in scoring.call_definitions
+({call: {"text", "image"}}) and in each question's "definitions" ({answer: {"text", "image"}}).
+Images are copied into the project's criteria/ folder under their own checksum, and the definitions
+with each image's SHA-256 are written to log.md with the form.
 """
+import base64
 import copy
 import datetime as dt
+import hashlib
 import json
 import re
 import shutil
@@ -32,6 +41,12 @@ WARN_QUESTIONS = 6
 TYPES = ("yesno", "choice", "scale", "count")
 RANKED = ("scale", "count")
 MAX_LEVELS = 21              # answers on a scale, or numbers on a count
+MAX_DEFINITION = 300
+CRITERIA_DIR = "criteria"
+IMAGE_PATH = re.compile(r"criteria/[0-9a-f]{16}\.(png|jpg)")
+IMAGE_TYPES = {"png": b"\x89PNG\r\n\x1a\n", "jpg": b"\xff\xd8\xff"}
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+DEFS_LOG = "Definitions shown while scoring: "
 
 
 # ------------------------------------------------------------------ record and lock
@@ -66,8 +81,86 @@ def record_text(cfg):
     return json.dumps(form_record(cfg), sort_keys=True)
 
 
-def form_log_lines(cfg):
-    return [FORM_LOG + record_text(cfg)]
+def form_log_lines(cfg, project=None):
+    return [FORM_LOG + record_text(cfg)] + definitions_log_lines(cfg, project)
+
+
+# ------------------------------------------------------------------ definitions
+
+def definitions(cfg):
+    """Every definition in the form: {"call": {...}, question id: {...}}, each {answer: {"text", "image"}},
+    only for answers that are still in the form and have a text or an image."""
+    sc = cfg["scoring"]
+    out = {}
+
+    def keep(defs, answers):
+        got = {}
+        for a in answers:
+            d = (defs or {}).get(a) if isinstance(defs, dict) else None
+            if isinstance(d, dict) and (d.get("text") or d.get("image")):
+                got[a] = {k: d[k] for k in ("text", "image") if d.get(k)}
+        return got
+    calls = keep(sc.get("call_definitions"), sc["calls"])
+    if calls:
+        out["call"] = calls
+    for q in sc["neuron_questions"] + (sc.get("animal_questions") or []):
+        got = keep(q.get("definitions"), q.get("options") or [])
+        if got:
+            out[q["id"]] = got
+    return out
+
+
+def image_file(project, rel):
+    """The file of a reference image inside the project, or None if the path is not one wormscore wrote."""
+    if not isinstance(rel, str) or not IMAGE_PATH.fullmatch(rel):
+        return None
+    return Path(project) / rel
+
+
+def definitions_log_lines(cfg, project=None):
+    """The definitions, with the SHA-256 of each reference image, so a later swap of an image shows.
+    Wording, not structure: they never decide whether the planned tests run."""
+    defs = definitions(cfg)
+    if not defs:
+        return []
+    for group in defs.values():
+        for d in group.values():
+            f = image_file(project, d.get("image")) if project and d.get("image") else None
+            if f is not None:
+                d["sha256"] = hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else "missing"
+    return [DEFS_LOG + json.dumps(defs, sort_keys=True)]
+
+
+def definition_counts(cfg):
+    """(answers with a definition, reference images), for the Methods draft."""
+    defs = [d for group in definitions(cfg).values() for d in group.values()]
+    return sum(1 for d in defs if d.get("text")), sum(1 for d in defs if d.get("image"))
+
+
+def save_image(project, data, name=""):
+    """Copy an uploaded reference image (base64 PNG or JPEG) into criteria/, named by its checksum
+    so the same picture is stored once. Returns its path inside the project."""
+    too_big = f"The image is larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB. Save a smaller copy and add that."
+    if not isinstance(data, str) or len(data) > MAX_IMAGE_BYTES * 4 // 3 + 64:
+        raise ValueError(too_big)
+    try:
+        raw = base64.b64decode(data.split(",", 1)[-1], validate=True)
+    except ValueError:
+        raise ValueError("The image could not be read.")
+    ext = next((e for e, magic in IMAGE_TYPES.items() if raw.startswith(magic)), None)
+    if ext is None:
+        raise ValueError(f"{name or 'That file'} is not a PNG or JPEG image. Save the example as PNG or JPEG "
+                         "(in Fiji: File > Save As > PNG) and add that.")
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise ValueError(too_big)
+    rel = f"{CRITERIA_DIR}/{hashlib.sha256(raw).hexdigest()[:16]}.{ext}"
+    dest = Path(project) / rel
+    if not dest.is_file():
+        dest.parent.mkdir(exist_ok=True)
+        tmp = dest.with_suffix(".tmp")
+        tmp.write_bytes(raw)
+        tmp.replace(dest)
+    return rel
 
 
 _recorded_cache = {}
@@ -174,7 +267,7 @@ def record_first_score(project, cfg):
     """Called by the scoring page just before the first score is saved: the form it is about to
     lock goes into log.md, even if it was edited by hand after Build."""
     from .files import append_log
-    append_log(project, "first score: score form locked", form_log_lines(cfg))
+    append_log(project, "first score: score form locked", form_log_lines(cfg, project))
 
 
 def _logged_parameters(project, first_score):
@@ -230,8 +323,8 @@ def form_status(project, cfg, history):
 PRESETS = {
     "fate": {
         "title": "Fate reporter",
-        "desc": "Each neuron called normal, dim or missing; a count of marker-positive cells. "
-                "The defaults, as used before the builder existed.",
+        "desc": "Each neuron called normal, dim or missing, each with its definition; a count of "
+                "marker-positive cells. The defaults, as used before the builder existed.",
     },
     "axon": {
         "title": "Axon guidance",
@@ -261,26 +354,31 @@ def preset_model(name):
         raise ValueError("Unknown starting form.")
     cfg = C.merge(C.DEFAULTS, {})
     m = to_model_cfg(cfg)
-    if name == "axon":
-        m["rules"] = ["Seen: the cell body is visible. Not seen: no cell body in any plane.",
-                      "Answer the axon questions only for neurons you can see.",
+    seen = [_call("seen", False, "The cell body is visible."), _call("not seen", True, "No cell body in any plane.")]
+    if name == "fate":
+        m["calls"] = [_call("normal", False, "Cell body clearly visible at the expected brightness."),
+                      _call("dim", True, "Visible but weaker than controls imaged at the same settings."),
+                      _call("missing", True, "No cell body in any plane.")]
+        m["rules"] = ["Score each neuron separately. The animal is the unit for statistics."]
+    elif name == "axon":
+        m["rules"] = ["Answer the axon questions only for neurons you can see.",
                       "Score each neuron separately. The animal is the unit for statistics."]
-        m["calls"] = [{"text": "seen", "defect": False}, {"text": "not seen", "defect": True}]
+        m["calls"] = seen
         # Every question is worded so that "yes" is the defect: questions combined in one outcome
         # share one list of defect answers.
         qs = [("stops_early", "Axon stops before its target?"), ("wrong_path", "Axon takes a wrong path?"),
               ("extra_branch", "Extra branch?")]
         m["questions"] = [{"id": qid, "label": lab, "type": "yesno", "options": ["yes", "no"],
                            "cant_tell": "can't tell", "defect": ["yes"], "required": True,
-                           "skip_when": ["not seen"], "outcome": "axon defect"} for qid, lab in qs]
+                           "skip_when": ["not seen"], "outcome": "axon defect", "defs": {}} for qid, lab in qs]
         m["primary"] = "axon defect"
     elif name in ("degeneration", "dendrite"):
-        m["calls"] = [{"text": "seen", "defect": False}, {"text": "not seen", "defect": True}]
+        m["calls"] = seen
+        defs = {}
         if name == "degeneration":
             levels = ["0 normal", "1 bends or kinks", "2 under 5 blebs", "3 5 to 10 blebs",
                       "4 over 10 blebs, or a break losing under 25%", "5 25 to 75% lost", "6 over 75% lost"]
-            m["rules"] = ["Seen: the cell body is visible. Not seen: no cell body in any plane.",
-                          "Score the whole dendrite and give the highest score that applies.",
+            m["rules"] = ["Score the whole dendrite and give the highest score that applies.",
                           "Blebs are round swellings along the dendrite; a break is a gap in it.",
                           "Lost: the share of the dendrite's normal length that is missing.",
                           "Score each neuron separately. The animal is the unit for statistics.",
@@ -289,23 +387,28 @@ def preset_model(name):
             label, qid, outcome = "Dendrite score", "dendrite_score", "dendrite score"
         else:
             levels = ["full", "partial", "short"]
-            m["rules"] = ["Seen: the cell body is visible. Not seen: no cell body in any plane.",
-                          "Full: the dendrite reaches the nose tip.",
-                          "Partial: it ends past the halfway point between the cell body and the nose tip.",
-                          "Short: it ends before the halfway point.",
-                          "Score each neuron separately. The animal is the unit for statistics."]
+            defs = {"full": {"text": "The dendrite reaches the nose tip.", "image": ""},
+                    "partial": {"text": "It ends past the halfway point between the cell body and the nose tip.",
+                                "image": ""},
+                    "short": {"text": "It ends before the halfway point.", "image": ""}}
+            m["rules"] = ["Score each neuron separately. The animal is the unit for statistics."]
             label, qid, outcome = "Dendrite length", "dendrite_length", "dendrite length"
         m["questions"] = [{"id": qid, "label": label, "type": "scale", "ask": "neuron", "options": levels,
                            "count": None, "cant_tell": "can't tell", "defect": [], "required": True,
-                           "skip_when": ["not seen"], "outcome": outcome, "rollup": "worst", "cutoff": ""}]
+                           "skip_when": ["not seen"], "outcome": outcome, "rollup": "worst", "cutoff": "",
+                           "defs": defs}]
         m["primary"] = outcome
     elif name == "blank":
         m["neurons"] = ["Neuron 1"]
-        m["calls"] = [{"text": "seen", "defect": False}, {"text": "not seen", "defect": True}]
+        m["calls"] = [_call("seen", False), _call("not seen", True)]
         m["count"] = {"label": "Marker-positive cell bodies seen", "options": ["0", "1", "2+"]}
         m["rules"] = []
         m["primary"] = ""
     return m
+
+
+def _call(text, defect, definition=""):
+    return {"text": text, "defect": defect, "def": definition, "image": ""}
 
 
 # ------------------------------------------------------------------ config <-> builder model
@@ -400,6 +503,9 @@ def _model_question(q, ask, owner, rank, calls):
             cant = opts.pop()
         typ = "yesno" if opts == ["yes", "no"] else "choice"
     skip = q.get("skip_when_calls") if ask == "neuron" else []
+    raw_defs = q.get("definitions") if isinstance(q.get("definitions"), dict) and typ in ("choice", "scale") else {}
+    defs = {a: {"text": d.get("text") or "", "image": d.get("image") or ""}
+            for a, d in raw_defs.items() if a in opts and isinstance(d, dict)}
     if skip is None:
         skip = [c for c in (oc.get("not_visible_calls", ["missing"]) if oc else []) if c in calls]
     return {
@@ -411,6 +517,7 @@ def _model_question(q, ask, owner, rank, calls):
         "outcome": (oc or ro or {}).get("name", ""),
         "rollup": (ro.get("rollup") or "") if ro else "",
         "cutoff": ("" if ro.get("cutoff") in (None, "") else str(ro["cutoff"])) if ro else "",
+        "defs": defs,
     }
 
 
@@ -418,10 +525,14 @@ def to_model_cfg(cfg):
     sc, un = cfg["scoring"], cfg["unblinding"]
     owner = {qid: oc for oc in un["question_outcomes"] for qid in oc.get("questions", [])}
     rank = {ro["question"]: ro for ro in un.get("rank_outcomes") or [] if isinstance(ro, dict) and "question" in ro}
+    raw_cdefs = sc.get("call_definitions") if isinstance(sc.get("call_definitions"), dict) else {}
+    cdefs = {k: v for k, v in raw_cdefs.items() if isinstance(v, dict)}
     questions = [_model_question(q, "neuron", owner, rank, sc["calls"]) for q in sc["neuron_questions"]]         + [_model_question(q, "animal", owner, rank, sc["calls"]) for q in sc.get("animal_questions") or []]
     return {
         "neurons": list(sc["neurons"]),
-        "calls": [{"text": c, "defect": c in sc["defect_calls"]} for c in sc["calls"]],
+        "calls": [{"text": c, "defect": c in sc["defect_calls"],
+                   "def": (cdefs.get(c) or {}).get("text") or "", "image": (cdefs.get(c) or {}).get("image") or ""}
+                  for c in sc["calls"]],
         "sides": bool(sc["sides"]),
         "count": {"label": sc["count_question"]["label"], "options": list(sc["count_question"]["options"])},
         "questions": questions,
@@ -465,6 +576,15 @@ def _texts(vs, what, minimum=0, unique=True, limit=MAX_TEXT):
         if dup:
             raise ValueError(f"{what}: \"{dup}\" is there twice.")
     return out
+
+
+def _definition(text, image, where):
+    """One answer's definition and reference image, checked: {"text", "image"}."""
+    text = _text(text or "", f"{where}: the definition", required=False, limit=MAX_DEFINITION)
+    image = image or ""
+    if image and not (isinstance(image, str) and IMAGE_PATH.fullmatch(image)):
+        raise ValueError(f"{where}: the reference image is not one added in Project settings. Add it again.")
+    return {"text": text, "image": image}
 
 
 def _new_id(label, taken):
@@ -514,6 +634,14 @@ def _clean_question(q, i, calls, taken, ids):
         opts = _texts(q.get("options"), f"{where}: {what}", 2)
         if typ == "scale" and len(opts) > MAX_LEVELS:
             raise ValueError(f"{where}: at most {MAX_LEVELS} levels.")
+    raw_defs = q.get("defs") if isinstance(q.get("defs"), dict) and typ in ("choice", "scale") else {}
+    defs = {}
+    for a in opts:
+        d = raw_defs.get(a)
+        if isinstance(d, dict):
+            d = _definition(d.get("text"), d.get("image"), f"{where}, answer \"{a}\"")
+            if d["text"] or d["image"]:
+                defs[a] = d
     cant = _text(q.get("cant_tell") or "", f"{where}: the can't tell answer", required=False)
     if cant and cant.lower() in [o.lower() for o in opts]:
         raise ValueError(f"{where}: the can't tell answer is also one of the answers.")
@@ -546,7 +674,8 @@ def _clean_question(q, i, calls, taken, ids):
     return {"id": qid, "label": label, "type": typ, "ask": ask, "options": opts if typ != "count" else [],
             "count": count, "all_options": opts, "cant_tell": cant,
             "defect": [o for o in opts if o in dfx], "required": q.get("required", False),
-            "skip_when": [c for c in calls if c in skip], "outcome": outcome, "rollup": rollup, "cutoff": cutoff}
+            "skip_when": [c for c in calls if c in skip], "outcome": outcome, "rollup": rollup, "cutoff": cutoff,
+            "defs": defs}
 
 
 def clean(model):
@@ -561,6 +690,7 @@ def clean(model):
         raise ValueError("Calls: expected a list.")
     calls = _texts([c.get("text") if isinstance(c, dict) else None for c in calls_in], "Call", 2)
     defect = [c for c, raw in zip(calls, calls_in) if raw.get("defect") is True]
+    call_defs = [_definition(raw.get("def"), raw.get("image"), f"Call \"{c}\"") for c, raw in zip(calls, calls_in)]
     if not defect:
         raise ValueError("Calls: tick at least one call that counts as a defect.")
     count = model.get("count") if isinstance(model.get("count"), dict) else {}
@@ -607,7 +737,8 @@ def clean(model):
         raise ValueError("The primary outcome is not one of the outcomes.")
     reasons = _texts(model.get("unusable_reasons") or [], "Unusable reason", 1)
     rules = _texts(model.get("rules") or [], "Rule", 0, unique=False, limit=500)
-    return {"neurons": neurons, "calls": [{"text": c, "defect": c in defect} for c in calls],
+    return {"neurons": neurons, "calls": [{"text": c, "defect": c in defect, "def": d["text"], "image": d["image"]}
+                                          for c, d in zip(calls, call_defs)],
             "sides": bool(model.get("sides")), "count": count, "questions": questions, "primary": primary,
             "unusable_reasons": reasons, "rules": rules}
 
@@ -615,14 +746,21 @@ def clean(model):
 def _config_question(q, old):
     """The config.json entry of one cleaned question; keys the builder does not manage are kept."""
     keep = {k: v for k, v in old.items()
-            if k not in ("id", "label", "options", "required", "skip_when_calls", "type", "cant_tell")}
+            if k not in ("id", "label", "options", "required", "skip_when_calls", "type", "cant_tell", "definitions")}
     ranked = q["type"] in RANKED
     return {"id": q["id"], "label": q["label"],
             **({"type": q["type"]} if ranked else {}),
             "options": q["all_options"] + ([q["cant_tell"]] if q["cant_tell"] else []),
             **({"cant_tell": q["cant_tell"]} if ranked and q["cant_tell"] else {}),
             **({"required": True} if q["required"] else {}),
-            **({"skip_when_calls": q["skip_when"]} if q["skip_when"] else {}), **keep}
+            **({"skip_when_calls": q["skip_when"]} if q["skip_when"] else {}),
+            **({"definitions": {a: _stored(d["text"], d["image"]) for a, d in q["defs"].items()}} if q["defs"] else {}),
+            **keep}
+
+
+def _stored(text, image):
+    """A definition as config.json keeps it: only the parts that are set."""
+    return {k: v for k, v in (("text", text), ("image", image)) if v}
 
 
 def apply(raw, model):
@@ -646,6 +784,7 @@ def apply(raw, model):
         "rules": m["rules"],
     }
     animal = [_config_question(q, old_q.get(q["id"], {})) for q in m["questions"] if q["ask"] == "animal"]
+    call_defs = {c["text"]: _stored(c["def"], c["image"]) for c in m["calls"] if c["def"] or c["image"]}
     old_oc = {oc.get("name"): oc for oc in old_cfg["unblinding"]["question_outcomes"]}
     outcomes, ranked = [], []
     for q in m["questions"]:
@@ -683,6 +822,10 @@ def apply(raw, model):
             raw_sc[k] = v
     if animal or "animal_questions" in raw_sc:
         raw_sc["animal_questions"] = animal
+    if call_defs:
+        raw_sc["call_definitions"] = call_defs
+    else:
+        raw_sc.pop("call_definitions", None)
     if raw_sc:
         out["scoring"] = raw_sc
     raw_un = dict(out.get("unblinding") or {})

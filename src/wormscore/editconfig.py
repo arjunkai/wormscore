@@ -196,19 +196,19 @@ def save(project, body):
         same = S.form_record(cfg) == S.form_record(S._cfg_from_raw(old_raw))
         append_log(project, S.CHANGE_TITLE,
                    [f"Reason given: {reason}",
-                    "Only wording changed (question text or rules), so the planned tests still run." if same else
+                    "Only wording changed (question text, rules or definitions), so the planned tests still run." if same else
                     "The answers, neurons, required or skipped questions, or what counts as a defect changed. "
                     "Unblinding writes only descriptive tables and runs no planned test while the criteria differ "
                     "from the one recorded before the first score; changing it back runs them again.",
                     # not the "set before scoring" prefix: unblinding must keep checking the earlier form
-                    "Score form after this change: " + S.record_text(cfg)])
+                    "Score form after this change: " + S.record_text(cfg)] + S.definitions_log_lines(cfg, project))
     elif form_changed:
         append_log(project, "score form saved in Project settings",
                    ["Saved before the first score; the last form recorded before the first score is the one "
-                    "unblinding checks."] + S.form_log_lines(cfg))
+                    "unblinding checks."] + S.form_log_lines(cfg, project))
     elif checked:
         append_log(project, "score form checked in Project settings",
-                   ["Checked before the first score and kept as it was."] + S.form_log_lines(cfg))
+                   ["Checked before the first score and kept as it was."] + S.form_log_lines(cfg, project))
     return {"ok": True, "changed": raw != old_raw, "form_changed": form_changed or checked,
             "after_lock": bool(form_changed and was_locked)}
 

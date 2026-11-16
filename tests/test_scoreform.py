@@ -55,8 +55,13 @@ def test_saving_an_unchanged_form_leaves_config_json_as_it_was(fresh_project):
 
 
 def test_fate_preset_is_the_defaults():
+    # the same form as the defaults; since 1.9.0 the rules that defined each call are the calls' own definitions
     raw = C.template("x")
-    assert S.apply(raw, S.preset_model("fate")) == raw
+    new = S.apply(raw, S.preset_model("fate"))
+    assert S.form_record(S._cfg_from_raw(new)) == S.form_record(S._cfg_from_raw(raw))
+    rules = C.DEFAULTS["scoring"]["rules"]
+    assert [f"{c}: {d['text']}".lower() for c, d in new["scoring"]["call_definitions"].items()] == [r.lower() for r in rules[:3]]
+    assert new["scoring"]["rules"] == rules[3:]
 
 
 @pytest.mark.parametrize("name", list(S.PRESETS))
@@ -106,7 +111,8 @@ def test_builder_writes_questions_outcomes_and_logs_the_form(fresh_project):
     assert raw["sources"]                                                    # the rest is kept
     assert list((fresh_project / "config_backups").glob("config-*.json"))     # old file backed up
     log = (fresh_project / "log.md").read_text(encoding="utf-8")
-    assert log.count(S.FORM_LOG) >= 2 and log.rstrip().endswith(S.record_text(C.load(fresh_project)))
+    # the form, then (since 1.9.0) the definitions shown with it
+    assert log.count(S.FORM_LOG) >= 2 and S.FORM_LOG + S.record_text(C.load(fresh_project)) + "\n" in log
 
 
 @pytest.mark.parametrize("change, message", [

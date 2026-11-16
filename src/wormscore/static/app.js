@@ -212,6 +212,7 @@ function buildForm() {
   $("#countOptions").replaceChildren(...radios("cells_seen", sc.count_question.options));
 
   sc.neurons.forEach((name, i) => { st.colors[name] = PALETTE[i % PALETTE.length]; });
+  $("#meanings").replaceChildren(...wsForm.meanings(h, sc));
   $("#neurons").replaceChildren(...wsForm.neurons(h, sc));    // form.js, shared with the form preview
   $("#animalQs").replaceChildren(...wsForm.animal(h, sc));
 

@@ -204,6 +204,19 @@ def identity_sentence(cfg):
             f"brightness could not hint at the genotype, and it was never measured. {where} {missing}"]
 
 
+def definitions_sentence(cfg):
+    """How the scorer was shown what each answer means, or "" when no answer had its own definition."""
+    from .scoreform import definition_counts
+    n_text, n_img = definition_counts(cfg)
+    if not (n_text or n_img):
+        return ""
+    cats = lambda n: f"{n} answer categor{'y' if n == 1 else 'ies'}"
+    said = " and ".join(x for x in (f"a written definition for {cats(n_text)}" if n_text else "",
+                                     f"a reference image for {cats(n_img)}" if n_img else "") if x)
+    return (f"While scoring, the scoring page showed {said}; the definitions and a checksum of each image "
+            "were recorded in the project log with the scoring criteria. ")
+
+
 def form_sentences(cfg, form_status, form_changes=()):
     """The primary outcome and whether the score form was locked (nothing for older forms that match)."""
     out = []
@@ -280,7 +293,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         + f"{who('scored_by', '[name]')} scored the coded images {span}, seeing no file names, genotypes or "
         "brightness measurements, with every image from the same microscope shown at the same fixed "
         f"brightness range. Each neuron was called {calls}; "
-        f"{' or '.join(sc['defect_calls'])} counted as affected. Codes were linked "
+        f"{' or '.join(sc['defect_calls'])} counted as affected. " + definitions_sentence(cfg) + "Codes were linked "
         f"back to genotypes on {dt.date.today():%Y-%m-%d}, after {n_scored} image{'s' if n_scored != 1 else ''} "
         f"had been scored.",
         "",

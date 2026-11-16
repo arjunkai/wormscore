@@ -200,6 +200,13 @@ def export_package(project, scorer, destination, fraction=0.3, log=print):
     pkg_cfg["scorer_package"] = {"id": pid, "scorer": scorer, "made": f"{dt.datetime.now():%Y-%m-%d %H:%M}",
                                  "order": order, "form": form_hash(cfg)}
     (destination / "config.json").write_text(json.dumps(pkg_cfg, indent=2), encoding="utf-8")
+    from .scoreform import definitions, image_file
+    for group in definitions(cfg).values():
+        for d in group.values():
+            f = image_file(project, d.get("image"))
+            if f is not None and f.is_file():
+                (destination / "criteria").mkdir(exist_ok=True)
+                shutil.copyfile(f, destination / d["image"])
     (destination / "README.txt").write_text(
         f"wormscore second-scorer package for {scorer}.\n\n"
         "Open this folder in wormscore (Open project) and score every image in the scoring window.\n"
