@@ -18,10 +18,6 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Other planned features
 
-- **A wording pass through the whole app.** Read every screen, dialog, help text, message and the
-  README as a first-time user would: remove anything said twice (a card's text and its "?" help, the
-  same warning in two places) or not needed, replace phrasing that sounds generated with plain, short,
-  professional lab language, and keep terms the same everywhere (criteria, call, code, unblind).
 - **Analysis settings in the app.** The analysis plan, hidden repeats and the reference genotype
   set in Project settings instead of `config.json`. These are recorded when the blind set is built,
   so this needs its own plan for how they lock.
@@ -55,6 +51,15 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.12.0: **A wording pass and a tidier score panel.** Each step card and its "?" help now say
+  different things instead of the same thing twice; the welcome screen no longer asks a new user about
+  `config.json`; the Build dialog no longer points to Project settings for the criteria; what you draw
+  around a cell is an **outline** everywhere (**Outline cells**, **Save outlines**). On the scoring
+  page each neuron's side list sits on its border line, clear of the answers; sections with a "?" are
+  the same height as the others; Notes is one line until you type more. The panel now fits without
+  scrolling when the page is at least 735 pixels tall (for example a maximized window on a 1920 x 1080
+  laptop at 125%); in a smaller window Save score stays in view and Notes is one short scroll away.
+  Results are unchanged.
 - 1.11.1: **Fixes from a review of 1.9 to 1.11.** Criteria written by hand in `config.json` that the
   builder cannot show (a very long rule or question, a reason listed twice) again build and score; in
   1.10 and 1.11 they stopped Build and the first score. Answering with a number key now counts as a

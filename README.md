@@ -20,7 +20,7 @@
 </p>
 
 Blind scoring of fluorescent neurons in *C. elegans*, with measurement and genetics statistics.
-Built for scoring reporter neurons (normal / dim / missing) in confocal z-stacks. Nothing is tied
+Built for scoring reporter neurons (for example on / dim / off) in confocal z-stacks. Nothing is tied
 to one neuron, marker or microscope: those are settings in each project's `config.json`, so other
 organisms work the same way.
 
@@ -30,7 +30,7 @@ organisms work the same way.
   You can page through z-planes, turn the stack in 3D and overlay brightfield.
 - **Measured, not decided:** suggested cell bodies and your drawn regions are measured (peak, mean,
   local background, sharpest plane, saturation). The numbers are written to files and never shown
-  while you score. The software never labels a cell normal, dim or missing.
+  while you score. The software never makes a call for you.
 - **Traceable:** every number links to the exact file, path, series and SHA-256 checksum it came from.
 - **Reproducible:** every parameter and software version is appended to `log.md` on each run.
 - **Local:** runs on your computer only. Nothing is uploaded.
@@ -158,14 +158,14 @@ click it or press Enter, and Escape closes it.
    one. Once scoring has started, the folders and rules that built the blind set are locked, but you can
    still add a folder for new images.
 4. **Score** (`wormscore app my_project`): for each image, answer any yellow questions, score each
-   neuron, save, then outline each cell body (or accept a suggestion) and save the regions of interest (**Save ROIs**).
+   neuron, save, then outline each cell body (or accept a suggestion) and save the outlines (**Save outlines**).
    Outlining is optional. Every question is a row of buttons, so the whole image can be scored from
    the keyboard: Tab to a group, press its number (1 for the first answer) and the focus moves to the
    next group; the numbers show on the group that has the focus. In a project with an identity
    channel, 1, 2 and 3 keep switching the channel, so answer with the mouse or the arrow keys there.
    **Ctrl+Enter** saves and opens the
    next unscored image. **Next image** (or the N key) moves on without saving, and **Save score** stays
-   in view at the bottom of the panel on small screens. Answers you have
+   in view at the bottom of the panel on small screens. Notes is one line until you type more. Answers you have
    not saved yet are kept as a draft (`scoring_drafts/`, never counted as scores), so a crash or restart
    loses nothing: open the image again and click Save. If the connection to wormscore is lost, the
    window shows "Reconnecting..." and reconnects by itself; if wormscore is not running it says so, with
@@ -230,8 +230,8 @@ call this the score form.)
   - **Yes / No** and **Choice:** tick the answers that count as a defect. Questions with the same
     outcome name are combined (the animal has that defect if any answer is a defect), and each outcome
     gets Fisher's exact tests at unblinding.
-  - **Scale:** levels in order, best first and worst last (for example 0 to 6, or full / partial /
-    short).
+  - **Scale:** levels in order, best first and worst last (for example 0 to 6, or full length /
+    partial / short).
   - **Count:** whole numbers from a lowest to a highest, the last optionally "that many or more" (for
     example 0 to 5+).
 - **How scales and counts are tested:** a scale or count with an outcome name is tested on its own.

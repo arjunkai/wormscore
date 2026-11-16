@@ -379,7 +379,7 @@ WARN_LEVELS = 5     # above this many scale levels the builder warns that agreem
 
 def preset_model(name):
     if name not in PRESETS:
-        raise ValueError("Unknown starting form.")
+        raise ValueError("Unknown template.")
     cfg = C.merge(C.DEFAULTS, {})
     m = to_model_cfg(cfg)
     seen = [_call("seen", False, "The cell body is visible."), _call("not seen", True, "No cell body in any plane.")]
@@ -617,7 +617,7 @@ def _definition(text, image, where):
     text = _text(text or "", f"{where}: the definition", required=False, limit=MAX_DEFINITION)
     image = image or ""
     if image and not (isinstance(image, str) and IMAGE_PATH.fullmatch(image)):
-        raise ValueError(f"{where}: the reference image is not one added in Project settings. Add it again.")
+        raise ValueError(f"{where}: the reference image is not one added in Scoring criteria. Add it again.")
     return {"text": text, "image": image}
 
 

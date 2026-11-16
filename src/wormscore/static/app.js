@@ -173,6 +173,14 @@ function answerByKey(radio, k) {
   return true;
 }
 
+// Notes is one line until it holds more; it grows with its text (CSS caps it, then it scrolls).
+function fitNotes() {
+  const t = $("#scoreForm").elements.notes;
+  if (!t) return;
+  t.style.height = "auto";
+  t.style.height = `${t.scrollHeight + t.offsetHeight - t.clientHeight}px`;
+}
+
 function saveDraft() {
   clearTimeout(st.draftTimer);
   if (!st.code || !st.formDirty) return;
@@ -189,6 +197,7 @@ function applyDraft(draft) {
   }
   st.formDirty = true;
   syncUsable();
+  fitNotes();
   saveMessage(`Restored answers you had not saved (${draft.at}). Check them, then click Save.`, true);
 }
 
@@ -962,7 +971,7 @@ $("#saveRois").onclick = async () => {
   try {
     await api(`/api/worm/${st.code}/rois`, { rois: st.rois });
     st.roisDirty = false;
-    roiMessage(`Saved ${st.rois.length} region${st.rois.length === 1 ? "" : "s"}`);
+    roiMessage(`Saved ${st.rois.length} outline${st.rois.length === 1 ? "" : "s"}`);
     await loadList();
   } catch (err) {
     roiMessage(`Not saved: ${err.message}`, true);
@@ -999,6 +1008,7 @@ function fillForm() {
   markAvailable(!!st.score);
   syncUsable();
   wsForm.syncSkips(f, st.cfg.scoring);
+  fitNotes();
 }
 
 // The reason only applies to an unusable image; the cell questions only to a usable one.
@@ -1024,6 +1034,7 @@ $("#scoreForm").addEventListener("input", e => {
   st.formRev = (st.formRev || 0) + 1;
   saveMessage(st.connected === false ? `Unsaved changes (${LOST}; they stay in this window)` : "Unsaved changes");
   if (e.target.name === "usable") syncUsable();
+  if (e.target.name === "notes") fitNotes();
   if (/^n\d+_call$/.test(e.target.name)) wsForm.syncSkips(e.currentTarget, st.cfg.scoring);
   clearTimeout(st.draftTimer);
   st.draftTimer = setTimeout(saveDraft, 600);
@@ -1145,7 +1156,7 @@ function syncButtons() {
   $("#zSlider").disabled = st.view !== "plane";
   const last = st.worms.findIndex(w => w.code === st.code) === st.worms.length - 1;
   $("#nextBtn").disabled = !st.meta || last;
-  $("#nextBtn").title = last ? "This is the last image in the list" : "Next image in the list (N)";
+  $("#nextBtn").title = last ? "This is the last image in the list" : "Next image (N). Unsaved answers are kept as a draft.";
   $("#zSlider").value = st.z;
   $("#zText").textContent = st.meta ? (st.view === "plane" ? `${st.z + 1} / ${st.meta.n_z}` : `all ${st.meta.n_z}`) : "-";
   const in3d = st.view === "3d", off3d = st.meta ? why3dOff() : "No image";
@@ -1222,7 +1233,7 @@ $$("[data-zoom]").forEach(b => (b.onclick = () => {
   wrap.scrollTop = cy * wrap.scrollHeight - wrap.clientHeight / 2;
 }));
 $$(".tabs button").forEach(b => (b.onclick = () => {
-  if (b.getAttribute("aria-disabled") === "true") return saveMessage("Save the score first, then mark cells.", true);
+  if (b.getAttribute("aria-disabled") === "true") return saveMessage("Save the score first, then outline cells.", true);
   setTab(b.dataset.tab);
 }));
 

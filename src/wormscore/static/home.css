@@ -545,7 +545,7 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
 .sf-form fieldset { border: 1px solid var(--line); border-radius: var(--radius); margin: 0 0 10px; padding: var(--space-sm) var(--space-md) 10px; min-width: 0; }
 .sf-form legend { color: var(--muted); padding: 0 var(--space-xs); font-size: var(--text-xs); }
 .sf-form fieldset.neuron { position: relative; }
-.sf-form fieldset.neuron > select.side { position: absolute; top: -11px; right: 10px; width: auto; margin: 0; padding: 1px 26px 1px 8px; font-size: var(--text-xs); background-color: var(--panel); background-position: right 8px center; }
+.sf-form fieldset.neuron > select.side { position: absolute; top: -19px; right: 10px; width: auto; margin: 0; padding: 1px 26px 1px 8px; font-size: var(--text-xs); background-color: var(--panel); background-position: right 8px center; }
 .sf-form .neuron.n1 legend { color: var(--l1); }
 .sf-form .neuron.n2 legend { color: var(--l2); }
 .sf-form .neuron.n3 legend { color: var(--l3); }

@@ -220,8 +220,8 @@ function welcome() {
     h("h2", {}, "Blind scoring for fluorescent neurons"),
     h("p", {}, "Open a project, start a new one, or try the demo with simulated or real worm images."),
     h("div", { class: "tiles" },
-      tile("open-project", "Open project", "A folder that already has a config.json."),
-      tile("new-project", "New project", "Make a config.json in an empty folder, then point it at your images."),
+      tile("open-project", "Open project", "A folder you set up with wormscore before."),
+      tile("new-project", "New project", "Start in an empty folder, then choose your image folders."),
       tile("demo", "Try a demo", "20 simulated worms, or 4 real heads (CC BY 4.0).")));
 }
 
@@ -312,11 +312,11 @@ function renderMain(d) {
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
         scanned ? "Scan again" : "Scan data")]),
-    stepCard(2, sF, ["Set scoring criteria", wsHelp(h, "criteria", "scoring criteria")], "Choose what the scorer answers for each image and what counts as a defect.",
+    stepCard(2, sF, ["Set scoring criteria", wsHelp(h, "criteria", "scoring criteria")], "Choose the calls and questions, and what counts as a defect.",
       f ? formFact(f) : null,
       [h("button", { class: sF === "next" ? "primary" : "btn", "data-k": "form", disabled: busy || !ok, onclick: () => openProjectSettings("form") },
         f?.locked ? "View criteria" : formDone ? "Edit criteria..." : "Set criteria...")]),
-    stepCard(3, s2, ["Build blind set", wsHelp(h, "blind_set", "a blind set")], "Give every image a random code, so scoring is blind.",
+    stepCard(3, s2, ["Build blind set", wsHelp(h, "blind_set", "a blind set")], "Give every image a random code.",
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
       [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
         !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")]),
@@ -433,7 +433,7 @@ async function importScores() {
   const go = await ask("Import a second scorer's scores",
     h("span", {}, "Choose the package folder the second scorer sent back (unzip it first). wormscore checks that it is a package made here, "
       + "with the same images and scoring criteria, then keeps the scores in the scorers folder. Your own scores do not change. "
-      + "Then run ", h("b", {}, "Unblind"), " (again) to get the agreement tables."),
+      + "Then run ", h("b", {}, "Unblind"), " again for the agreement tables."),
     [{ value: true, label: "Choose folder..." }]);
   if (!go) return;
   st.log = []; st.since = 0; st.showLog = false;
@@ -778,8 +778,7 @@ function formSection(info) {
       help ? h("div", { class: "f-help" }, help) : null];
     const src = m.source || {};
     const body = h("div", { class: "sf-export" },
-      h("p", {}, "One file with the criteria below, their definitions and reference images. Another project or lab "
-        + "imports it with Import criteria; its checksum then appears in their log.md and Methods draft."),
+      h("p", {}, "One file with these criteria, their definitions and reference images, for another project or lab to import."),
       ...field("sfExName", "Name", src.name || info.project_name || "", null),
       ...field("sfExVersion", "Version (optional)", src.version || "", "For example 1.0. Change it when the criteria change."),
       ...field("sfExCite", "Citation (optional)", src.citation || "", "The paper or protocol these criteria come from."));
@@ -806,8 +805,7 @@ function formSection(info) {
         const s = r.source;
         const go = await ask(`Use “${s.name}”${s.version ? ` version ${s.version}` : ""}?`,
           [s.citation ? `From ${s.citation}.` : "", ...r.notes,
-            "This replaces the criteria below. Nothing is saved until you press Save. You can still change them; "
-            + "the Methods draft then says they were adapted."].filter(Boolean).join("\n"),
+            "This replaces the criteria below. Nothing is saved until you press Save."].filter(Boolean).join("\n"),
           [{ value: true, label: "Replace the criteria" }]);
         if (!go) return;
         Object.assign(m, r.model);
@@ -820,7 +818,7 @@ function formSection(info) {
     pick.click();
   };
   const template = async () => {
-    const id = await ask("Start from a template", "It replaces the criteria below. Nothing is saved until you press Save.",
+    const id = await ask("Start from a template", "This replaces the criteria below. Nothing is saved until you press Save.",
       info.presets.map(p => ({ value: p.id, label: p.title, desc: p.desc + (p.source ? ` After ${p.source}.` : "") })));
     if (!id) return;
     try { Object.assign(m, (await api("/api/project-settings", { action: "preset", preset: id })).model); drawAll(); }
@@ -843,7 +841,7 @@ function formSection(info) {
       ...wsForm.meanings(h, sc, { open: true }), ...wsForm.neurons(h, sc), ...wsForm.animal(h, sc));
     wsForm.syncSkips(f, sc);
     prev.replaceChildren(h("div", { class: "sf-prev-head" }, h("span", { class: "f-label" }, "Preview"),
-      h("span", { class: "f-help" }, "What the scorer answers for each image. Click a call to see the skips.")), f);
+      h("span", { class: "f-help" }, "Click a call to see which questions it skips.")), f);
   };
   // Redrawing removes the focused box, which can fire its change event again; that second call
   // is skipped, and the redraw already shows its value.
@@ -1060,7 +1058,7 @@ async function openProjectSettings(section) {
       return false;
     }
     toast(r.after_lock ? "Saved. The change and your reason are in log.md."
-      : r.form_changed ? "Saved. The scoring criteria are written to log.md and locked once the first image is scored."
+      : r.form_changed ? "Saved and recorded in log.md."
       : scanned ? "Saved. Run Scan data again so the new folders and rules are used." : "Saved. Next: Scan data.", "ok");
     leave();
     refresh(true);
@@ -1385,7 +1383,7 @@ async function build() {
     const saved = !!f && (f.recorded || !!f.locked);
     const go = await ask("Build the blind set?", h("div", { class: "m-list" },
       h("p", {}, `Each scanned image that passes the inclusion rules gets a random code (${plural(p.scanned || 0, "image")} scanned). The analysis plan and scoring criteria are written to log.md, and the key stays sealed until Unblind.`),
-      saved ? null : h("p", { class: "m-warn" }, "You have not saved scoring criteria yet, so the ones shown in Project settings will be used. You can still change them until the first image is scored."),
+      saved ? null : h("p", { class: "m-warn" }, "You have not saved the scoring criteria yet, so the current ones will be used. You can change them until the first image is scored."),
       h("p", {}, "After this, ", h("b", {}, "Browse images"), " is off until you unblind.")),
       saved ? [{ value: "go", label: "Build blind set" }]
         : [{ value: "form", label: "Set criteria first", plain: true }, { value: "go", label: "Build with these criteria" }]);
