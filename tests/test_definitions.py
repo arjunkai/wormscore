@@ -110,6 +110,9 @@ def test_a_definition_added_after_the_lock_is_wording_and_keeps_the_tests(fresh_
     log = (fresh_project / "log.md").read_text(encoding="utf-8")
     assert r["after_lock"] and "Only wording changed" in log
     assert S.DEFS_LOG + json.dumps({"call": {"dim": {"text": "Weaker than controls."}}}) in log
+    # the checksum of the criteria after the change is logged too, for the Methods draft
+    from wormscore import criteriafile as F
+    assert F.CHECKSUM_LOG + F.cfg_checksum(C.load(fresh_project), fresh_project) in log
     assert project_status(fresh_project)["form"]["changed_after_lock"] is False
 
 
@@ -181,3 +184,12 @@ console.log(JSON.stringify([out.length, out[0].attrs.open, text(out[0]), none.le
     # closed on the scoring page until opened (each definition is also its answer's tooltip)
     assert out[0] == 1 and out[1] is False and out[3] == 0 and out[4] == "weaker"
     assert out[2] == "What each answer means (3)|Call|dim|weaker|missing|||Dendrite|short|ends early"
+
+
+def test_a_package_says_when_a_reference_image_is_missing(fresh_project, tmp_path):
+    m, path = with_definitions(fresh_project)
+    E.save(fresh_project, body_with_form(fresh_project, m))
+    (fresh_project / path).unlink()
+    said = []
+    scorers.export_package(fresh_project, "Sam", tmp_path / "pkg", fraction=0.5, log=said.append)
+    assert any("missing from this project" in x for x in said)

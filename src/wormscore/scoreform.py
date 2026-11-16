@@ -86,6 +86,13 @@ def form_log_lines(cfg, project=None):
     return [FORM_LOG + record_text(cfg)] + definitions_log_lines(cfg, project) + log_lines(cfg, project)
 
 
+def criteria_log_lines(cfg, project=None):
+    """The definitions and the criteria checksum, without the form record: for a change made after
+    the lock, whose record must not count as one made before scoring."""
+    from .criteriafile import log_lines
+    return definitions_log_lines(cfg, project) + log_lines(cfg, project)
+
+
 # ------------------------------------------------------------------ definitions
 
 def definitions(cfg):
@@ -141,6 +148,23 @@ def definition_counts(cfg):
 def save_image(project, data, name=""):
     """Copy an uploaded reference image (base64 PNG or JPEG) into criteria/, named by its checksum
     so the same picture is stored once. Returns its path inside the project."""
+    rel, raw = read_image(data, name)
+    write_image(project, rel, raw)
+    return rel
+
+
+def write_image(project, rel, raw):
+    """Write a checked reference image at rel (never over an existing file: the name is its checksum)."""
+    dest = Path(project) / rel
+    if not dest.is_file():
+        dest.parent.mkdir(exist_ok=True)
+        tmp = dest.with_suffix(".tmp")
+        tmp.write_bytes(raw)
+        tmp.replace(dest)
+
+
+def read_image(data, name=""):
+    """A reference image (base64 PNG or JPEG) checked: (its path inside a project, its bytes)."""
     too_big = f"The image is larger than {MAX_IMAGE_BYTES // (1024 * 1024)} MB. Save a smaller copy and add that."
     if not isinstance(data, str) or len(data) > MAX_IMAGE_BYTES * 4 // 3 + 64:
         raise ValueError(too_big)
@@ -154,14 +178,7 @@ def save_image(project, data, name=""):
                          "(in Fiji: File > Save As > PNG) and add that.")
     if len(raw) > MAX_IMAGE_BYTES:
         raise ValueError(too_big)
-    rel = f"{CRITERIA_DIR}/{hashlib.sha256(raw).hexdigest()[:16]}.{ext}"
-    dest = Path(project) / rel
-    if not dest.is_file():
-        dest.parent.mkdir(exist_ok=True)
-        tmp = dest.with_suffix(".tmp")
-        tmp.write_bytes(raw)
-        tmp.replace(dest)
-    return rel
+    return f"{CRITERIA_DIR}/{hashlib.sha256(raw).hexdigest()[:16]}.{ext}", raw
 
 
 _recorded_cache = {}
@@ -553,7 +570,7 @@ def to_model_cfg(cfg):
         "primary": un.get("primary_outcome") or "",
         "unusable_reasons": list(sc["unusable_reasons"]),
         "rules": list(sc["rules"]),
-        # where the criteria came from, if they were imported from a criteria file (1.11.0)
+        # where the criteria came from, if they were imported from a criteria file (1.10.0)
         "source": dict(sc["criteria_source"]) if isinstance(sc.get("criteria_source"), dict) else None,
     }
 

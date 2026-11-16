@@ -151,9 +151,12 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 .tabs button:disabled, .tabs button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 .hidden { display: none !important; }
 [hidden] { display: none !important; }
-/* an answer's number key, shown only while its group has the keyboard focus */
-.opt-k { display: none; margin-left: 4px; padding: 0 4px; border: 1px solid var(--line-strong); border-radius: 3px; color: var(--muted); font-size: var(--text-xs); line-height: 1.4; font-variant-numeric: tabular-nums; }
-:is(.calls, .nq-opts, #countOptions, fieldset.radio-set):focus-within .opt-k { display: inline-block; }
+/* an answer's number key, shown only while its group has the keyboard focus. It sits in the gap
+   after the answer and takes no room, so nothing moves when it appears. */
+#scoreForm fieldset label { position: relative; }
+.opt-k { position: absolute; left: 100%; top: 50%; transform: translateY(-50%); margin-left: 3px; visibility: hidden; color: var(--muted); font-size: 10px; line-height: 1; font-variant-numeric: tabular-nums; pointer-events: none; }
+:is(.calls, .nq-opts, #countOptions, fieldset.radio-set):focus-within .opt-k { visibility: visible; }
+.no-answer-keys .opt-k { display: none; }
 /* a question answered with buttons: its text, then the answers under it */
 div.nq { margin: 8px 0 0; }
 div.nq .nq-text { display: block; color: var(--muted); line-height: 1.4; }

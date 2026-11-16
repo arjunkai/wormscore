@@ -161,7 +161,9 @@ click it or press Enter, and Escape closes it.
    neuron, save, then outline each cell body (or accept a suggestion) and save the regions of interest (**Save ROIs**).
    Outlining is optional. Every question is a row of buttons, so the whole image can be scored from
    the keyboard: Tab to a group, press its number (1 for the first answer) and the focus moves to the
-   next group; the numbers show on the group that has the focus. **Ctrl+Enter** saves and opens the
+   next group; the numbers show on the group that has the focus. In a project with an identity
+   channel, 1, 2 and 3 keep switching the channel, so answer with the mouse or the arrow keys there.
+   **Ctrl+Enter** saves and opens the
    next unscored image. **Next image** (or the N key) moves on without saving, and **Save score** stays
    in view at the bottom of the panel on small screens. Answers you have
    not saved yet are kept as a draft (`scoring_drafts/`, never counted as scores), so a crash or restart
@@ -244,9 +246,10 @@ call this the score form.)
 **Share criteria between projects and labs.** **Export criteria...** saves the criteria, with their
 definitions and reference images, as one `.wormscore-criteria.json` file with a name, an optional
 version and an optional citation. **Import criteria...** in another project reads it (nothing is saved
-until you press Save). `log.md` records a SHA-256 checksum of the criteria in use, the same in every
-project for the same criteria, and the Methods draft names the file's source and says whether the
-criteria were used as published or adapted.
+until you press Save), and says so if the file was changed after it was exported or has no checksum.
+`log.md` records a SHA-256 checksum of the criteria in use, the same in every project for the same
+criteria. For imported criteria the Methods draft names the source and says whether they were used as
+published or adapted; for criteria made in the project it reads as before.
 
 **The criteria lock at the first score** (or once a second-scorer package exists), so the questions
 cannot change while you score. Every save is written to `log.md`. If you really must change them

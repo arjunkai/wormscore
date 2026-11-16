@@ -716,7 +716,7 @@ function formSection(info) {
       tools(q.options, k, `level ${k + 1}`, 2)), h("div", { class: "sf-level-def" }, answerDef(q, j, lv))]),
     q.options.length > (info.warn_levels || 5) ? h("div", { class: "pv warn sf-levels-warn" },
       `${q.options.length} levels. Scorers usually agree less above about ${info.warn_levels || 5} (Gibson-Corley et al. 2013). `
-      + "Keep a published scale as it is; unblinding reports a weighted kappa for it.") : null,
+      + "Keep a published scale as it is. Hidden repeats or a second scorer then report a weighted kappa for it.") : null,
     off || q.options.length >= info.max_levels ? null : h("button", { class: "btn subtle add sm", onclick: () => {
       q.options.push("");
       drawAll();

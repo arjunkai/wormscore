@@ -1,4 +1,4 @@
-"""Scoring criteria as one file, shared between projects and labs (1.11.0)."""
+"""Scoring criteria as one file, shared between projects and labs (1.10.0, fixes in 1.11.1)."""
 import json
 
 import pytest
@@ -70,10 +70,10 @@ def test_the_checksum_is_of_the_criteria_not_the_file(fresh_project):
     assert a["sha256"] == b["sha256"]
     m["rules"] = m["rules"] + ["One more rule."]
     assert F.checksum(m, fresh_project) != a["sha256"]
-    # projects whose criteria were never imported still get a checksum in log.md and Methods
+    # criteria made in the project get a checksum in log.md, but their Methods draft reads as before
     cfg = C.load(fresh_project)
     assert F.log_lines(cfg, fresh_project) == [F.CHECKSUM_LOG + F.cfg_checksum(cfg, fresh_project)]
-    assert methods.criteria_sentence(cfg, fresh_project).startswith("The scoring criteria are identified by their checksum")
+    assert methods.criteria_sentence(cfg, fresh_project) == ""
 
 
 def test_a_changed_or_wrong_file_is_caught(fresh_project, tmp_path):
@@ -83,7 +83,12 @@ def test_a_changed_or_wrong_file_is_caught(fresh_project, tmp_path):
     tampered = dict(doc, criteria=dict(doc["criteria"], rules=["Changed by hand."]))
     got = F.load(other, json.dumps(tampered))
     assert "changed after it was exported" in got["notes"][0]
-    assert got["source"]["sha256"] == F.checksum(got["model"], other) != doc["sha256"]
+    # the published checksum is kept, so a changed file is never reported as used as published
+    assert got["source"]["sha256"] == doc["sha256"] != F.checksum(got["model"], other)
+    E.save(other, body_with_form(other, got["model"]))
+    cfg = C.load(other)
+    assert "adapted from" in methods.criteria_sentence(cfg, other)
+    assert "changed since)" in (other / "log.md").read_text(encoding="utf-8")
     for bad, msg in [("not json", "not JSON"), (json.dumps({"format": "x"}), "not a wormscore criteria file"),
                      (json.dumps(dict(doc, format_version=99)), "newer wormscore"),
                      (json.dumps(dict(doc, criteria=dict(doc["criteria"], calls=[]))), "could not be used")]:
@@ -111,3 +116,58 @@ def test_the_home_page_exports_and_imports_criteria(desk, tmp_path):
     assert st == 400 and "not a wormscore criteria file" in r["error"]
     st, r = call(port, "POST", "/api/project-settings", {"action": "export-criteria", "form": m, "name": ""})
     assert st == 400 and "name" in r["error"]
+
+
+def test_a_file_without_a_checksum_is_not_called_published(fresh_project, tmp_path):
+    m, _ = with_definitions(fresh_project)
+    doc = json.loads(F.export(fresh_project, m, "Lab A")[1])
+    del doc["sha256"]
+    other = other_project(tmp_path)
+    got = F.load(other, json.dumps(doc))
+    assert "no checksum" in got["notes"][0] and got["source"]["sha256"] == ""
+    E.save(other, body_with_form(other, got["model"]))
+    cfg = C.load(other)
+    sentence = methods.criteria_sentence(cfg, other)
+    assert "taken from" in sentence and "used as published" not in sentence
+    assert "not verified: the file had no checksum)" in (other / "log.md").read_text(encoding="utf-8")
+
+
+def test_a_bad_file_writes_no_images(fresh_project, tmp_path):
+    m, path = with_definitions(fresh_project)
+    doc = json.loads(F.export(fresh_project, m, "Lab A")[1])
+    other = other_project(tmp_path)
+    with pytest.raises(ValueError, match="could not be used"):
+        F.load(other, json.dumps(dict(doc, criteria=dict(doc["criteria"], calls=[]))))
+    assert not (other / "criteria").exists()
+
+
+def test_methods_gives_the_full_checksum_when_log_md_does_not_have_it(fresh_project, tmp_path):
+    m, _ = with_definitions(fresh_project)
+    other = other_project(tmp_path)
+    got = F.load(other, F.export(fresh_project, m, "Lab A")[1])
+    E.save(other, body_with_form(other, got["model"]))
+    cfg = C.load(other)
+    now = F.cfg_checksum(cfg, other)
+    assert "full value in log.md" in methods.criteria_sentence(cfg, other)
+    (other / "log.md").write_text("# log\n", encoding="utf-8")     # e.g. built before 1.10.0
+    assert f"full value {now}" in methods.criteria_sentence(cfg, other)
+
+
+@pytest.mark.parametrize("change", [
+    lambda sc: sc.__setitem__("rules", ["x" * 600]),
+    lambda sc: sc.__setitem__("unusable_reasons", ["blurry", "blurry"]),
+    lambda sc: sc.__setitem__("neuron_questions", [{"id": "q1", "label": "L" * 250, "options": ["yes", "no"]}]),
+])
+def test_criteria_written_by_hand_still_build_and_score(fresh_project, change):
+    """config.check accepts these but the builder does not: Build and the first score must still
+    work as in 1.8 (no checksum is logged), and the Methods draft has no criteria sentence."""
+    from wormscore.pipeline import prepare
+    raw = json.loads((fresh_project / "config.json").read_text(encoding="utf-8"))
+    change(raw.setdefault("scoring", {}))
+    (fresh_project / "config.json").write_text(json.dumps(raw), encoding="utf-8")
+    cfg = C.load(fresh_project)
+    prepare(fresh_project, log=lambda *a: None)
+    S.record_first_score(fresh_project, cfg)
+    log = (fresh_project / "log.md").read_text(encoding="utf-8")
+    assert "first score: score form locked" in log
+    assert F.log_lines(cfg, fresh_project) == [] and methods.criteria_sentence(cfg, fresh_project) == ""

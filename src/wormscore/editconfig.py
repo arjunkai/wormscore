@@ -203,7 +203,7 @@ def save(project, body):
                     "Unblinding writes only descriptive tables and runs no planned test while the criteria differ "
                     "from the one recorded before the first score; changing it back runs them again.",
                     # not the "set before scoring" prefix: unblinding must keep checking the earlier form
-                    "Score form after this change: " + S.record_text(cfg)] + S.definitions_log_lines(cfg, project))
+                    "Score form after this change: " + S.record_text(cfg)] + S.criteria_log_lines(cfg, project))
     elif form_changed:
         append_log(project, "score form saved in Project settings",
                    ["Saved before the first score; the last form recorded before the first score is the one "

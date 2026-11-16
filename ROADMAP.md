@@ -55,6 +55,16 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.11.1: **Fixes from a review of 1.9 to 1.11.** Criteria written by hand in `config.json` that the
+  builder cannot show (a very long rule or question, a reason listed twice) again build and score; in
+  1.10 and 1.11 they stopped Build and the first score. Answering with a number key now counts as a
+  change like a click (draft kept, "Unsaved changes", skipped questions hidden, the reason asked for an
+  unusable image). In projects with an identity channel, 1, 2 and 3 switch the channel again instead of
+  changing an answer. A criteria file changed after export, or without a checksum, is no longer called
+  "used as published"; nothing is written until the file is checked. The Methods draft gives the full
+  checksum when `log.md` does not have it, and mentions the checksum only for imported criteria, so
+  other projects' Methods read as before. A package says when a reference image is missing. The key
+  numbers no longer move the answers.
 - 1.11.0: **Calmer screens and faster scoring,** after a design review of the whole app. The scoring
   criteria have their own page (Project settings keeps the name and image folders), templates are one
   menu with their descriptions, definition fields appear when you add one, and a question's analysis

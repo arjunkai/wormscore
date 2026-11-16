@@ -207,6 +207,9 @@ def export_package(project, scorer, destination, fraction=0.3, log=print):
             if f is not None and f.is_file():
                 (destination / "criteria").mkdir(exist_ok=True)
                 shutil.copyfile(f, destination / d["image"])
+            elif d.get("image"):
+                log(f"Reference image {d['image']} is missing from this project, so the package does not have it. "
+                    "Add the image again in Scoring criteria and make a new package if the second scorer needs it.")
     (destination / "README.txt").write_text(
         f"wormscore second-scorer package for {scorer}.\n\n"
         "Open this folder in wormscore (Open project) and score every image in the scoring window.\n"

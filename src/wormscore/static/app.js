@@ -148,16 +148,24 @@ function formValues() {
 
 // Number keys answer the group that has the focus (1 = its first answer), then move to the next
 // group, so a whole image can be scored from the keyboard: Tab to the first group, then numbers.
+// Not in projects with an identity channel, where 1, 2 and 3 switch the channel (since 1.0.0).
 function answerByKey(radio, k) {
   const f = $("#scoreForm");
   const group = [...f.querySelectorAll(`input[type=radio][name="${CSS.escape(radio.name)}"]`)];
   const pick = group[k - 1];
   if (!pick) return false;
-  pick.checked = true;
-  pick.dispatchEvent(new Event("change", { bubbles: true }));
+  if (!pick.checked) {
+    pick.checked = true;
+    // the same events as a click, so the answer counts as a change (draft, "Unsaved changes") and
+    // the form follows it (skipped questions hidden, the reason asked for an unusable image)
+    pick.dispatchEvent(new Event("input", { bubbles: true }));
+    pick.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  if (pick.name === "usable" && pick.value === "no") { $("#reasonSelect").focus(); return true; }
   const shown = el => el.offsetParent !== null && !el.disabled;
   const names = [...new Set([...f.querySelectorAll("input[type=radio]")].filter(shown).map(el => el.name))];
-  const next = names[names.indexOf(radio.name) + 1];
+  const at = names.indexOf(radio.name);
+  const next = at < 0 ? null : names[at + 1];
   if (next) {
     const opts = [...f.querySelectorAll(`input[type=radio][name="${CSS.escape(next)}"]`)];
     (opts.find(el => el.checked) || opts[0]).focus();
@@ -1253,7 +1261,10 @@ document.addEventListener("keydown", e => {
   if (t.tagName === "INPUT" && t.type !== "range") {
     if (!["radio", "checkbox"].includes(t.type) || k.startsWith("arrow")) return;
   }
-  if (t.type === "radio" && /^[1-9]$/.test(k) && t.closest("#scoreForm") && answerByKey(t, +k)) { e.preventDefault(); return; }
+  if (t.type === "radio" && /^[1-9]$/.test(k) && !st.cfg.identity && t.closest("#scoreForm") && answerByKey(t, +k)) {
+    e.preventDefault();
+    return;
+  }
   if (st.view === "3d" && k.startsWith("arrow")) {
     // in 3D left/right turn the stack; up/down do nothing (they would leave 3D for Planes)
     if (k === "arrowright" || k === "arrowleft") setAngle(st.angle + (k === "arrowright" ? TURN_STEP : -TURN_STEP));
@@ -1297,6 +1308,8 @@ async function start() {
         $("[data-chan=reporter]").textContent = cfg.marker;
         $("[data-chan=identity]").textContent = cfg.identity.label;
         $("#chanKeys").classList.remove("hidden");
+        $("#answerKeys").classList.add("hidden");          // 1, 2, 3 switch the channel here
+        document.body.classList.add("no-answer-keys");
       }
       buildForm();
     }

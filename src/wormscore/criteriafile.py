@@ -1,4 +1,4 @@
-"""Scoring criteria as one file, to share between projects and labs (1.11.0).
+"""Scoring criteria as one file, to share between projects and labs (1.10.0).
 
 A criteria file holds what the builder holds (neurons, calls, questions and their answers, the
 definition and reference image of each answer, outcomes, the primary outcome, rules and unusable
@@ -8,9 +8,11 @@ image's own SHA-256 in place of the picture), so the same criteria give the same
 project, whatever the file is called or when it was exported.
 
 A project remembers where its criteria came from (scoring.criteria_source: name, version, citation
-and the checksum at import). log.md records the checksum of the criteria in use with the form, and
-the Methods draft names the source and says whether the criteria were changed after import. Like a
-definition, the source is wording: it never decides whether the planned tests run.
+and the checksum the file was exported with, or "" if the file had none). log.md records the checksum
+of the criteria in use with the form, and for imported criteria the Methods draft names the source and
+says whether they were used as published or adapted. Like a definition, the source is wording: it
+never decides whether the planned tests run. Criteria the builder cannot check (written by hand in
+config.json) get no checksum, and logging them never fails.
 """
 import base64
 import datetime as dt
@@ -92,9 +94,10 @@ def write_export(project, folder, model, name, version="", citation=""):
 
 
 def load(project, text):
-    """A criteria file read into this project: {"model", "source", "notes"}. Its reference images
-    are copied into the project's criteria/ folder. Nothing in config.json changes until the
-    builder is saved."""
+    """A criteria file read into this project: {"model", "source", "notes"}. Everything is checked
+    before anything is written; then its reference images are copied into the project's criteria/
+    folder (named by their own checksum, so nothing is overwritten). Nothing in config.json changes
+    until the builder is saved."""
     if not isinstance(text, str) or len(text) > MAX_FILE_BYTES:
         raise ValueError("That file is too large to be a criteria file.")
     try:
@@ -111,11 +114,11 @@ def load(project, text):
     model = doc.get("criteria")
     if not isinstance(model, dict):
         raise ValueError("The criteria file has no criteria in it.")
-    # The images go in first, so the criteria point at files that exist in this project. Their
-    # paths are their own checksums, so a picture changed inside the file gets a new path.
-    moved = {}
+    # Each image's path is its own checksum, so a picture changed inside the file gets a new path.
+    pictures, moved = {}, {}
     for p, data in images.items():
-        moved[p] = S.save_image(project, data, p)
+        rel, raw = S.read_image(data, str(p)[:100])
+        pictures[rel], moved[p] = raw, rel
     for c in model.get("calls") or []:
         if isinstance(c, dict) and c.get("image"):
             c["image"] = moved.get(c["image"], c["image"])
@@ -127,43 +130,82 @@ def load(project, text):
         m = S.clean(model)
     except ValueError as exc:
         raise ValueError(f"The criteria in that file could not be used: {exc}")
-    missing = [p for p in _images(m) if not (Path(project) / p).is_file()]
+    missing = [p for p in _images(m) if p not in pictures and not (Path(project) / p).is_file()]
     if missing:
         raise ValueError(f"The criteria file is missing {len(missing)} reference image(s).")
-    got = checksum(m, project)
-    notes = []
-    if doc.get("sha256") and doc["sha256"] != got:
-        notes.append("The file was changed after it was exported: its checksum does not match its criteria. "
-                     "The checksum of the criteria as they are now is recorded instead.")
     source = {"name": _meta(doc.get("name"), "The name", 80, required=True),
               "version": _meta(doc.get("version"), "The version", 20),
-              "citation": _meta(doc.get("citation"), "The citation", 300), "sha256": got}
+              "citation": _meta(doc.get("citation"), "The citation", 300)}
+    for rel, raw in pictures.items():
+        S.write_image(project, rel, raw)
+    got = checksum(m, project)
+    declared = doc.get("sha256") if isinstance(doc.get("sha256"), str) else ""
+    notes = []
+    if not re.fullmatch(r"[0-9a-f]{64}", declared):
+        declared = ""
+        notes.append("The file has no checksum, so wormscore cannot confirm these are the criteria as published.")
+    elif declared != got:
+        notes.append("The file was changed after it was exported: its checksum does not match its criteria. "
+                     "The Methods draft will say the criteria were adapted.")
+    source["sha256"] = declared
     m["source"] = source
     return {"model": m, "source": source, "notes": notes}
 
 
 # ------------------------------------------------------------------ log and Methods
 
-def log_lines(cfg, project=None):
+def _safe_checksum(cfg, project):
+    """The checksum of the criteria in use, or None for criteria the builder cannot check."""
+    try:
+        return cfg_checksum(cfg, project)
+    except ValueError:
+        return None
+
+
+def _source(cfg):
     src = cfg["scoring"].get("criteria_source")
-    line = CHECKSUM_LOG + cfg_checksum(cfg, project)
-    if isinstance(src, dict) and src.get("name"):
-        line += f" (imported from \"{src['name']}\"" + (f" version {src['version']}" if src.get("version") else "") \
-            + (", unchanged since)" if src.get("sha256") == cfg_checksum(cfg, project) else ", changed since)")
+    return src if isinstance(src, dict) and src.get("name") else None
+
+
+def _named(src):
+    return f"\"{src['name']}\"" + (f" version {src['version']}" if src.get("version") else "")
+
+
+def log_lines(cfg, project=None):
+    now = _safe_checksum(cfg, project)
+    if now is None:
+        return []
+    line = CHECKSUM_LOG + now
+    src = _source(cfg)
+    if src:
+        line += f" (imported from {_named(src)}, " + (
+            "unchanged since)" if src.get("sha256") == now else
+            "changed since)" if src.get("sha256") else "not verified: the file had no checksum)")
     return [line]
 
 
+def _logged(project, value):
+    log = Path(project) / "log.md" if project else None
+    try:
+        return log is not None and (CHECKSUM_LOG + value) in log.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
 def methods_sentence(cfg, project=None):
-    """Which criteria were used, so a paper can say exactly: the source if they were imported, and
-    the checksum either way."""
-    now = cfg_checksum(cfg, project)
-    src = cfg["scoring"].get("criteria_source")
-    short = f"SHA-256 {now[:16]}, full value in log.md"
-    if not (isinstance(src, dict) and src.get("name")):
-        return f"The scoring criteria are identified by their checksum ({short}). "
-    what = f"\"{src['name']}\"" + (f" version {src['version']}" if src.get("version") else "") \
-        + (f" ({src['citation']})" if src.get("citation") else "")
+    """For imported criteria, which ones were used, so a paper can say exactly: the source, whether
+    they were used as published or adapted, and the checksum. "" for criteria made in the project
+    (their checksum is in log.md), so their Methods draft reads as before."""
+    src = _source(cfg)
+    now = _safe_checksum(cfg, project) if src else None
+    if now is None:
+        return ""
+    where = "full value in log.md" if _logged(project, now) else f"full value {now}"
+    short = f"SHA-256 {now[:16]}, {where}"
+    what = _named(src) + (f" ({src['citation']})" if src.get("citation") else "")
     if src.get("sha256") == now:
         return f"The scoring criteria were {what}, used as published ({short}). "
+    if not src.get("sha256"):
+        return f"The scoring criteria were taken from {what} ({short}; the file had no checksum to confirm it). "
     return (f"The scoring criteria were adapted from {what} [describe what was changed] ({short}; the "
-            f"published criteria have SHA-256 {str(src.get('sha256', ''))[:16]}). ")
+            f"published criteria have SHA-256 {src['sha256'][:16]}). ")
