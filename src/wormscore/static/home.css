@@ -420,8 +420,11 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .f-help { margin: 2px 0 4px; color: var(--muted); font-size: var(--text-xs); text-wrap: pretty; }
 .f-row { display: flex; gap: 8px; align-items: center; }
 .f-row .f-input { flex: 1; }
-.ps .s-card.src { padding: 12px 14px; display: grid; gap: 4px; }
-.ps .s-card.src + .s-card.src { margin-top: 10px; }
+/* Project settings cards look like the Scoring criteria cards: the panel colour and a stronger
+   edge, so the (darker) typing boxes stand out from the card instead of matching it */
+.ps .s-card.src { padding: var(--space-lg) var(--space-xl) var(--space-xl); display: grid; gap: var(--space-xs);
+  background: var(--panel); border-color: var(--line-strong); border-radius: var(--radius-lg); }
+.ps .s-card.src + .s-card.src { margin-top: var(--space-lg); }
 .src.locked { opacity: .85; }
 .src-head { display: flex; align-items: center; gap: 8px; }
 .src-head .f-label { margin: 0; flex: 1; }

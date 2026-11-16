@@ -51,6 +51,8 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.12.3: Project settings cards look like the Scoring criteria cards (the panel colour, a stronger
+  edge, the same padding), so the boxes to type in stand out from the card instead of matching it.
 - 1.12.2: a new or changed project name is kept to 80 characters (it appears in window titles, the
   project list and package names, and is the default name of exported criteria, which allow 80); a
   longer name already in `config.json` is kept, so older projects still open and save. A long name

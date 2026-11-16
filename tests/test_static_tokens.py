@@ -62,3 +62,13 @@ def test_projects_on_the_home_screen_are_rows_with_a_folder_icon():
     assert 'icon("folder", 16)' in js and "folder:" in js
     assert re.search(r"\.card-p\.cur \.pick \{[^}]*background: var\(--accent-soft\)", css)
     assert re.search(r"\.recent \{[^}]*overflow-y: auto", css)
+
+
+def test_project_settings_cards_match_the_criteria_cards():
+    """1.12.3: Project settings cards use the panel colour and stronger edge of the Scoring criteria
+    cards, so the darker typing boxes stand out (they matched the card before)."""
+    css = (STATIC / "home.css").read_text(encoding="utf-8")
+    ps = re.search(r"\.ps \.s-card\.src \{([^}]*)\}", css).group(1)
+    sf = re.search(r"\.sf-card \{([^}]*)\}", css).group(1)
+    for part in ("background: var(--panel)", "border-color: var(--line-strong)", "border-radius: var(--radius-lg)"):
+        assert part in ps and part in sf, part
