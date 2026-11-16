@@ -203,13 +203,11 @@ def test_builder_round_trip_scale_count_and_animal_questions():
     raw = scoreform.apply({}, model)
     sc, un = raw["scoring"], raw["unblinding"]
     assert sc["neuron_questions"][0] == {"id": "dendrite_length", "label": "Dendrite length", "type": "scale",
-                                         "options": ["full", "partial", "short", "can't tell"],
+                                         "options": ["full length", "short", "can't tell"],
                                          "cant_tell": "can't tell", "required": True, "skip_when_calls": ["not seen"],
                                          "definitions": {
-                                             "full": {"text": "The dendrite reaches the nose tip."},
-                                             "partial": {"text": "It ends past the halfway point between the cell "
-                                                                 "body and the nose tip."},
-                                             "short": {"text": "It ends before the halfway point."}}}
+                                             "full length": {"text": "The dendrite reaches the nose tip."},
+                                             "short": {"text": "It ends before the nose tip."}}}
     assert sc["call_definitions"] == {"seen": {"text": "The cell body is visible."},
                                       "not seen": {"text": "No cell body in any plane."}}
     assert sc["animal_questions"][0]["options"] == ["0", "1", "2", "3", "4", "5+", "can't tell"]

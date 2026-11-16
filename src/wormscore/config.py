@@ -502,6 +502,22 @@ def check(cfg):
                          "(genotype_a vs genotype_b).")
 
 
+# What a new project (and the Fate reporter preset) starts with since 1.10.0: on / dim / off, the
+# wording fate studies use, with dim judged against wild type at the same settings (Reilly et al.
+# 2022, PLoS Genet). DEFAULTS keeps normal / dim / missing, so projects made earlier are unchanged.
+FATE_SCORING = {
+    "calls": ["on", "dim", "off"],
+    "defect_calls": ["dim", "off"],
+    "call_definitions": {
+        "on": {"text": "The reporter is in the cell body, as bright as in wild type imaged at the same settings."},
+        "dim": {"text": "The reporter is visible but clearly weaker than in wild type imaged at the same settings."},
+        "off": {"text": "No reporter in the cell body in any plane."},
+    },
+    "rules": ["Score each neuron separately. The animal is the unit for statistics.",
+              "Categories after Reilly et al. 2022, PLoS Genet."],
+}
+
+
 def template(name="My project"):
     return {
         "project_name": name,
@@ -518,9 +534,5 @@ def template(name="My project"):
             }
         ],
         "marker": DEFAULTS["marker"],
-        "scoring": {
-            "neurons": DEFAULTS["scoring"]["neurons"],
-            "calls": DEFAULTS["scoring"]["calls"],
-            "defect_calls": DEFAULTS["scoring"]["defect_calls"],
-        },
+        "scoring": {"neurons": DEFAULTS["scoring"]["neurons"], **copy.deepcopy(FATE_SCORING)},
     }

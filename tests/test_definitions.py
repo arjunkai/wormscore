@@ -115,10 +115,15 @@ def test_a_definition_added_after_the_lock_is_wording_and_keeps_the_tests(fresh_
 
 def test_presets_put_definitions_with_their_answers():
     fate = S.preset_model("fate")
-    assert [c["def"] for c in fate["calls"]][1] == "Visible but weaker than controls imaged at the same settings."
-    assert not any(r.startswith(("Normal:", "Dim:", "Missing:")) for r in fate["rules"])
+    assert [c["text"] for c in fate["calls"]] == ["on", "dim", "off"] and "wild type" in fate["calls"][1]["def"]
+    assert not any(r.startswith(("On:", "Dim:", "Off:")) for r in fate["rules"])
     dendrite = S.preset_model("dendrite")
-    assert set(dendrite["questions"][0]["defs"]) == {"full", "partial", "short"}
+    assert set(dendrite["questions"][0]["defs"]) == {"full length", "short"}
+    # each preset with a source names it, in the app and in its rules
+    for name, p in S.PRESETS.items():
+        if p["source"]:
+            assert p["source"].split(",")[0] in " ".join(S.preset_model(name)["rules"]), name
+    assert S.WARN_LEVELS == 5
     assert not any(r.startswith("Seen:") for r in dendrite["rules"])
 
 

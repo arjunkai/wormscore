@@ -82,7 +82,8 @@ def record_text(cfg):
 
 
 def form_log_lines(cfg, project=None):
-    return [FORM_LOG + record_text(cfg)] + definitions_log_lines(cfg, project)
+    from .criteriafile import log_lines
+    return [FORM_LOG + record_text(cfg)] + definitions_log_lines(cfg, project) + log_lines(cfg, project)
 
 
 # ------------------------------------------------------------------ definitions
@@ -320,33 +321,43 @@ def form_status(project, cfg, history):
 
 # ------------------------------------------------------------------ presets
 
+# Each preset's wording follows published scoring in C. elegans (1.10.0); "source" is shown with it in
+# the app and written into its rules, so the Methods can cite where the categories come from.
 PRESETS = {
     "fate": {
         "title": "Fate reporter",
-        "desc": "Each neuron called normal, dim or missing, each with its definition; a count of "
-                "marker-positive cells. The defaults, as used before the builder existed.",
+        "desc": "Each neuron called on, dim or off, with dim judged against wild type imaged at the same "
+                "settings; a count of marker-positive cells. What a new project starts with.",
+        "source": "Reilly et al. 2022, PLoS Genet",
     },
     "axon": {
         "title": "Axon guidance",
-        "desc": "Call each neuron, then yes/no questions about its axon. The animal has a process defect "
-                "if any neuron does; neurons not seen are not asked.",
+        "desc": "Call each neuron, then yes/no questions about its axon, phrased around its target, and "
+                "whether it crosses the ventral midline. The animal has an axon defect if any neuron does; "
+                "neurons not seen are not asked.",
+        "source": "Schmitz, Kinge and Hutter 2007, PNAS; Xu et al. 2015, PLoS Genet",
     },
     "degeneration": {
         "title": "Neurodegeneration",
         "desc": "Each neuron seen or not seen, then its dendrite scored 0 (normal) to 6 (over 75% lost), "
-                "giving the highest score that applies (after Bijwadia, Morton and Meyer 2021, JoVE 62894). "
-                "Each animal's value is its worst dendrite; groups are compared with the Mann-Whitney test.",
+                "giving the highest score that applies. Each animal's value is its worst dendrite; groups are "
+                "compared with the Mann-Whitney test.",
+        "source": "Bijwadia, Morton and Meyer 2021, JoVE 62894",
     },
     "dendrite": {
         "title": "Dendrite length",
-        "desc": "Each neuron seen or not seen, then its dendrite called full, partial or short. Each animal's "
-                "value is its shortest dendrite; groups are compared with the Mann-Whitney test.",
+        "desc": "Each neuron seen or not seen, then its dendrite called full length or short (add a partial "
+                "level if yours often end midway). Each animal's value is its shortest dendrite; groups are "
+                "compared with the Mann-Whitney test.",
+        "source": "Heiman and Shaham 2009, Cell; Low et al. 2019, Development",
     },
     "blank": {
         "title": "Blank",
         "desc": "One neuron and a seen / not seen call. Add your own questions.",
+        "source": "",
     },
 }
+WARN_LEVELS = 5     # above this many scale levels the builder warns that agreement usually drops
 
 
 def preset_model(name):
@@ -356,18 +367,20 @@ def preset_model(name):
     m = to_model_cfg(cfg)
     seen = [_call("seen", False, "The cell body is visible."), _call("not seen", True, "No cell body in any plane.")]
     if name == "fate":
-        m["calls"] = [_call("normal", False, "Cell body clearly visible at the expected brightness."),
-                      _call("dim", True, "Visible but weaker than controls imaged at the same settings."),
-                      _call("missing", True, "No cell body in any plane.")]
-        m["rules"] = ["Score each neuron separately. The animal is the unit for statistics."]
+        fate = C.FATE_SCORING
+        m["calls"] = [_call(c, c in fate["defect_calls"], fate["call_definitions"][c]["text"]) for c in fate["calls"]]
+        m["rules"] = list(fate["rules"])
     elif name == "axon":
         m["rules"] = ["Answer the axon questions only for neurons you can see.",
-                      "Score each neuron separately. The animal is the unit for statistics."]
+                      "Ventral cord: the axon's normal target; change it to this neuron's target.",
+                      "Midline crossing counts only for an axon that normally stays on its own side.",
+                      "Score each neuron separately. The animal is the unit for statistics.",
+                      "Questions after Schmitz, Kinge and Hutter 2007, PNAS; Xu et al. 2015, PLoS Genet."]
         m["calls"] = seen
         # Every question is worded so that "yes" is the defect: questions combined in one outcome
         # share one list of defect answers.
-        qs = [("stops_early", "Axon stops before its target?"), ("wrong_path", "Axon takes a wrong path?"),
-              ("extra_branch", "Extra branch?")]
+        qs = [("fails_target", "Axon fails to reach the ventral cord?"), ("wrong_path", "Axon takes a wrong path?"),
+              ("crosses_midline", "Axon crosses the ventral midline?"), ("extra_branch", "Extra branch?")]
         m["questions"] = [{"id": qid, "label": lab, "type": "yesno", "options": ["yes", "no"],
                            "cant_tell": "can't tell", "defect": ["yes"], "required": True,
                            "skip_when": ["not seen"], "outcome": "axon defect", "defs": {}} for qid, lab in qs]
@@ -386,12 +399,11 @@ def preset_model(name):
                           "Scale: Bijwadia, Morton and Meyer 2021, JoVE 62894."]
             label, qid, outcome = "Dendrite score", "dendrite_score", "dendrite score"
         else:
-            levels = ["full", "partial", "short"]
-            defs = {"full": {"text": "The dendrite reaches the nose tip.", "image": ""},
-                    "partial": {"text": "It ends past the halfway point between the cell body and the nose tip.",
-                                "image": ""},
-                    "short": {"text": "It ends before the halfway point.", "image": ""}}
-            m["rules"] = ["Score each neuron separately. The animal is the unit for statistics."]
+            levels = ["full length", "short"]
+            defs = {"full length": {"text": "The dendrite reaches the nose tip.", "image": ""},
+                    "short": {"text": "It ends before the nose tip.", "image": ""}}
+            m["rules"] = ["Score each neuron separately. The animal is the unit for statistics.",
+                          "Categories after Heiman and Shaham 2009, Cell; Low et al. 2019, Development."]
             label, qid, outcome = "Dendrite length", "dendrite_length", "dendrite length"
         m["questions"] = [{"id": qid, "label": label, "type": "scale", "ask": "neuron", "options": levels,
                            "count": None, "cant_tell": "can't tell", "defect": [], "required": True,
@@ -539,6 +551,8 @@ def to_model_cfg(cfg):
         "primary": un.get("primary_outcome") or "",
         "unusable_reasons": list(sc["unusable_reasons"]),
         "rules": list(sc["rules"]),
+        # where the criteria came from, if they were imported from a criteria file (1.11.0)
+        "source": dict(sc["criteria_source"]) if isinstance(sc.get("criteria_source"), dict) else None,
     }
 
 
@@ -550,7 +564,8 @@ def current(project):
     return {"model": to_model_cfg(cfg), "locked": why_locked, "readonly": why,
             "can_unlock": bool(why_locked) and not packages_exist(project),
             "presets": [{"id": k, **v} for k, v in PRESETS.items()],
-            "warn_questions": WARN_QUESTIONS, "max_questions": MAX_QUESTIONS, "max_levels": MAX_LEVELS}
+            "warn_questions": WARN_QUESTIONS, "max_questions": MAX_QUESTIONS, "max_levels": MAX_LEVELS,
+            "warn_levels": WARN_LEVELS, "project_name": cfg.get("project_name") or ""}
 
 
 def _text(v, what, required=True, limit=MAX_TEXT):
@@ -737,10 +752,22 @@ def clean(model):
         raise ValueError("The primary outcome is not one of the outcomes.")
     reasons = _texts(model.get("unusable_reasons") or [], "Unusable reason", 1)
     rules = _texts(model.get("rules") or [], "Rule", 0, unique=False, limit=500)
+    source = _source(model.get("source"))
     return {"neurons": neurons, "calls": [{"text": c, "defect": c in defect, "def": d["text"], "image": d["image"]}
                                           for c, d in zip(calls, call_defs)],
             "sides": bool(model.get("sides")), "count": count, "questions": questions, "primary": primary,
-            "unusable_reasons": reasons, "rules": rules}
+            "unusable_reasons": reasons, "rules": rules, "source": source}
+
+
+def _source(src):
+    """Where imported criteria came from: {"name", "version", "citation", "sha256"}, or None."""
+    if not isinstance(src, dict) or not src.get("name"):
+        return None
+    sha = src.get("sha256") if isinstance(src.get("sha256"), str) and re.fullmatch(r"[0-9a-f]{64}", src["sha256"]) else ""
+    return {"name": _text(src["name"], "The criteria's name", limit=80),
+            "version": _text(src.get("version") or "", "The criteria's version", required=False, limit=20),
+            "citation": _text(src.get("citation") or "", "The criteria's citation", required=False, limit=300),
+            "sha256": sha}
 
 
 def _config_question(q, old):
@@ -826,6 +853,10 @@ def apply(raw, model):
         raw_sc["call_definitions"] = call_defs
     else:
         raw_sc.pop("call_definitions", None)
+    if m["source"]:
+        raw_sc["criteria_source"] = m["source"]
+    else:
+        raw_sc.pop("criteria_source", None)
     if raw_sc:
         out["scoring"] = raw_sc
     raw_un = dict(out.get("unblinding") or {})

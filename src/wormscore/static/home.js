@@ -568,7 +568,7 @@ function formSection(info) {
     const d = get();
     return h("div", { class: "sf-def" },
       h("span", { class: "sf-def-k", "aria-hidden": "true" }, "means"),
-      text(d.text, v => put({ text: v }), { placeholder: "Definition (optional): what it looks like", "aria-label": `${what}: definition`, maxlength: 300 }),
+      text(d.text, v => put({ text: v }), { placeholder: "What it looks like (optional)", "aria-label": `${what}: definition`, maxlength: 300 }),
       d.image ? h("span", { class: "sf-img" },
         h("button", { class: "sf-thumb", title: "Show the reference image", "aria-label": `Show the reference image for ${what}`,
           onclick: () => wsForm.zoom(h, d.image, what, d.text) }, h("img", { src: "/" + d.image, alt: "" })),
@@ -708,6 +708,10 @@ function formSection(info) {
       text(lv, v => { renameDef(q, q.options[k], v.trim()); q.options[k] = v.trim(); },
         { "aria-label": `Question ${j + 1}: level ${k + 1}`, onchange: () => drawAll() }),
       tools(q.options, k, `level ${k + 1}`, 2)), h("div", { class: "sf-level-def" }, answerDef(q, j, lv))]),
+    q.options.length > (info.warn_levels || 5) ? h("div", { class: "pv warn sf-levels-warn" },
+      `${q.options.length} levels. Scorers usually agree less above about ${info.warn_levels || 5} levels `
+      + "(Gibson-Corley, Olivier and Meyerholz 2013, Vet Pathol). Keep a published scale as it is; with hidden "
+      + "repeats or a second scorer, unblinding reports a weighted kappa for this scale.") : null,
     off || q.options.length >= info.max_levels ? null : h("button", { class: "btn subtle add sm", onclick: () => {
       q.options.push("");
       drawAll();
@@ -763,14 +767,70 @@ function formSection(info) {
     h("textarea", { id: "sfReasons", class: "f-input", rows: 4, disabled: off,
       oninput: e => { m.unusable_reasons = splitLines(e.target.value); } }, m.unusable_reasons.join("\n")));
 
-  const start = () => off ? null : h("div", { class: "sf-start" }, h("span", { class: "f-help" }, "Start from:"),
-    info.presets.map(p => h("button", { class: "btn subtle", title: p.desc, onclick: async () => {
-      const go = await ask(`Start from ${p.title}?`, `${p.desc}\nThis replaces the criteria below. Nothing is saved until you press Save.`,
-        [{ value: true, label: "Replace the criteria" }]);
-      if (!go) return;
-      try { Object.assign(m, (await api("/api/project-settings", { action: "preset", preset: p.id })).model); drawAll(); }
-      catch (e) { toast(e.message); }
-    } }, p.title)));
+  // Criteria as one file (1.11.0): export them to share, import someone else's. A file is read in
+  // the page and sent as text; its reference images go into this project's criteria/ folder.
+  const exportCriteria = async () => {
+    const field = (id, label, value, help) => [h("label", { class: "f-label", for: id }, label),
+      h("input", { id, class: "f-input", type: "text", value: value || "", autocomplete: "off" }),
+      help ? h("div", { class: "f-help" }, help) : null];
+    const src = m.source || {};
+    const body = h("div", { class: "sf-export" },
+      h("p", {}, "One file with the criteria below, their definitions and reference images. Another project or lab "
+        + "imports it with Import criteria; its checksum then appears in their log.md and Methods draft."),
+      ...field("sfExName", "Name", src.name || info.project_name || "", null),
+      ...field("sfExVersion", "Version (optional)", src.version || "", "For example 1.0. Change it when the criteria change."),
+      ...field("sfExCite", "Citation (optional)", src.citation || "", "The paper or protocol these criteria come from."));
+    const val = id => body.querySelector(`#${id}`).value.trim();
+    const go = await ask("Export the scoring criteria", body, [{ value: true, label: "Choose a folder..." }], "Cancel",
+      { wide: true, check: () => val("sfExName") ? null : "Give the criteria a name." });
+    if (!go) return;
+    try {
+      const r = await api("/api/project-settings", { action: "export-criteria", form: m,
+        name: val("sfExName"), version: val("sfExVersion"), citation: val("sfExCite") });
+      if (r.path) toast(`Saved ${r.path}`, "ok");
+    } catch (e) { toast(e.message); }
+  };
+  const importCriteria = () => {
+    const pick = h("input", { type: "file", accept: ".json,application/json", hidden: true, onchange: () => {
+      const file = pick.files?.[0];
+      pick.remove();
+      if (!file) return;
+      const read = new FileReader();
+      read.onload = async () => {
+        let r;
+        try { r = await api("/api/project-settings", { action: "import-criteria", text: read.result }); }
+        catch (e) { return toast(e.message); }
+        const s = r.source;
+        const go = await ask(`Use “${s.name}”${s.version ? ` version ${s.version}` : ""}?`,
+          [s.citation ? `From ${s.citation}.` : "", ...r.notes,
+            "This replaces the criteria below. Nothing is saved until you press Save. You can still change them; "
+            + "the Methods draft then says they were adapted."].filter(Boolean).join("\n"),
+          [{ value: true, label: "Replace the criteria" }]);
+        if (!go) return;
+        Object.assign(m, r.model);
+        drawAll();
+      };
+      read.onerror = () => toast("That file could not be read.");
+      read.readAsText(file);
+    } });
+    document.body.append(pick);
+    pick.click();
+  };
+  const start = () => h("div", { class: "sf-start" },
+    ...(off ? [] : [h("span", { class: "f-help" }, "Start from:"),
+      ...info.presets.map(p => h("button", { class: "btn subtle", title: p.desc + (p.source ? ` Source: ${p.source}.` : ""), onclick: async () => {
+        const go = await ask(`Start from ${p.title}?`, `${p.desc}${p.source ? `\nWording after ${p.source}.` : ""}\n`
+          + "This replaces the criteria below. Nothing is saved until you press Save.",
+          [{ value: true, label: "Replace the criteria" }]);
+        if (!go) return;
+        try { Object.assign(m, (await api("/api/project-settings", { action: "preset", preset: p.id })).model); drawAll(); }
+        catch (e) { toast(e.message); }
+      } }, p.title))]),
+    h("span", { class: "sf-share" },
+      off ? null : h("button", { class: "btn subtle", title: "Use criteria exported from another project or lab", onclick: importCriteria }, "Import criteria..."),
+      h("button", { class: "btn subtle", title: "Save these criteria as one file to share", onclick: exportCriteria }, "Export criteria...")),
+    m.source ? h("div", { class: "f-help sf-source" }, `From “${m.source.name}”${m.source.version ? ` version ${m.source.version}` : ""}`
+      + (m.source.citation ? ` (${m.source.citation})` : "") + ". Changes are fine; the Methods draft then says they were adapted.") : null);
 
   const drawPreview = () => {
     const sc = formForPreview(m);

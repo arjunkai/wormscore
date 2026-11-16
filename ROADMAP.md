@@ -11,24 +11,9 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Scoring criteria (from a review of published scoring schemes and tools, November 2026)
 
-- **Share criteria between projects and labs.** Export the scoring criteria as one file (questions,
-  answers, definitions, outcomes, primary outcome, a name, a version and an optional citation) and
-  import it into another project. Its checksum goes into `log.md` and the Methods draft, so a paper
-  can say exactly which criteria were used. This follows REDCap's data dictionary and Label Studio's
-  labeling configs.
-- **Preset wording that matches the literature** (new projects only; existing projects keep theirs):
-  fate reporter **on / dim / off**, with dim defined against wild type at the same settings (Reilly
-  et al. 2022, *PLoS Genet*); dendrite length **full length / short**, with "partial" optional
-  (Heiman and Shaham 2009, *Cell*; Low et al. 2019, *Development*); axon guidance questions phrased
-  around the target ("fails to reach the ventral cord?") plus a midline-crossing question (Schmitz,
-  Kinge and Hutter 2007, *PNAS*; Xu et al. 2015, *PLoS Genet*). Each preset names its source in the
-  app.
 - **A practice set.** Score a small set of images against an answer key before the real scoring
   and see the agreement, as published scales provide (Bijwadia et al. 2021), to catch drift in how
   categories are judged (Gibson-Corley et al. 2013).
-- **A warning for long scales.** Above 5 levels the builder warns that agreement between scorers
-  usually drops and points to the weighted kappa at unblinding (Gibson-Corley et al. 2013 suggest
-  about 4 to 5 levels).
 - **Also:** questions per left/right cell, and a counts-and-position preset.
 
 ### Other planned features
@@ -66,6 +51,21 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.10.0: **Share criteria between projects and labs.** **Export criteria...** saves the scoring
+  criteria as one file (questions, answers, definitions and reference images, outcomes, primary
+  outcome, a name, a version and an optional citation); **Import criteria...** uses it in another
+  project. The checksum of the criteria in use goes into `log.md` with the form, and the Methods draft
+  names the source and says whether they were used as published or adapted. This follows REDCap's
+  data dictionary and Label Studio's labeling configs. **Preset wording from the literature, and a
+  warning for long scales.** New projects and the
+  Fate reporter preset call each neuron **on / dim / off**, with dim judged against wild type at the
+  same settings (Reilly et al. 2022, *PLoS Genet*). Dendrite length is **full length / short**, with
+  partial optional (Heiman and Shaham 2009, *Cell*; Low et al. 2019, *Development*). Axon guidance
+  asks around the target ("fails to reach the ventral cord?") and adds a midline-crossing question
+  (Schmitz, Kinge and Hutter 2007, *PNAS*; Xu et al. 2015, *PLoS Genet*). Each preset names its
+  source in the app and in its rules. Above 5 levels the builder warns that agreement between scorers
+  usually drops (Gibson-Corley et al. 2013) and points to the weighted kappa at unblinding. Clearer
+  greys in the dark theme. Existing projects keep their wording and give identical results.
 - 1.9.0: **A definition and a reference image for every answer.** Each call, and each answer of a
   Choice or Scale question, can have its own short definition and a reference image (PNG or JPEG)
   to compare against, set in the scoring criteria. The scoring page shows them in a **What each answer

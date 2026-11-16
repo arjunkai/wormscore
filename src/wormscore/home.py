@@ -952,6 +952,19 @@ class HomeApp:
                 if r.get("after_lock") and self.scoring and self.scoring[0] == str(p):
                     self.stop_scoring()   # the open scoring window still shows the old form
                 return r
+            if action == "export-criteria":
+                from .criteriafile import write_export
+                if not str(body.get("name") or "").strip():
+                    raise ValueError("Give the criteria a name first.")
+                d = self.pick("Choose a folder for the criteria file")
+                if not d:
+                    return {"ok": False}
+                path = write_export(p, d, body.get("form"), body.get("name"), body.get("version") or "",
+                                    body.get("citation") or "")
+                return {"ok": True, "path": str(path)}
+            if action == "import-criteria":
+                from .criteriafile import load
+                return {"ok": True, **load(p, body.get("text"))}
             if action == "criteria-image":
                 from .scoreform import save_image
                 return {"ok": True, "path": save_image(p, body.get("data"), str(body.get("name") or "")[:100])}

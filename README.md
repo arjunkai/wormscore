@@ -201,9 +201,14 @@ use only your answers.
 The **Scoring criteria** section of Project settings sets what the scorer answers for each image, with
 a live preview of the score panel. (Older versions and `log.md` call this the score form.)
 
-- **Start from a preset:** **Fate reporter** (each neuron normal / dim / missing, the default),
-  **Axon guidance** (yes/no questions about the axon), **Neurodegeneration** (each dendrite scored 0 to
-  6), **Dendrite length** (full / partial / short) or **Blank**.
+- **Start from a preset:** **Fate reporter** (each neuron on / dim / off, with dim judged against wild
+  type at the same settings; what a new project starts with), **Axon guidance** (yes/no questions about
+  the axon, phrased around its target, and whether it crosses the ventral midline),
+  **Neurodegeneration** (each dendrite scored 0 to 6), **Dendrite length** (full length / short; add a
+  partial level if you need one) or **Blank**. Each preset follows published scoring and names its
+  source on its button and in its rules. Projects made before 1.10.0 keep normal / dim / missing.
+- **Long scales:** above 5 levels the builder warns that scorers usually agree less, and points to the
+  weighted kappa that unblinding reports when there are hidden repeats or a second scorer.
 - **Neurons and calls:** name the neurons and the calls, and tick which calls count as a defect.
 - **What each answer means:** each call, and each answer of a Choice or Scale question, can have a
   short definition and a **reference image** (PNG or JPEG) to compare against, for example what "dim"
@@ -231,6 +236,13 @@ a live preview of the score panel. (Older versions and `log.md` call this the sc
   rearrangements, otherwise from 100,000 random ones with a fixed seed. An optional **cutoff** (for
   example "4 or worse") also gives the share of animals at or past it, tested with Fisher's exact test.
 - **Primary outcome:** name one; the results and Methods then call every other test secondary.
+
+**Share criteria between projects and labs.** **Export criteria...** saves the criteria, with their
+definitions and reference images, as one `.wormscore-criteria.json` file with a name, an optional
+version and an optional citation. **Import criteria...** in another project reads it (nothing is saved
+until you press Save). `log.md` records a SHA-256 checksum of the criteria in use, the same in every
+project for the same criteria, and the Methods draft names the file's source and says whether the
+criteria were used as published or adapted.
 
 **The criteria lock at the first score** (or once a second-scorer package exists), so the questions
 cannot change while you score. Every save is written to `log.md`. If you really must change them

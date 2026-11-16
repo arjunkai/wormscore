@@ -54,14 +54,17 @@ def test_saving_an_unchanged_form_leaves_config_json_as_it_was(fresh_project):
     assert not r["changed"] and path.read_bytes() == before
 
 
-def test_fate_preset_is_the_defaults():
-    # the same form as the defaults; since 1.9.0 the rules that defined each call are the calls' own definitions
+def test_fate_preset_is_what_a_new_project_starts_with():
+    # since 1.10.0 a new project and the Fate reporter preset say on / dim / off (Reilly et al. 2022)
     raw = C.template("x")
-    new = S.apply(raw, S.preset_model("fate"))
-    assert S.form_record(S._cfg_from_raw(new)) == S.form_record(S._cfg_from_raw(raw))
-    rules = C.DEFAULTS["scoring"]["rules"]
-    assert [f"{c}: {d['text']}".lower() for c, d in new["scoring"]["call_definitions"].items()] == [r.lower() for r in rules[:3]]
-    assert new["scoring"]["rules"] == rules[3:]
+    assert S.apply(raw, S.preset_model("fate")) == raw
+    assert raw["scoring"]["calls"] == ["on", "dim", "off"] and "Reilly" in raw["scoring"]["rules"][-1]
+
+
+def test_projects_without_their_own_calls_keep_normal_dim_missing():
+    # DEFAULTS is unchanged, so a project made before 1.10.0 that never set its calls reads as before
+    cfg = C.merge(C.DEFAULTS, {})
+    assert cfg["scoring"]["calls"] == ["normal", "dim", "missing"] and "call_definitions" not in cfg["scoring"]
 
 
 @pytest.mark.parametrize("name", list(S.PRESETS))
@@ -74,6 +77,7 @@ def test_each_preset_passes_the_config_check_and_round_trips(name):
 
 def test_hand_written_outcomes_round_trip_without_change():
     raw = C.template("x")
+    raw["scoring"] = {"neurons": raw["scoring"]["neurons"]}      # made before 1.10.0: normal / dim / missing
     raw["scoring"]["neuron_questions"] = [{"id": "dendrite", "label": "dendrite to nose?", "options": ["yes", "no", "can't tell"]},
                                           {"id": "axon", "label": "axon in ring?", "options": ["yes", "no", "can't tell"]}]
     raw["unblinding"] = {"question_outcomes": [{"name": "process defect", "questions": ["dendrite", "axon"],
@@ -106,7 +110,7 @@ def test_builder_writes_questions_outcomes_and_logs_the_form(fresh_project):
     raw = json.loads((fresh_project / "config.json").read_text())
     assert raw["unblinding"]["primary_outcome"] == "axon defect"
     (oc,) = raw["unblinding"]["question_outcomes"]
-    assert oc["questions"] == ["stops_early", "wrong_path", "extra_branch"] and oc["not_visible_calls"] == ["not seen"]
+    assert oc["questions"] == ["fails_target", "wrong_path", "crosses_midline", "extra_branch"] and oc["not_visible_calls"] == ["not seen"]
     assert all(q["required"] and q["skip_when_calls"] == ["not seen"] for q in raw["scoring"]["neuron_questions"])
     assert raw["sources"]                                                    # the rest is kept
     assert list((fresh_project / "config_backups").glob("config-*.json"))     # old file backed up

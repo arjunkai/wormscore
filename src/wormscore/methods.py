@@ -204,6 +204,14 @@ def identity_sentence(cfg):
             f"brightness could not hint at the genotype, and it was never measured. {where} {missing}"]
 
 
+def criteria_sentence(cfg, project):
+    from .criteriafile import methods_sentence
+    try:
+        return methods_sentence(cfg, project)
+    except ValueError:      # criteria the builder cannot check (written by hand): no checksum
+        return ""
+
+
 def definitions_sentence(cfg):
     """How the scorer was shown what each answer means, or "" when no answer had its own definition."""
     from .scoreform import definition_counts
@@ -293,7 +301,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         + f"{who('scored_by', '[name]')} scored the coded images {span}, seeing no file names, genotypes or "
         "brightness measurements, with every image from the same microscope shown at the same fixed "
         f"brightness range. Each neuron was called {calls}; "
-        f"{' or '.join(sc['defect_calls'])} counted as affected. " + definitions_sentence(cfg) + "Codes were linked "
+        f"{' or '.join(sc['defect_calls'])} counted as affected. " + definitions_sentence(cfg) + criteria_sentence(cfg, project) + "Codes were linked "
         f"back to genotypes on {dt.date.today():%Y-%m-%d}, after {n_scored} image{'s' if n_scored != 1 else ''} "
         f"had been scored.",
         "",

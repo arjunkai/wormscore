@@ -8,8 +8,8 @@
   --line: #31363d;
   --line-strong: #434a53;   /* edges of cards that sit on the page background */
   --text: #e4e6e9;
-  --muted: #959ca6;
-  --faint: #8a919b;
+  --muted: #adb3bc;
+  --faint: #9ea5af;
   --accent: #4fbf7a;
   --accent-ink: #0d1f14;
   --accent-soft: rgba(79, 191, 122, .14);
@@ -394,6 +394,8 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
   width: 100%; min-width: 0; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--bg);
   border: 1px solid var(--line); color: var(--text);
 }
+/* placeholders in the faint grey, not the browser's half-transparent text */
+.f-input::placeholder { color: var(--faint); opacity: 1; }
 .f-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
 .f-input:disabled { color: var(--muted); background: var(--raised); }
 .f-range { display: flex; align-items: center; gap: 12px; }
@@ -475,7 +477,7 @@ details.lo[open] summary { margin-bottom: 4px; }
 .sf-q-head .f-input { font-weight: 600; }
 .sf-num {
   flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
-  background: var(--raised); color: var(--text); font-size: var(--text-xs); font-weight: 600;
+  background: var(--hover); border: 1px solid var(--line-strong); color: var(--text); font-size: var(--text-xs); font-weight: 600;
 }
 /* label column, value column; every first line is one control tall so labels line up with it */
 .sf-grid { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: var(--space-md) var(--space-xl); align-items: start; padding-left: 34px; }
@@ -494,6 +496,11 @@ details.lo[open] summary { margin-bottom: 4px; }
 .sf-section > .add { justify-self: start; }
 .sf-start { display: flex; flex-wrap: wrap; gap: var(--space-sm); align-items: center; }
 .sf-start .f-help { margin: 0 var(--space-xs) 0 0; }
+.sf-share { display: flex; gap: var(--space-sm); margin-left: auto; }
+.sf-start .sf-source { flex-basis: 100%; margin: 0; }
+.sf-export { display: grid; gap: var(--space-xs); }
+.sf-export p { margin: 0 0 var(--space-sm); }
+.sf-export .f-help { margin: 0 0 var(--space-xs); }
 .sf-select { width: auto; max-width: 100%; }
 
 .sf-count { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm) var(--space-lg); }
@@ -592,7 +599,7 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
 
 /* the browser's own arrow sits against the edge; this one has room and matches the line icons */
 select.f-input, .sf-form select { font: inherit; appearance: none; -webkit-appearance: none; padding-right: 34px; cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M2.5 4.5 6 8l3.5-3.5%27 fill=%27none%27 stroke=%27%23959ca6%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E"); background-position: right 12px center; background-size: 12px 12px; background-repeat: no-repeat; }
+  background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M2.5 4.5 6 8l3.5-3.5%27 fill=%27none%27 stroke=%27%23adb3bc%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E"); background-position: right 12px center; background-size: 12px 12px; background-repeat: no-repeat; }
 [data-theme="light"] select.f-input, [data-theme="light"] .sf-form select { background-image: url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2712%27 height=%2712%27 viewBox=%270 0 12 12%27%3E%3Cpath d=%27M2.5 4.5 6 8l3.5-3.5%27 fill=%27none%27 stroke=%27%235b636e%27 stroke-width=%271.6%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E"); }
 
 /* "?" next to a term: a short definition on click (terms.js). Fixed to the window so no panel clips it. */
