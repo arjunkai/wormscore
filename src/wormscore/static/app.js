@@ -142,7 +142,27 @@ function otherProject() {
 function formValues() {
   const out = {};
   for (const [k, v] of new FormData($("#scoreForm")).entries()) out[k] = String(v);
+  for (const el of $("#scoreForm").querySelectorAll(".nq input[type=radio]")) if (!(el.name in out)) out[el.name] = "";
   return out;
+}
+
+// Number keys answer the group that has the focus (1 = its first answer), then move to the next
+// group, so a whole image can be scored from the keyboard: Tab to the first group, then numbers.
+function answerByKey(radio, k) {
+  const f = $("#scoreForm");
+  const group = [...f.querySelectorAll(`input[type=radio][name="${CSS.escape(radio.name)}"]`)];
+  const pick = group[k - 1];
+  if (!pick) return false;
+  pick.checked = true;
+  pick.dispatchEvent(new Event("change", { bubbles: true }));
+  const shown = el => el.offsetParent !== null && !el.disabled;
+  const names = [...new Set([...f.querySelectorAll("input[type=radio]")].filter(shown).map(el => el.name))];
+  const next = names[names.indexOf(radio.name) + 1];
+  if (next) {
+    const opts = [...f.querySelectorAll(`input[type=radio][name="${CSS.escape(next)}"]`)];
+    (opts.find(el => el.checked) || opts[0]).focus();
+  } else f.querySelector("button[type=submit]").focus();
+  return true;
 }
 
 function saveDraft() {
@@ -352,8 +372,8 @@ function renderList() {
   const n = st.worms.filter(w => w.scored).length;
   const marked = st.worms.filter(w => w.scored && w.has_roi).length;
   $("#progFill").style.transform = `scaleX(${n / Math.max(st.worms.length, 1)})`;
-  $("#progText").textContent = `${n} of ${st.worms.length} scored \u00b7 cells outlined on ${marked} (optional)` +
-    (n < st.cfg.min_scored ? ` (at least ${st.cfg.min_scored} before unblinding)` : "");
+  $("#progText").textContent = `${n} of ${st.worms.length} scored` +
+    (n < st.cfg.min_scored ? ` (at least ${st.cfg.min_scored} to unblind)` : "") + ` \u00b7 cells outlined on ${marked}`;
 }
 
 // Asks before unsaved outlines are left behind, in the app's own dialog. Stay has the focus, so one
@@ -1233,6 +1253,7 @@ document.addEventListener("keydown", e => {
   if (t.tagName === "INPUT" && t.type !== "range") {
     if (!["radio", "checkbox"].includes(t.type) || k.startsWith("arrow")) return;
   }
+  if (t.type === "radio" && /^[1-9]$/.test(k) && t.closest("#scoreForm") && answerByKey(t, +k)) { e.preventDefault(); return; }
   if (st.view === "3d" && k.startsWith("arrow")) {
     // in 3D left/right turn the stack; up/down do nothing (they would leave 3D for Planes)
     if (k === "arrowright" || k === "arrowleft") setAngle(st.angle + (k === "arrowright" ? TURN_STEP : -TURN_STEP));

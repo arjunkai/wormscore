@@ -513,6 +513,8 @@ def _model_question(q, ask, owner, rank, calls):
     else:
         if oc and opts and opts[-1] in oc.get("unclear_answers", []):
             cant = opts.pop()
+        elif not oc and len(opts) > 2 and opts[-1] == "can't tell":
+            cant = opts.pop()        # a question not tested: its last "can't tell" is the can't-tell answer
         typ = "yesno" if opts == ["yes", "no"] else "choice"
     skip = q.get("skip_when_calls") if ask == "neuron" else []
     raw_defs = q.get("definitions") if isinstance(q.get("definitions"), dict) and typ in ("choice", "scale") else {}

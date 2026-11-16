@@ -159,8 +159,11 @@ click it or press Enter, and Escape closes it.
    still add a folder for new images.
 4. **Score** (`wormscore app my_project`): for each image, answer any yellow questions, score each
    neuron, save, then outline each cell body (or accept a suggestion) and save the regions of interest (**Save ROIs**).
-   Outlining is optional. **Next image** (or the N key) moves on, and **Save score** stays in view at the
-   bottom of the panel on small screens. Answers you have
+   Outlining is optional. Every question is a row of buttons, so the whole image can be scored from
+   the keyboard: Tab to a group, press its number (1 for the first answer) and the focus moves to the
+   next group; the numbers show on the group that has the focus. **Ctrl+Enter** saves and opens the
+   next unscored image. **Next image** (or the N key) moves on without saving, and **Save score** stays
+   in view at the bottom of the panel on small screens. Answers you have
    not saved yet are kept as a draft (`scoring_drafts/`, never counted as scores), so a crash or restart
    loses nothing: open the image again and click Save. If the connection to wormscore is lost, the
    window shows "Reconnecting..." and reconnects by itself; if wormscore is not running it says so, with
@@ -198,15 +201,16 @@ use only your answers.
 
 ## Scoring criteria
 
-The **Scoring criteria** section of Project settings sets what the scorer answers for each image, with
-a live preview of the score panel. (Older versions and `log.md` call this the score form.)
+**Edit criteria...** on step 2 opens the scoring criteria on their own page (Project settings has the
+project name and image folders), with a live preview of the score panel. (Older versions and `log.md`
+call this the score form.)
 
-- **Start from a preset:** **Fate reporter** (each neuron on / dim / off, with dim judged against wild
+- **Start from a template...:** **Fate reporter** (each neuron on / dim / off, with dim judged against wild
   type at the same settings; what a new project starts with), **Axon guidance** (yes/no questions about
   the axon, phrased around its target, and whether it crosses the ventral midline),
   **Neurodegeneration** (each dendrite scored 0 to 6), **Dendrite length** (full length / short; add a
   partial level if you need one) or **Blank**. Each preset follows published scoring and names its
-  source on its button and in its rules. Projects made before 1.10.0 keep normal / dim / missing.
+  source in the list and in its rules. Projects made before 1.10.0 keep normal / dim / missing.
 - **Long scales:** above 5 levels the builder warns that scorers usually agree less, and points to the
   weighted kappa that unblinding reports when there are hidden repeats or a second scorer.
 - **Neurons and calls:** name the neurons and the calls, and tick which calls count as a defect.
@@ -251,7 +255,8 @@ reason to `log.md`; unblinding lists each change with its reason in the summary 
 Fixing wording (question text, rules, an answer's definition or reference image) keeps the planned tests. Any other change, in the app or by
 editing `config.json` by hand, means unblinding runs no planned test and says why (descriptive tables
 are still written, and changing the criteria back runs the tests again). It is not offered once a
-second-scorer package exists. Leaving Project settings with unsaved changes asks whether to save them.
+second-scorer package exists. Leaving the criteria or Project settings with unsaved changes asks
+whether to save them.
 
 ## Results
 

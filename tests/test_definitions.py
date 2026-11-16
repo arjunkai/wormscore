@@ -178,5 +178,6 @@ const none = wsForm.meanings(h, {{ calls: ["a", "b"], neuron_questions: [] }});
 console.log(JSON.stringify([out.length, out[0].attrs.open, text(out[0]), none.length,
   wsForm.radios(h, "n1_call", ["dim"], {{ dim: {{ text: "weaker" }} }})[0].attrs.title]));"""
     out = json.loads(subprocess.run(["node", "-e", js], capture_output=True, text=True, check=True).stdout)
-    assert out[0] == 1 and out[1] is True and out[3] == 0 and out[4] == "weaker"
-    assert out[2] == "What each answer means|Call|dim|weaker|missing|||Dendrite|short|ends early"
+    # closed on the scoring page until opened (each definition is also its answer's tooltip)
+    assert out[0] == 1 and out[1] is False and out[3] == 0 and out[4] == "weaker"
+    assert out[2] == "What each answer means (3)|Call|dim|weaker|missing|||Dendrite|short|ends early"

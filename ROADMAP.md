@@ -18,6 +18,10 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Other planned features
 
+- **A wording pass through the whole app.** Read every screen, dialog, help text, message and the
+  README as a first-time user would: remove anything said twice (a card's text and its "?" help, the
+  same warning in two places) or not needed, replace phrasing that sounds generated with plain, short,
+  professional lab language, and keep terms the same everywhere (criteria, call, code, unblind).
 - **Analysis settings in the app.** The analysis plan, hidden repeats and the reference genotype
   set in Project settings instead of `config.json`. These are recorded when the blind set is built,
   so this needs its own plan for how they lock.
@@ -51,6 +55,14 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.11.0: **Calmer screens and faster scoring,** after a design review of the whole app. The scoring
+  criteria have their own page (Project settings keeps the name and image folders), templates are one
+  menu with their descriptions, definition fields appear when you add one, and a question's analysis
+  settings appear when you choose to test it. Finished and waiting steps on the home screen are one
+  line each, and only the next step explains itself. On the scoring page every question is a row of
+  buttons answered with one click or one number key (the focus then moves to the next question), each
+  neuron's side sits on its title line, the definitions box starts closed, and the progress, keys and
+  toolbar read more clearly. Saved scores look exactly as before.
 - 1.10.0: **Share criteria between projects and labs.** **Export criteria...** saves the scoring
   criteria as one file (questions, answers, definitions and reference images, outcomes, primary
   outcome, a name, a version and an optional citation); **Import criteria...** uses it in another

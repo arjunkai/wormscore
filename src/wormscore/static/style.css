@@ -115,7 +115,7 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 .seg button { border: 0; background: none; padding: 4px 10px; cursor: pointer; color: var(--muted); white-space: nowrap; }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button:hover:not(.on) { color: var(--text); background: var(--panel); }
-.seg button.on { background: var(--raised); color: var(--text); }
+.seg button.on { background: var(--hover); color: var(--text); box-shadow: inset 0 -2px var(--accent); }
 .seg button.l1.on { box-shadow: inset 0 -2px var(--l1); }
 .seg button.l2.on { box-shadow: inset 0 -2px var(--l2); }
 .seg button.lbg.on { box-shadow: inset 0 -2px var(--lbg); }
@@ -151,7 +151,14 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 .tabs button:disabled, .tabs button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 .hidden { display: none !important; }
 [hidden] { display: none !important; }
-/* an extra question: its text, then the answers on the same line */
+/* an answer's number key, shown only while its group has the keyboard focus */
+.opt-k { display: none; margin-left: 4px; padding: 0 4px; border: 1px solid var(--line-strong); border-radius: 3px; color: var(--muted); font-size: var(--text-xs); line-height: 1.4; font-variant-numeric: tabular-nums; }
+:is(.calls, .nq-opts, #countOptions, fieldset.radio-set):focus-within .opt-k { display: inline-block; }
+/* a question answered with buttons: its text, then the answers under it */
+div.nq { margin: 8px 0 0; }
+div.nq .nq-text { display: block; color: var(--muted); line-height: 1.4; }
+.nq-opts label { margin-right: 14px; }
+/* an extra question with a long list: its text, then the list on the same line */
 fieldset label.nq { display: flex; margin: 8px 0 0; gap: 10px; line-height: 1.4; cursor: default; }
 .nq-text { flex: 1; min-width: 0; color: var(--muted); }
 .nq-req { color: var(--warn); }
@@ -191,6 +198,9 @@ select { appearance: none; -webkit-appearance: none; padding-right: 34px; cursor
 .m-zoom img { display: block; width: 100%; height: auto; max-height: 55vh; object-fit: contain; background: #000; border-radius: var(--radius-sm); }
 .m-zoom p { margin: var(--space-sm) 0 0; color: var(--muted); font-size: var(--text-sm); line-height: 1.45; }
 .m-zoom .m-zoom-note { color: var(--faint); font-size: var(--text-xs); }
+/* a neuron's side: a small list on its title line, top right */
+fieldset.neuron { position: relative; }
+fieldset.neuron > select.side { position: absolute; top: -11px; right: 10px; width: auto; margin: 0; padding: 1px 26px 1px 8px; font-size: var(--text-xs); background-color: var(--panel); background-position: right 8px center; }
 .neuron.n1 legend { color: var(--l1); }
 .neuron.n2 legend { color: var(--l2); }
 .neuron.n3 legend { color: var(--l3); }
@@ -303,7 +313,7 @@ body.browse main { grid-template-columns: 180px 1fr 350px; }
 .tip { display: inline-flex; vertical-align: middle; margin-left: 4px; font-weight: 400; }
 .tip-btn {
   width: 18px; height: 18px; margin: 3px; padding: 0; border-radius: 50%; border: 1px solid var(--line-strong);
-  background: none; color: var(--faint); font-family: inherit; font-size: 11px; font-weight: 600; line-height: 1; cursor: pointer; flex: none;
+  background: none; color: var(--faint); font-family: inherit; font-size: var(--text-xs); font-weight: 600; line-height: 1; cursor: pointer; flex: none;
 }
 .tip-btn:hover, .tip-btn[aria-expanded="true"] { color: var(--text); border-color: var(--muted); }
 .tip-bubble {

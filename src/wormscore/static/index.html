@@ -49,12 +49,12 @@
     </div>
     <div id="canvasWrap"><canvas id="cv" role="img" aria-label="Image"></canvas></div>
     <div id="loadErr" class="load-err hidden" role="alert"><span id="loadErrText"></span><button id="loadErrRetry" type="button" class="primary">Try again</button></div>
-    <div class="hint">Keys: left/right = plane (turn in 3D), P = projection/planes, D = 3D, E = range, B = brightfield, <span id="chanKeys" class="hidden">1/2/3 = reporter/identity/both, </span>N = next image<span id="saveKeys">, <span class="mod">Ctrl</span>+Enter = save and go to the next unscored image (skips marking cells)</span></div>
+    <div class="hint">Keys: ← → plane · P planes · D 3D · E range · B brightfield · <span id="chanKeys" class="hidden">1 2 3 channel · </span>N next<span id="saveKeys"> · 1–9 answer (in a question) · <span class="mod">Ctrl</span>+Enter save and next</span></div>
   </section>
 
   <aside id="panel">
     <div class="code-row"><div class="code" id="codeTitle">-</div>
-      <button type="button" id="nextBtn" class="btn" title="Next image in the list (N)">Next image <span aria-hidden="true">&rarr;</span></button></div>
+      <button type="button" id="nextBtn" class="btn" title="Next image in the list (N). It does not save; unsaved answers are kept as a draft.">Next image <span aria-hidden="true">&rarr;</span></button></div>
     <section id="browseInfo" class="browse-info hidden" aria-label="About this image"></section>
     <div class="tabs" role="tablist" aria-label="Steps for this image">
       <button data-tab="score" class="on" role="tab" aria-selected="true">1. Score</button>
@@ -64,10 +64,10 @@
     <form id="scoreForm" class="tab" data-tab="score" autocomplete="off">
       <div id="flags"></div>
 
-      <fieldset>
+      <fieldset class="radio-set">
         <legend>Usable image? <span id="usableHelp"></span></legend>
-        <label><input type="radio" name="usable" value="yes"> Yes</label>
-        <label><input type="radio" name="usable" value="no"> No</label>
+        <label><input type="radio" name="usable" value="yes"> Yes<span class="opt-k" aria-hidden="true">1</span></label>
+        <label><input type="radio" name="usable" value="no"> No<span class="opt-k" aria-hidden="true">2</span></label>
         <select name="unusable_reason" id="reasonSelect" class="hidden"><option value="">Why not usable?</option></select>
       </fieldset>
 
@@ -80,11 +80,11 @@
       <div id="neurons"></div>
       <div id="animalQs"></div>
 
-      <fieldset>
+      <fieldset class="radio-set">
         <legend>Confidence <span id="confHelp"></span></legend>
-        <label><input type="radio" name="confidence" value="sure"> Sure</label>
-        <label><input type="radio" name="confidence" value="fairly sure"> Fairly sure</label>
-        <label><input type="radio" name="confidence" value="unsure"> Unsure</label>
+        <label><input type="radio" name="confidence" value="sure"> Sure<span class="opt-k" aria-hidden="true">1</span></label>
+        <label><input type="radio" name="confidence" value="fairly sure"> Fairly sure<span class="opt-k" aria-hidden="true">2</span></label>
+        <label><input type="radio" name="confidence" value="unsure"> Unsure<span class="opt-k" aria-hidden="true">3</span></label>
       </fieldset>
 
       <textarea name="notes" rows="3" placeholder="Notes (optional)" aria-label="Notes (optional)"></textarea>

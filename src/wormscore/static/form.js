@@ -6,22 +6,32 @@
 const wsForm = (() => {
   // defs (optional): {answer: {text, image}}; an answer's definition is also its tooltip.
   const radios = (h, name, options, defs = {}) =>
-    options.map(o => h("label", { title: defs?.[o]?.text || null }, h("input", { type: "radio", name, value: o }), ` ${o}`));
+    options.map((o, i) => h("label", { title: defs?.[o]?.text || null }, h("input", { type: "radio", name, value: o }), ` ${o}`,
+      i < 9 ? h("span", { class: "opt-k", "aria-hidden": "true" }, String(i + 1)) : null));
+  const MAX_BUTTONS = 7;       // more answers than this stay a list
 
-  // One extra question: its text, then the answers. "choose" stays until it is answered. A scale
-  // lists its levels best first, worst last; a count lists its numbers.
-  const question = (h, name, q) => h("label", { class: "nq", "data-q": q.id },
-    h("span", { class: "nq-text" }, q.label, q.required ? h("span", { class: "nq-req", title: "Required" }, " *") : null),
-    h("select", { name, ...(q.type === "scale" ? { title: "Levels from best (top) to worst (bottom)" } : {}) },
-      h("option", { value: "" }, "choose"), q.options.map(o => h("option", { title: q.definitions?.[o]?.text || null }, o))));
+  // One extra question: its text, then its answers as buttons, like the call (wormscore 1.11.0), so
+  // it is answered with one click or one number key. A long list (a count to 20, a long scale)
+  // stays a list, where "choose" stays until it is answered.
+  const question = (h, name, q) => {
+    const text = h("span", { class: "nq-text", id: `${name}_t` }, q.label,
+      q.required ? h("span", { class: "nq-req", title: "Required" }, " *") : null);
+    if (q.options.length <= MAX_BUTTONS)
+      return h("div", { class: "nq", "data-q": q.id, role: "radiogroup", "aria-labelledby": `${name}_t` },
+        text, h("div", { class: "nq-opts" }, radios(h, name, q.options, q.definitions)));
+    return h("label", { class: "nq", "data-q": q.id }, text,
+      h("select", { name, ...(q.type === "scale" ? { title: "Levels from best (top) to worst (bottom)" } : {}) },
+        h("option", { value: "" }, "choose"), q.options.map(o => h("option", { title: q.definitions?.[o]?.text || null }, o))));
+  };
 
   const neurons = (h, sc) => sc.neurons.map((name, i) => {
     const n = i + 1;
     return h("fieldset", { class: `neuron n${n}` },
       h("legend", {}, name),
       h("div", { class: "calls" }, radios(h, `n${n}_call`, sc.calls, sc.call_definitions)),
-      sc.sides.length ? h("select", { name: `n${n}_side`, "aria-label": `${name}: side` },
-        h("option", { value: "unknown" }, "side unknown"), sc.sides.map(s => h("option", {}, s))) : null,
+      // the side sits on the neuron's title line, so it costs no row of its own
+      sc.sides.length ? h("select", { name: `n${n}_side`, class: "side", "aria-label": `${name}: side` },
+        h("option", { value: "unknown" }, "side ?"), sc.sides.map(s => h("option", {}, s))) : null,
       sc.neuron_questions.map(q => question(h, `n${n}_${q.id}`, q)));
   });
 
@@ -32,12 +42,14 @@ const wsForm = (() => {
     : [];
 
   // What each answer means (wormscore 1.9.0): the definition and reference image of each call and
-  // each Choice or Scale answer, in one box above the neurons. [] if no answer has one. Open by
-  // default; closing it is remembered on this computer.
+  // each Choice or Scale answer, in one box above the neurons. [] if no answer has one. On the
+  // scoring page it starts closed, so the questions fit without scrolling (each answer's
+  // definition is also its tooltip); opening it is remembered. The criteria preview shows it open.
   const OPEN_KEY = "wormscore.meaningsOpen";
   const has = d => d && (d.text || d.image);
-  function meanings(h, sc) {
+  function meanings(h, sc, opts = {}) {
     const groups = [];
+    let n = 0;
     const group = (title, answers, defs) => {
       const rows = answers.filter(a => has(defs?.[a])).map(a => {
         const d = defs[a];
@@ -48,17 +60,18 @@ const wsForm = (() => {
             "aria-label": `Show the reference image for ${a}`, onclick: () => zoom(h, d.image, `${title}: ${a}`, d.text) },
             h("img", { src: "/" + d.image, alt: "", loading: "lazy" })) : null);
       });
+      n += rows.length;
       if (rows.length) groups.push(h("div", { class: "m-group" }, h("div", { class: "m-head" }, title), ...rows));
     };
     group("Call", sc.calls, sc.call_definitions);
     for (const q of [...(sc.neuron_questions || []), ...(sc.animal_questions || [])])
       group(q.label, q.options, q.definitions);
     if (!groups.length) return [];
-    let open = true;
-    try { open = localStorage.getItem(OPEN_KEY) !== "0"; } catch { /* storage blocked: stay open */ }
+    let open = !!opts.open;
+    if (!opts.open) try { open = localStorage.getItem(OPEN_KEY) === "1"; } catch { /* storage blocked: closed */ }
     return [h("details", { class: "meanings", open, ontoggle: e => {
-      try { localStorage.setItem(OPEN_KEY, e.target.open ? "1" : "0"); } catch { /* not remembered */ }
-    } }, h("summary", {}, "What each answer means"), ...groups)];
+      if (!opts.open) try { localStorage.setItem(OPEN_KEY, e.target.open ? "1" : "0"); } catch { /* not remembered */ }
+    } }, h("summary", {}, `What each answer means (${n})`), ...groups)];
   }
 
   // An X that closes, drawn as a line icon so it matches the text colour in both themes.
@@ -101,11 +114,11 @@ const wsForm = (() => {
     sc.neurons.forEach((_, i) => {
       const call = callOf(form, i + 1);
       for (const q of sc.neuron_questions) {
-        const sel = form.querySelector(`[name="n${i + 1}_${q.id}"]`);
-        if (!sel) continue;
+        const els = [...form.querySelectorAll(`[name="n${i + 1}_${q.id}"]`)];
+        if (!els.length) continue;
         const skip = skipped(q, call);
-        sel.closest(".nq").hidden = skip;
-        if (skip) sel.value = "";
+        els[0].closest(".nq").hidden = skip;
+        if (skip) for (const el of els) { if (el.type === "radio") el.checked = false; else el.value = ""; }
       }
     });
   }

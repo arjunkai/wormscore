@@ -229,15 +229,16 @@ function welcome() {
 const breakable = path => path.split(/(?<=[\\/])/).map(part => h("span", {}, part));
 
 function stepCard(n, state, title, desc, fact, actions, extra) {
-  const chip = { done: ["done", "Done"], next: ["next", "Next"], running: ["running", "Running"], wait: ["wait", "Waiting"],
-    changed: ["changed", "Changed"] }[state];
-  return h("li", { class: `step ${state}` },
-    h("div", { class: "num", "aria-label": state === "done" ? `Step ${n}, done` : `Step ${n}` },
-      state === "done" ? icon("check", 18) : n),
-    h("div", {},
-      h("div", { class: "s-title" }, title, h("span", { class: `chip ${chip[0]}` }, chip[1])),
-      h("div", { class: "s-desc" }, desc),
-      fact ? h("div", { class: "s-fact" }, fact) : null,
+  // the check already says done; a waiting step says so by being quiet
+  const chip = { next: ["next", "Next"], running: ["running", "Running"], changed: ["changed", "Changed"] }[state];
+  const quiet = state === "done" || state === "wait";
+  return h("li", { class: `step ${state}${quiet ? " compact" : ""}` },
+    h("div", { class: "num", "aria-label": state === "done" ? `Step ${n}, done` : state === "wait" ? `Step ${n}, waiting` : `Step ${n}` },
+      state === "done" ? icon("check", 16) : n),
+    h("div", { class: "s-body" },
+      h("div", { class: "s-title" }, title, chip ? h("span", { class: `chip ${chip[0]}` }, chip[1]) : null),
+      quiet ? null : h("div", { class: "s-desc" }, desc),
+      fact && state !== "wait" ? h("div", { class: "s-fact" }, fact) : null,
       extra || null),
     h("div", { class: "s-act" }, actions));
 }
@@ -269,13 +270,12 @@ function resultsCard(p) {
 
 // The scoring criteria card: what the scorer answers, then whether they are recorded or locked.
 function formFact(f) {
-  const parts = [`a call with ${f.calls} choices`];
+  const parts = [`a call (${f.calls} choices)`];
   if (f.neuron_questions) parts.push(plural(f.neuron_questions, "question"));
   const ask = `Each neuron: ${parts.join(" and ")}` + (f.animal_questions ? `. Each animal: ${plural(f.animal_questions, "question")}` : "") + ".";
-  const status = f.changed_after_lock ? " Changed after scoring began, so unblinding runs no planned test until they are changed back."
-    : f.locked ? " Locked at the first score."
-    : f.recorded ? " Recorded in log.md; you can change them until the first score."
-    : " Open them, check the questions, and press Save to record them.";
+  const status = f.changed_after_lock ? " Changed after scoring began: no planned test runs until they are changed back."
+    : f.locked ? " Locked."
+    : f.recorded ? "" : " Check them and press Save.";
   return ask + status;
 }
 
@@ -306,28 +306,27 @@ function renderMain(d) {
   const s4 = stepRunning("unblind") ? "running" : p.unblinded ? "done" : allScored ? "next" : "wait";
 
   const steps = h("ol", { class: "steps" },
-    stepCard(1, s1, ["Scan data", wsHelp(h, "scan", "Scan data")], "Find every image in your folders and read its channels from the file's metadata.",
+    stepCard(1, s1, ["Scan data", wsHelp(h, "scan", "Scan data")], "Find every image in your folders.",
       needFolders ? "First tell wormscore where your images are and how file names show the genotype."
-        : scanned ? `${plural(p.scanned, "raw image")} found. Scan again if you added files.` : null,
+        : scanned ? `${plural(p.scanned, "image")} found.` : null,
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
         scanned ? "Scan again" : "Scan data")]),
-    stepCard(2, sF, ["Set scoring criteria", wsHelp(h, "criteria", "scoring criteria")], "Choose what the scorer answers for each image: the calls, the questions and what counts as a defect. They are written to log.md and locked once the first image is scored.",
+    stepCard(2, sF, ["Set scoring criteria", wsHelp(h, "criteria", "scoring criteria")], "Choose what the scorer answers for each image and what counts as a defect.",
       f ? formFact(f) : null,
       [h("button", { class: sF === "next" ? "primary" : "btn", "data-k": "form", disabled: busy || !ok, onclick: () => openProjectSettings("form") },
         f?.locked ? "View criteria" : formDone ? "Edit criteria..." : "Set criteria...")]),
-    stepCard(3, s2, ["Build blind set", wsHelp(h, "blind_set", "a blind set")], "Apply the inclusion rules, give every image a random code, and record the analysis plan and scoring criteria in log.md.",
+    stepCard(3, s2, ["Build blind set", wsHelp(h, "blind_set", "a blind set")], "Give every image a random code, so scoring is blind.",
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
       [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
         !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")]),
-    stepCard(4, s3, ["Score", wsHelp(h, "score", "Score")], "Score each coded image in the scoring window. File names and genotypes stay hidden.",
+    stepCard(4, s3, ["Score", wsHelp(h, "score", "Score")], "Score each coded image. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
       [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },
         allScored ? "Open scoring" : p.scored ? "Continue scoring" : "Start scoring")],
       built && p.coded && !building ? h("div", { class: "mini" }, h("div", { style: `width:${Math.min(100, 100 * p.scored / p.coded)}%` })) : null),
-    stepCard(5, s4, ["Unblind", wsHelp(h, "unblind", "Unblind")], "Reveal which genotype each code was, then write the results tables and a draft Methods text. Do this only when scoring is finished.",
-      p.unblinded ? "Results are in the outputs\\unblinded folder." + ((p.second_scorers || []).some(s => s.imported)
-        ? " Agreement with second scorers is in between_scorers.csv." : "") : null,
+    stepCard(5, s4, ["Unblind", wsHelp(h, "unblind", "Unblind")], "Reveal the genotypes and write the results. Do this when scoring is finished.",
+      p.unblinded ? "Results are in outputs\\unblinded." : null,
       p.unblinded
         ? [h("button", { class: p.results ? "btn" : "primary", "data-k": "results", onclick: () => act("/api/open", { what: "results" }) }, "Open results"),
            h("button", { class: "btn subtle", "data-k": "step4", disabled: busy || !built || !p.scored,
@@ -340,7 +339,7 @@ function renderMain(d) {
 
   main.replaceChildren(h("div", { class: "wrap" },
     h("div", { class: "p-head" },
-      h("div", {}, h("h2", {}, p.name || "Project"), h("div", { class: "p-path" }, breakable(p.path))),
+      h("div", {}, h("h2", {}, p.name || "Project"), h("div", { class: "p-path", title: p.path }, shortPath(p.path))),
       h("div", { class: "p-tools" },
         h("button", { class: "btn", "data-k": "folder", disabled: !p.exists, onclick: () => act("/api/open", { what: "folder" }) }, "Open folder"),
         p.browse && p.browse !== "none" ? h("button", {
@@ -398,8 +397,8 @@ function secondScorerCard(p, busy) {
     h("div", { class: "x-head" },
       h("div", {},
         h("div", { class: "s-title" }, "Second scorer", wsHelp(h, "second_scorer", "a second scorer"), h("span", { class: "chip wait" }, "Optional")),
-        h("div", { class: "s-desc" }, "Another person scores some of the coded images on their own, from a package with no key. "
-          + "Unblinding compares their answers with yours (inter-rater agreement: percent agreement and Cohen's kappa); your results never use them.")),
+        h("div", { class: "s-desc" }, "Someone else scores a share of the images on their own. Unblinding reports how well "
+          + "you agree; your results use only your answers.")),
       h("div", { class: "x-act" },
         h("button", { class: "btn", "data-k": "pk-make", disabled: busy, onclick: makePackage }, "Make a package..."),
         list.length ? h("button", { class: "btn", "data-k": "pk-import", disabled: busy, onclick: importScores }, "Import scores...") : null)),
@@ -564,8 +563,15 @@ function formSection(info) {
     pick.click();
     setTimeout(() => pick.remove(), 60000);
   };
+  const opened = new Set();     // answers whose empty definition line was asked for
   const defLine = (what, get, put) => {
     const d = get();
+    if (!d.text && !d.image && !opened.has(what)) return off ? null : h("button", { class: "linkish sf-def-add",
+      "aria-label": `Add a definition for ${what}`, onclick: () => {
+        opened.add(what);
+        drawAll();
+        edit.querySelector(`[aria-label="${CSS.escape(what)}: definition"]`)?.focus();
+      } }, "Add definition");
     return h("div", { class: "sf-def" },
       h("span", { class: "sf-def-k", "aria-hidden": "true" }, "means"),
       text(d.text, v => put({ text: v }), { placeholder: "What it looks like (optional)", "aria-label": `${what}: definition`, maxlength: 300 }),
@@ -574,7 +580,9 @@ function formSection(info) {
           onclick: () => wsForm.zoom(h, d.image, what, d.text) }, h("img", { src: "/" + d.image, alt: "" })),
         off ? null : h("button", { class: "ghost icon sm", title: "Remove the image", "aria-label": `Remove the reference image for ${what}`,
           onclick: () => { put({ image: "" }); drawAll(); } }, icon("close", 14)))
-        : off ? null : h("button", { class: "btn subtle sm sf-add-img", title: "A PNG or JPEG example of this answer, shown to the scorer",
+        : off ? null : h("button", { class: "btn subtle sm sf-add-img",
+          title: "A PNG or JPEG example from outside this blind set, such as a pilot or a published figure. "
+            + "The scorer compares its shape; its brightness depends on how it was saved.",
           "aria-label": `Add a reference image for ${what}`, onclick: e => addImage(what, put, e.currentTarget) }, "Add image"));
   };
   const callDef = (c, j) => defLine(`Call ${j + 1}`, () => ({ text: c.def || "", image: c.image || "" }),
@@ -599,10 +607,7 @@ function formSection(info) {
 
   const callsCard = () => h("div", { class: "s-card sf-card" },
     h("div", { class: "f-label" }, "Call for each neuron"),
-    h("div", { class: "f-help" }, "Tick the calls that count as a defect. Keep them in order from normal to not seen: "
-      + "the last call means the neuron was not seen. Each call can have a definition and a reference image, shown to "
-      + "the scorer. Take the image from outside this blind set (a pilot or a published figure); the scorer compares "
-      + "its shape, since its brightness depends on how it was saved."),
+    h("div", { class: "f-help" }, "Tick the calls that count as a defect. The last call means the neuron was not seen."),
     m.calls.flatMap((c, j) => [h("div", { class: "sf-row" },
       text(c.text, v => {
         for (const q of m.questions) q.skip_when = q.skip_when.map(s => s === c.text ? v : s);
@@ -685,20 +690,21 @@ function formSection(info) {
           v => { q.skip_when = m.calls.map(x => x.text).filter(x => x === c.text ? v : q.skip_when.includes(x)); }))))),
         ...row("", check(q.required, "Required (Save waits until it is answered)", v => { q.required = v; })),
         h("div", { class: "sf-split", role: "presentation" }, "Analysis"),
-        ...row("Outcome",
-          text(q.outcome, v => { q.outcome = v; }, { placeholder: "Not tested (answers only recorded)", list: ranked ? null : "sfOutcomes",
+        ...row("", check(!!q.outcome, "Test this question at unblinding", v => {
+          q.outcome = v ? (q.label.replace(/\?+$/, "").trim().toLowerCase().slice(0, 60) || `question ${j + 1}`) : "";
+        })),
+        ...(!q.outcome ? [] : row("Outcome",
+          text(q.outcome, v => { q.outcome = v; }, { list: ranked ? null : "sfOutcomes",
             "aria-label": `Question ${j + 1}: outcome name`, onchange: () => drawAll() }),
-          h("div", { class: "f-help" }, !q.outcome ? "Name an outcome to test this question at unblinding."
-            : ranked ? "Tested on its own: one value per animal, Mann-Whitney test between genotypes."
-              : "Questions with the same outcome name are combined; Fisher's exact test between genotypes.")),
-        ...(ranked ? [] : row("Defect if", h("div", { class: "sf-opts" }, answers.map(a => check(q.defect.includes(a), a,
+          h("div", { class: "f-help" }, ranked ? "One value per animal, compared with the Mann-Whitney test."
+            : "Questions with the same outcome name are combined; Fisher's exact test."))),
+        ...(ranked || !q.outcome ? [] : row("Defect if", h("div", { class: "sf-opts" }, answers.map(a => check(q.defect.includes(a), a,
           v => { q.defect = answers.filter(x => x === a ? v : q.defect.includes(x)); }))))),
         ...(ranked && q.outcome && !perAnimal ? row("Per animal", h("select", { class: "f-input sf-select", disabled: off,
           "aria-label": `Question ${j + 1}: value per animal`, onchange: e => { q.rollup = e.target.value; } },
           ROLLUPS[q.type].map(r => h("option", { value: r, selected: (q.rollup || ROLLUPS[q.type][0]) === r }, ROLLUP_NAMES[r])))) : []),
         ...(ranked && q.outcome ? row("Cutoff", cutoffSelect(q, j),
-          h("div", { class: "f-help" }, "Optional: the share of animals at or past it is also compared, with "
-            + "Fisher's exact test.")) : [])));
+          h("div", { class: "f-help" }, "Optional: the share of animals at or past it is also compared.")) : [])));
   };
 
   // A scale's levels, one per row, best at the top and worst at the bottom: the order is what the test compares.
@@ -709,9 +715,8 @@ function formSection(info) {
         { "aria-label": `Question ${j + 1}: level ${k + 1}`, onchange: () => drawAll() }),
       tools(q.options, k, `level ${k + 1}`, 2)), h("div", { class: "sf-level-def" }, answerDef(q, j, lv))]),
     q.options.length > (info.warn_levels || 5) ? h("div", { class: "pv warn sf-levels-warn" },
-      `${q.options.length} levels. Scorers usually agree less above about ${info.warn_levels || 5} levels `
-      + "(Gibson-Corley, Olivier and Meyerholz 2013, Vet Pathol). Keep a published scale as it is; with hidden "
-      + "repeats or a second scorer, unblinding reports a weighted kappa for this scale.") : null,
+      `${q.options.length} levels. Scorers usually agree less above about ${info.warn_levels || 5} (Gibson-Corley et al. 2013). `
+      + "Keep a published scale as it is; unblinding reports a weighted kappa for it.") : null,
     off || q.options.length >= info.max_levels ? null : h("button", { class: "btn subtle add sm", onclick: () => {
       q.options.push("");
       drawAll();
@@ -724,8 +729,7 @@ function formSection(info) {
     return h("section", { class: "sf-section", "aria-label": "Extra questions" },
       h("div", { class: "sf-section-head" },
         h("div", { class: "f-label" }, "Extra questions"),
-        h("div", { class: "f-help" }, "Asked for each neuron or once per animal. Yes / No and Choice answers can count as a "
-          + "defect; a Scale (levels in order) or a Count gives each animal a value.")),
+        h("div", { class: "f-help" }, "Asked for each neuron or once per animal.")),
       h("datalist", { id: "sfOutcomes" }, outcomes().map(o => h("option", { value: o }))),
       m.questions.length ? m.questions.map(questionCard) : h("div", { class: "f-help sf-none" }, "None. The call is the only answer for each neuron."),
       nNeuron > info.warn_questions ? h("div", { class: "pv warn" },
@@ -745,15 +749,14 @@ function formSection(info) {
     if (m.primary && m.primary !== "calls" && !names.includes(m.primary)) m.primary = "";
     return h("div", { class: "s-card sf-card" },
       h("div", { class: "f-label" }, h("label", { for: "sfPrimary" }, "Primary outcome"), wsHelp(h, "primary_outcome", "a primary outcome")),
-      h("div", { class: "f-help" }, "Name the one result the study is about before scoring starts. The results "
-        + "and Methods then label it primary and every other test secondary."),
+      h("div", { class: "f-help" }, "The one result the study is about. Every other test is then secondary."),
       h("select", { id: "sfPrimary", class: "f-input sf-select", disabled: off, onchange: e => { m.primary = e.target.value; } },
         [["", "Not named"], ["calls", "Neuron calls (any defect call)"], ...names.map(n => [n, n])]
           .map(([v, l]) => h("option", { value: v, selected: m.primary === v }, l))));
   };
 
   const moreCard = () => h("details", { class: "s-card sf-card sf-more" },
-    h("summary", {}, "Asked once per image: the count question, general rules and reasons an image is unusable"),
+    h("summary", {}, "Per-image questions and general rules"),
     h("label", { class: "f-label", for: "sfCount" }, "Count question (one per image)"),
     text(m.count.label, v => { m.count.label = v; }, { id: "sfCount" }),
     // its own label, so the answers do not read as a second line of the question
@@ -816,16 +819,15 @@ function formSection(info) {
     document.body.append(pick);
     pick.click();
   };
+  const template = async () => {
+    const id = await ask("Start from a template", "It replaces the criteria below. Nothing is saved until you press Save.",
+      info.presets.map(p => ({ value: p.id, label: p.title, desc: p.desc + (p.source ? ` After ${p.source}.` : "") })));
+    if (!id) return;
+    try { Object.assign(m, (await api("/api/project-settings", { action: "preset", preset: id })).model); drawAll(); }
+    catch (e) { toast(e.message); }
+  };
   const start = () => h("div", { class: "sf-start" },
-    ...(off ? [] : [h("span", { class: "f-help" }, "Start from:"),
-      ...info.presets.map(p => h("button", { class: "btn subtle", title: p.desc + (p.source ? ` Source: ${p.source}.` : ""), onclick: async () => {
-        const go = await ask(`Start from ${p.title}?`, `${p.desc}${p.source ? `\nWording after ${p.source}.` : ""}\n`
-          + "This replaces the criteria below. Nothing is saved until you press Save.",
-          [{ value: true, label: "Replace the criteria" }]);
-        if (!go) return;
-        try { Object.assign(m, (await api("/api/project-settings", { action: "preset", preset: p.id })).model); drawAll(); }
-        catch (e) { toast(e.message); }
-      } }, p.title))]),
+    off ? null : h("button", { class: "btn", onclick: template }, "Start from a template..."),
     h("span", { class: "sf-share" },
       off ? null : h("button", { class: "btn subtle", title: "Use criteria exported from another project or lab", onclick: importCriteria }, "Import criteria..."),
       h("button", { class: "btn subtle", title: "Save these criteria as one file to share", onclick: exportCriteria }, "Export criteria...")),
@@ -838,7 +840,7 @@ function formSection(info) {
       onchange: e => { if (/^n\d+_call$/.test(e.target.name)) wsForm.syncSkips(f, sc); } },
       sc.rules.length ? h("ul", { class: "sf-rules" }, sc.rules.map(r => h("li", {}, r))) : null,
       h("fieldset", {}, h("legend", {}, sc.count_question.label), h("div", {}, wsForm.radios(h, "cells_seen", sc.count_question.options))),
-      ...wsForm.meanings(h, sc), ...wsForm.neurons(h, sc), ...wsForm.animal(h, sc));
+      ...wsForm.meanings(h, sc, { open: true }), ...wsForm.neurons(h, sc), ...wsForm.animal(h, sc));
     wsForm.syncSkips(f, sc);
     prev.replaceChildren(h("div", { class: "sf-prev-head" }, h("span", { class: "f-label" }, "Preview"),
       h("span", { class: "f-help" }, "What the scorer answers for each image. Click a call to see the skips.")), f);
@@ -946,11 +948,13 @@ async function openProjectSettings(section) {
     sources: cur.sources.map((s, i) => ({ ...s, path: example(s.path) ? "" : s.path, from: i })) };
   if (!model.sources.length) model.sources.push(blankSource());
   const locked = cur.locked;
-  const form = formSection(cur.form);
-  // form_checked: opened from the Score form step, so Save records the form even if unchanged
-  const payload = () => ({ project_name: model.project_name, sources: model.sources,
-    ...(form.payload() ? { form: form.payload(), form_checked: section === "form",
-      ...(form.reason() ? { unlock_reason: form.reason() } : {}) } : {}) });
+  // Two pages: the scoring criteria (opened from step 2) and the project's name and image folders.
+  const criteria = section === "form";
+  const form = criteria ? formSection(cur.form) : null;
+  // form_checked: opened from the criteria step, so Save records the criteria even if unchanged
+  const payload = () => criteria
+    ? (form.payload() ? { form: form.payload(), form_checked: true, ...(form.reason() ? { unlock_reason: form.reason() } : {}) } : {})
+    : { project_name: model.project_name, sources: model.sources };
   const box = h("div", { class: "settings ps" });
   const err = h("div", { class: "m-err", role: "alert", hidden: true });
   let pvTimer = null, previews = [];
@@ -1021,25 +1025,20 @@ async function openProjectSettings(section) {
           rules(s, "exclude", "match", "reason", ["Pattern, e.g. *test*", "Reason", "Add a rule"], off)),
         h("div", { class: `pv ${cls}`, "aria-live": "polite" }, text));
     });
-    const jump = (id, label) => h("button", { class: "linkish", onclick: () => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" }) }, label);
+    if (criteria) return box.replaceChildren(form.el);
     box.replaceChildren(
-      h("nav", { class: "ps-jump", "aria-label": "Sections of this page" }, "Go to: ",
-        jump("psProj", "Project"), " \u00b7 ", jump("psFolders", "Image folders"), " \u00b7 ", jump("sfHead", "Scoring criteria")),
-      h("h4", { id: "psProj" }, "Project"),
       h("div", { class: "s-card src" }, h("label", { class: "f-label", for: "psName" }, "Project name"),
         field(model, "project_name", { id: "psName" })),
       h("h4", { id: "psFolders" }, "Image folders"),
       ...cards,
       h("button", { class: "btn add-src", onclick: () => { model.sources.push(blankSource()); draw("src"); } }, "Add image folder"),
-      h("h4", { id: "sfHead" }, "Scoring criteria"),
-      form.el,
       h("div", { class: "f-help sf-config" }, "The marker, statistics and other settings are in config.json: ",
         h("button", { class: "linkish", onclick: () => tryLeave("config") }, "edit config.json"), "."));
     if (focusLast === "src") $$(".ps .src").at(-1)?.querySelector("input")?.focus();
     else if (focusLast) [...document.querySelectorAll(".ps .rules")].find(r => r.contains(document.activeElement))?.querySelector(".rule:last-of-type input")?.focus();
   };
   draw();
-  preview();
+  if (!criteria) preview();
   // A page in the main area, not an overlay: the form is long, and the project list stays in view.
   const leave = what => {
     clearTimeout(pvTimer);
@@ -1072,7 +1071,8 @@ async function openProjectSettings(section) {
   const confirmLeave = async () => {
     if (JSON.stringify(payload()) === snapshot) return true;
     const v = await ask("Save your changes?",
-      "You changed these settings or the scoring criteria, and the changes are not saved yet.",
+      criteria ? "You changed the scoring criteria, and the changes are not saved yet."
+        : "You changed these settings, and the changes are not saved yet.",
       [{ value: "discard", label: "Discard changes", danger: true }, { value: "save", label: "Save" }], "Keep editing");
     if (v === "save") return await save();     // a save that fails keeps the page open, with the error
     return v === "discard";
@@ -1084,7 +1084,8 @@ async function openProjectSettings(section) {
   st.settingsOpen = path;
   const page = h("div", { class: "wrap ps-page", onkeydown: e => { if (e.key === "Escape") tryLeave(); } },
     h("div", { class: "p-head" },
-      h("div", {}, h("h2", { id: "psTitle", tabindex: "-1" }, "Project settings"), h("div", { class: "p-path" }, breakable(path)))),
+      h("div", {}, h("h2", { id: "psTitle", tabindex: "-1" }, criteria ? "Scoring criteria" : "Project settings"),
+        h("div", { class: "p-path", title: path }, shortPath(path)))),
     box,
     h("div", { class: "ps-foot" }, err, h("span", { class: "grow" }),
       h("button", { class: "btn subtle", onclick: () => tryLeave() }, "Cancel"),
@@ -1095,7 +1096,6 @@ async function openProjectSettings(section) {
   // without typing into anything, so the name cannot be changed by accident.
   if (section === "form") {
     $("#psTitle")?.focus({ preventScroll: true });   // keyboard focus on the page, so Escape works
-    $("#sfHead")?.scrollIntoView();
   }
   else if (section === "new") {
     const name = $("#psName");
@@ -1134,7 +1134,7 @@ function renderUpdate(d) {
   const open = busy || u.phase === "error" || (u.result && !u.result.ok) || ((u.show || st.updOpen) && u.newer);
   const pill = $("#updPill");
   pill.hidden = !(u.newer && !open && !busy);
-  pill.textContent = `${u.latest} available`;
+  pill.textContent = u.latest ? `${u.latest} available` : "";
   if (u.result?.ok && !st.resultShown) {
     st.resultShown = true;
     toast(`wormscore is now ${d.version}.` + (u.previous ? ` Settings can go back to ${u.previous}.` : ""), "ok");

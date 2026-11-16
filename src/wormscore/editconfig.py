@@ -97,6 +97,8 @@ def merged(project, body):
     project = Path(project)
     info = current(project)              # refuses packages
     raw = _raw(project)
+    if "sources" not in body and "project_name" not in body:
+        return raw                       # the Scoring criteria page: only the criteria change
     name, sources = clean(body)
     old = raw.get("sources", [])
     locked = info["locked"]
