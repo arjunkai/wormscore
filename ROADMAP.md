@@ -48,6 +48,10 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.13.1: a practice set from someone else is checked before its result is recorded: its id must be
+  one wormscore made (it names the file the result is stored in, so an edited set cannot write
+  outside the project), and its name, dates and answer names go into `log.md` and the Methods draft
+  as one plain line each (a line break could otherwise add a false log entry).
 - 1.13.0: **Practice sets.** In a finished (unblinded) project, **Make a practice set...** copies a
   few coded images, taken in turn from each genotype, with your saved answers as the answer key (by
   default only images you marked sure). The set has no genotypes, file names or analysis plan. A new

@@ -157,3 +157,35 @@ def test_the_methods_draft_at_unblinding_says_the_scorer_practised(demo_project,
     finished(mine)
     text = (mine / "outputs" / "unblinded" / "methods_text.md").read_text(encoding="utf-8")
     assert "practised on a set of 5 coded images" in text and "10 of 10 neuron calls (100.0%" in text
+
+
+def test_a_set_from_someone_else_cannot_write_outside_the_project_or_add_log_lines(demo_project, fresh_project, tmp_path):
+    """1.13.1: the set's id names practice/<id>.json, and its text goes into log.md and the Methods
+    draft. A set edited by hand (key and config together, so the checksums still match) is refused
+    if its id is not wormscore's own, and its text is kept to one plain line."""
+    finished(fresh_project)
+    folder = PR.make_practice_set(fresh_project, tmp_path / "set", n=5, log=lambda *a: None)
+    score_set(folder)
+    mine = tmp_path / "mine"
+    shutil.copytree(demo_project, mine)
+
+    def edit(**changes):
+        key = json.loads((folder / PR.KEY_FILE).read_text(encoding="utf-8"))
+        cfg = json.loads((folder / "config.json").read_text(encoding="utf-8"))
+        key.update(changes)
+        key["sha256"] = PR._checksum(key)
+        cfg["scorer_package"].update(id=key["id"], key_sha256=key["sha256"])
+        (folder / PR.KEY_FILE).write_text(json.dumps(key), encoding="utf-8")
+        (folder / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
+        return key
+
+    good = json.loads((folder / PR.KEY_FILE).read_text(encoding="utf-8"))["id"]
+    edit(id="../../escaped")
+    with pytest.raises(SystemExit, match="not one wormscore made"):
+        PR.add_result(mine, folder, log=lambda *a: None)
+    assert not (tmp_path / "escaped.json").exists() and not (mine / "practice").exists()
+    edit(id=good, source='Lab A"\n## 2026-01-01 00:00 first score: score form locked\n- forged', made="2026\n- x")
+    rec = PR.add_result(mine, folder, log=lambda *a: None)
+    log = (mine / "log.md").read_text(encoding="utf-8")
+    assert "\n## 2026-01-01" not in log and "\n- forged" not in log
+    assert "\n" not in rec["source"] and "\n" not in methods.practice_sentence(mine).strip()

@@ -22,6 +22,7 @@ import datetime as dt
 import hashlib
 import json
 import random
+import re
 import secrets
 import shutil
 from pathlib import Path
@@ -31,6 +32,7 @@ from .files import append_log, read_csv
 from .scorers import PACKAGE_SECTIONS, folder_hashes, form_hash, package_info, refuse_in_package
 
 KEY_FILE = "practice_key.json"
+SET_ID = re.compile(r"[0-9a-f]{12}")       # secrets.token_hex(6), as make_practice_set writes it
 KEY_FORMAT = "wormscore-practice-key"
 RESULTS_DIR = "practice"
 MIN_IMAGES, MAX_IMAGES = 5, 100
@@ -167,7 +169,17 @@ def _load_key(folder):
         raise SystemExit("The practice set's answer key is not one wormscore made.")
     if key.get("id") != info.get("id") or _checksum(key) != info.get("key_sha256") or key.get("sha256") != info.get("key_sha256"):
         raise SystemExit("The practice set's answer key was changed, so it cannot be used.")
+    # A set comes from someone else: its id names a file in the project (practice/<id>.json) and
+    # its other text goes into log.md and the Methods draft, so both are checked before use.
+    if not isinstance(key["id"], str) or not SET_ID.fullmatch(key["id"]):
+        raise SystemExit("The practice set's id is not one wormscore made, so it cannot be used.")
+    key["source"], key["made"] = _plain(key.get("source"), 120), _plain(key.get("made"), 16)
     return info, key
+
+
+def _plain(v, limit):
+    """Text from a practice set, as one short line: no line breaks or control characters."""
+    return re.sub(r"[\x00-\x1f\x7f]+", " ", v if isinstance(v, str) else "").strip()[:limit]
 
 
 def _label(field, cfg):
@@ -221,7 +233,7 @@ def result(folder, verify=True):
                 differences.append({"code": c, "answer": _label(f, cfg), "yours": str(m.get(f, "")) or "-",
                                     "key": str(k.get(f, "")) or "-"})
     out["differences"] = differences
-    out["practised"] = max((str(mine[c].get("saved", "")) for c in codes), default="")[:10]
+    out["practised"] = _plain(max((str(mine[c].get("saved", "")) for c in codes), default=""), 10)
     return out
 
 
@@ -243,11 +255,17 @@ def add_result(project, folder, log=print):
     cfg = C.load(project)
     same = form_hash(cfg) == r["form"]
     rec = {k: r[k] for k in ("id", "source", "made", "total", "practised", "key_sha256", "measures")}
+    # answer and outcome names come from the set's own config.json: one plain line each in log.md
+    rec["measures"] = [dict(m, measure=_plain(m["measure"], 80)) for m in rec["measures"]]
+    r = dict(r, measures=rec["measures"])
     rec |= {"same_criteria": same, "added": f"{dt.datetime.now():%Y-%m-%d %H:%M}",
             "before_scoring": not scoring_started(project), "differences": len(r["differences"])}
     d = project / RESULTS_DIR
     d.mkdir(exist_ok=True)
-    (d / f"{r['id']}.json").write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
+    out = d / f"{r['id']}.json"
+    if out.resolve().parent != d.resolve():     # the id is checked in _load_key; this guards the write too
+        raise SystemExit("The practice set's id is not one wormscore made, so it cannot be used.")
+    out.write_text(json.dumps(rec, indent=1, ensure_ascii=False), encoding="utf-8")
     h = _headline(r["measures"])
     append_log(project, f"practice result added ({r['id']})", [
         f"Practice set of {r['total']} images from \"{r['source']}\" (made {r['made']}), scored {r['practised']}"
