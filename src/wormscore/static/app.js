@@ -251,7 +251,10 @@ function buildForm() {
   sc.neurons.forEach((name, i) => { st.colors[name] = PALETTE[i % PALETTE.length]; });
   $("#meanings").replaceChildren(...wsForm.meanings(h, sc));
   $("#neurons").replaceChildren(...wsForm.neurons(h, sc));    // form.js, shared with the form preview
+  $("#sideQs").replaceChildren(...wsForm.sides(h, sc));
   $("#animalQs").replaceChildren(...wsForm.animal(h, sc));
+  // a form can ask no count for each image (1.14.0)
+  st.noCount = !sc.count_question.options.length;
 
   st.colors.background = BG_COLOR;
   const labels = [...sc.neurons, "background"];
@@ -306,6 +309,9 @@ function answerLabel(k) {
   }
   m = /^a_(.+)$/.exec(k);
   if (m) return (sc.animal_questions || []).find(x => x.id === m[1])?.label || m[1];
+  m = /^(left|right)_(.+)$/.exec(k);
+  const sq = m && (sc.side_questions || []).find(x => x.id === m[2]);
+  if (sq) return `${m[1] === "left" ? "Left" : "Right"} side: ${sq.label}`;
   return k;
 }
 
@@ -1022,8 +1028,9 @@ function syncUsable() {
   const usable = $("#scoreForm").querySelector('input[name="usable"]:checked')?.value;
   $("#reasonSelect").classList.toggle("hidden", usable !== "no");
   if (usable !== "no") $("#reasonSelect").value = "";
-  $("#countField").classList.toggle("hidden", usable === "no");
+  $("#countField").classList.toggle("hidden", usable === "no" || !!st.noCount);
   $("#neurons").classList.toggle("hidden", usable === "no");
+  $("#sideQs").classList.toggle("hidden", usable === "no");
   $("#animalQs").classList.toggle("hidden", usable === "no");
 }
 
@@ -1058,7 +1065,7 @@ $("#scoreForm").addEventListener("submit", async e => {
   const v = Object.fromEntries([...fd.entries()].filter(([k]) => !k.startsWith("flag_")));
   if (v.usable === "no") {
     // answers about cells do not apply to an unusable image, so they are not saved
-    for (const k of Object.keys(v)) if (k === "cells_seen" || /^(n\d+|a)_/.test(k)) delete v[k];
+    for (const k of Object.keys(v)) if (k === "cells_seen" || /^(n\d+|a|left|right)_/.test(k)) delete v[k];
   }
   const flag_answers = {};
   for (const f of st.meta.flags) {
@@ -1075,11 +1082,12 @@ $("#scoreForm").addEventListener("submit", async e => {
   if (!v.usable) need("say whether the image is usable", box("usable"));
   if (v.usable === "no" && !v.unusable_reason) need("pick a reason it is not usable", box("usable"));
   if (v.usable === "yes") {
-    if (!v.cells_seen) need("count the cell bodies", box("cells_seen"));
+    if (!v.cells_seen && !st.noCount) need("count the cell bodies", box("cells_seen"));
     const open = [...Array(n)].map((_, i) => i + 1).filter(i => !v[`n${i}_call`]);
     if (open.length) need(`score all ${n} neurons`, ...open.map(i => box(`n${i}_call`)));
     const req = wsForm.missingRequired(v, st.cfg.scoring).filter(i => !open.includes(i));
     if (req.length) need("answer the questions marked *", ...req.map(i => box(`n${i}_call`)));
+    if (wsForm.missingSide(v, st.cfg.scoring)) need("answer the left and right questions marked *", $("#sideQs fieldset"));
     if (wsForm.missingAnimal(v, st.cfg.scoring)) need("answer the questions about this animal marked *", $("#animalQs fieldset"));
     if (!v.confidence) need("pick a confidence", box("confidence"));
   }

@@ -86,8 +86,8 @@ evidence that people struggle with it, and what wormscore does.
 - **Simple rank tests only.** Since 1.4.0 ordered scales and counts are tested with a Mann-Whitney test
   (exact permutation p-value) on one value per animal, and a cutoff can be tested with Fisher's exact
   test. There is no Brunner-Munzel test, no t-test on counts, no proportional-odds, negative binomial or
-  mixed model (for example with animal as a random effect, or covariates), no questions per left/right
-  cell, and no short definition shown for each answer while scoring.
+  mixed model (for example with animal as a random effect, or covariates). Since 1.14.0 a question can
+  be asked for each side (left and right) and rolled up over the two sides.
 - **Max projections in some measures.** `mean_mip` and `peak_filtered` use the maximum-intensity
   projection, which "shouldn't be used for intensity quantification" according to
   [Culley et al., "Made to measure" (preprint)](https://arxiv.org/abs/2302.01657) (also

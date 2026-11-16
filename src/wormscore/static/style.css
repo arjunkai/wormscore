@@ -164,6 +164,10 @@ div.nq { margin: 8px 0 0; }
 div.nq .nq-text { display: block; color: var(--muted); line-height: 1.4; }
 .nq-opts label { margin-right: 14px; }
 /* an extra question with a long list: its text, then the list on the same line */
+/* a question asked for each side (1.14.0): its text once, then a Left and a Right row of answers */
+div.nq-side .nq-row { display: flex; align-items: flex-start; gap: 10px; }
+.nq-sidek { flex: none; width: 3em; color: var(--muted); line-height: 1.9; }
+div.nq-side .nq-row select { margin: 4px 0; width: auto; max-width: 55%; }
 fieldset label.nq { display: flex; margin: 8px 0 0; gap: 10px; line-height: 1.4; cursor: default; }
 .nq-text { flex: 1; min-width: 0; color: var(--muted); }
 .nq-req { color: var(--warn); }

@@ -157,6 +157,10 @@ DEFAULTS = {
     # scoring.animal_questions (optional, 1.4.0): questions asked once per image instead of for each
     #   neuron, saved as a_<id>; usable in question_outcomes (not mixed with neuron questions) and
     #   rank_outcomes.
+    # scoring.side_questions (optional, 1.14.0): questions asked for the left and for the right side of
+    #   the animal, saved as left_<id> and right_<id>; usable in question_outcomes (each side is assessed
+    #   like a neuron; not mixed with other questions) and rank_outcomes (rolled up over the two sides).
+    # scoring.count_question with "options": [] (1.14.0, set by the builder) asks no count per image.
     # cross_microscope_reason and methods_notes (optional) only add text to methods_text.md.
     "unblinding": {"min_scored_worms": 30, "reference_genotype": "", "question_outcomes": [],
                    "interaction": {}, "secondary_defect_calls": [], "test_secondary": False,
@@ -375,9 +379,12 @@ def repeat_fraction(cfg):
 def check(cfg):
     """Stop with a plain message if the optional results settings do not fit the scoring setup."""
     un, sc = cfg["unblinding"], cfg["scoring"]
-    animal_ids = {q.get("id") for q in sc.get("animal_questions") or [] if isinstance(q, dict)}
+    scope = {q.get("id"): "neuron" for q in sc["neuron_questions"] if isinstance(q, dict)}
+    for where in ("animal", "side"):
+        scope.update({q.get("id"): where for q in sc.get(f"{where}_questions") or [] if isinstance(q, dict)})
     questions = {q["id"]: q for q in sc["neuron_questions"]}
-    questions.update({q["id"]: q for q in sc.get("animal_questions") or [] if isinstance(q, dict) and "id" in q})
+    for where in ("animal", "side"):
+        questions.update({q["id"]: q for q in sc.get(f"{where}_questions") or [] if isinstance(q, dict) and "id" in q})
     names = []
     for oc in un["question_outcomes"]:
         name = oc.get("name", "")
@@ -386,12 +393,16 @@ def check(cfg):
         names.append(name)
         if not oc.get("questions") or not oc.get("defect_answers"):
             raise SystemExit(f"question_outcomes '{name}': set 'questions' and 'defect_answers'.")
-        if len({q in animal_ids for q in oc["questions"]}) > 1:
-            raise SystemExit(f"question_outcomes '{name}': combine either neuron questions or animal questions, not both.")
         for qid in oc["questions"]:
             if qid not in questions:
-                raise SystemExit(f"question_outcomes '{name}': no neuron question or animal question with id {qid!r} "
-                                 "in scoring.neuron_questions or scoring.animal_questions.")
+                raise SystemExit(f"question_outcomes '{name}': no neuron question, side question or animal question with "
+                                 f"id {qid!r} in scoring.neuron_questions, scoring.side_questions or scoring.animal_questions.")
+        if len({scope.get(q) for q in oc["questions"]}) > 1:
+            if all(scope.get(q) in ("neuron", "animal") for q in oc["questions"]):
+                raise SystemExit(f"question_outcomes '{name}': combine either neuron questions or animal questions, not both.")
+            raise SystemExit(f"question_outcomes '{name}': combine questions asked the same way (for each neuron, "
+                             "for each side or once per animal), not a mix.")
+        for qid in oc["questions"]:
             unknown = set(oc["defect_answers"]) | set(oc.get("unclear_answers", []))
             unknown -= set(questions[qid]["options"])
             if unknown:

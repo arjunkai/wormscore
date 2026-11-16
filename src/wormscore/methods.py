@@ -27,7 +27,8 @@ def _or(items):
 
 def outcome_sentences(cfg, outcome_tests):
     sc = cfg["scoring"]
-    labels = {q["id"]: q.get("label", q["id"]) for q in sc["neuron_questions"] + (sc.get("animal_questions") or [])}
+    labels = {q["id"]: q.get("label", q["id"])
+              for q in sc["neuron_questions"] + (sc.get("side_questions") or []) + (sc.get("animal_questions") or [])}
     out = []
     for oc in cfg["unblinding"]["question_outcomes"]:
         qs = " / ".join(f'"{labels[q]}"' for q in oc["questions"])
@@ -39,6 +40,15 @@ def outcome_sentences(cfg, outcome_tests):
                 f"{_or(oc['defect_answers'])}"
                 + (f"; an answer of {_or(unclear)} left the animal out" if unclear else "")
                 + f". Groups were compared by the same Fisher's exact tests (Bonferroni for {n} test{'s' if n != 1 else ''}).")
+            continue
+        if stats.outcome_scope(cfg, oc) == "side":
+            out.append(
+                f"For {oc['name']}, asked for the left and the right side of each animal, a side was defective if "
+                f"the answer to {qs} was {_or(oc['defect_answers'])}"
+                + (f", and an answer of {_or(unclear)} left out the "
+                   f"{'animal' if oc.get('unclear', 'exclude_neuron') == 'exclude_animal' else 'side'}" if unclear else "")
+                + ". An animal was defective if either assessed side was; animals with no assessed side were left "
+                f"out. Groups were compared by the same Fisher's exact tests (Bonferroni for {n} test{'s' if n != 1 else ''}).")
             continue
         out.append(
             f"For {oc['name']}, a neuron was defective if the answer to {qs} was {_or(oc['defect_answers'])}; "

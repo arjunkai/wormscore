@@ -225,7 +225,9 @@ call this the score form.)
   type at the same settings; what a new project starts with), **Axon guidance** (yes/no questions about
   the axon, phrased around its target, and whether it crosses the ventral midline),
   **Neurodegeneration** (each dendrite scored 0 to 6), **Dendrite length** (full length / short; add a
-  partial level if you need one) or **Blank**. Each preset follows published scoring and names its
+  partial level if you need one), **Counts and position** (marker-positive cells counted on the left
+  and on the right side, and each neuron's cell body in place, anterior or posterior) or **Blank**.
+  Each preset follows published scoring and names its
   source in the list and in its rules. Projects made before 1.10.0 keep normal / dim / missing.
 - **Long scales:** above 5 levels the builder warns that scorers usually agree less, and points to the
   weighted kappa that unblinding reports when there are hidden repeats or a second scorer.
@@ -238,9 +240,12 @@ call this the score form.)
   project's `criteria/` folder and go into second-scorer packages; the definitions and each image's
   SHA-256 are written to `log.md` with the criteria, and the Methods draft says they were shown.
   The general **rules** list stays for instructions that are not about one answer.
-- **Extra questions,** each asked **for each neuron** or **once per animal**, with an optional "can't
-  tell" answer (never counted as an answer: that neuron or animal is left out), whether it is required,
-  and calls for which it is skipped (for example "not seen"). Four answer types:
+- **Extra questions,** each asked **for each neuron**, **for each side** (left and right, for example
+  the cells counted on each side) or **once per animal**, with an optional "can't tell" answer (never
+  counted as an answer: that neuron, side or animal is left out), whether it is required, and calls
+  for which it is skipped (for example "not seen"; only neurons have a call). A question for each side
+  is shown once with a Left and a Right row of answers, saved as `left_<id>` and `right_<id>`; for a
+  Yes / No or Choice outcome each side is assessed like a neuron. Four answer types:
   - **Yes / No** and **Choice:** tick the answers that count as a defect. Questions with the same
     outcome name are combined (the animal has that defect if any answer is a defect), and each outcome
     gets Fisher's exact tests at unblinding.
@@ -251,11 +256,15 @@ call this the score form.)
 - **How scales and counts are tested:** a scale or count with an outcome name is tested on its own.
   Each animal gets one value: for a question asked for each neuron, the **worst neuron** (default) or
   the mean of the assessed neurons for a scale, and the total (default) or the mean per neuron for a
-  count. Genotypes are compared with the **Mann-Whitney test** on those values, with a permutation
+  count; a question asked for each side is rolled up the same way over the two sides (the worse side,
+  or the total over both sides). Genotypes are compared with the **Mann-Whitney test** on those values, with a permutation
   p-value (correct with the many ties short scales have): exact when there are up to 100,000
   rearrangements, otherwise from 100,000 random ones with a fixed seed. An optional **cutoff** (for
   example "4 or worse") also gives the share of animals at or past it, tested with Fisher's exact test.
 - **Primary outcome:** name one; the results and Methods then call every other test secondary.
+- **Count for each image:** under **Per-image questions and general rules**, untick **Ask a count for
+  each image** when cells are counted another way (the Counts and position template counts each side
+  instead). The `cells_seen` column then stays empty.
 
 **Share criteria between projects and labs.** **Export criteria...** saves the criteria, with their
 definitions and reference images, as one `.wormscore-criteria.json` file with a name, an optional

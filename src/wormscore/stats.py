@@ -53,7 +53,7 @@ def per_neuron_rows(rows, cfg):
                 "n_z": r["n_z"], "z_step_um": r["z_step_um"], "neuron": name, "call": call,
                 "affected": "" if not call else int(call in defect),
                 **{f"roi_{c}": r.get(f"n{i}_roi_{c}", "") for c in ROI_COLS},
-                **{oc["name"]: (outcome_state(r, cfg, oc) if is_animal_outcome(cfg, oc) else neuron_state(r, i, oc))
+                **{oc["name"]: (neuron_state(r, i, oc) if outcome_scope(cfg, oc) == "neuron" else outcome_state(r, cfg, oc))
                    for oc in cfg["unblinding"]["question_outcomes"]},
                 **rank_columns(r, i, cfg),
             })
@@ -70,9 +70,12 @@ def rank_columns(row, i, cfg):
     out = {}
     for ro in ros:
         q, where = ranks.questions(cfg)[ro["question"]]
-        key = f"score_a_{q['id']}" if where == "animal" else f"score_n{i}_{q['id']}"
         v, why = ranks.animal_value(row, cfg, ro)
-        out[ro["name"]] = row.get(key, "")
+        if where == "side":         # 1.14.0: both sides' answers, on every neuron's row like the animal value
+            for s in ranks.SIDES:
+                out[f"{ro['name']} ({s})"] = row.get(f"score_{s}_{q['id']}", "")
+        else:
+            out[ro["name"]] = row.get(f"score_a_{q['id']}" if where == "animal" else f"score_n{i}_{q['id']}", "")
         out[f"{ro['name']} (animal value)"] = ranks._num(v) if v is not None else f"left out: {why}"
     return out
 
@@ -186,6 +189,17 @@ def neuron_state(row, i, oc):
     return "normal"
 
 
+def side_state(row, side, oc):
+    """One side under an outcome built from questions asked for each side (1.14.0): defect, normal,
+    unclear or unanswered. A side has no call, so it is never "not visible"."""
+    answers = [row.get(f"score_{side}_{q}", "") for q in oc["questions"]]
+    if any(a in oc["defect_answers"] for a in answers):
+        return "defect"
+    if "" in answers:
+        return "unanswered"
+    return "unclear" if any(a in oc.get("unclear_answers", []) for a in answers) else "normal"
+
+
 def animal_state(states, unclear_rule):
     """Defective if any neuron is. Unclear neurons are dropped (exclude_neuron) or drop the
     animal (exclude_animal). Animals with no assessed neuron are left out."""
@@ -202,8 +216,17 @@ def animal_state(states, unclear_rule):
 
 def is_animal_outcome(cfg, oc):
     """True if the outcome is built from questions asked once per animal (wormscore 1.4.0)."""
-    aq = {q["id"] for q in cfg["scoring"].get("animal_questions") or []}
-    return bool(oc["questions"]) and all(q in aq for q in oc["questions"])
+    return outcome_scope(cfg, oc) == "animal"
+
+
+def outcome_scope(cfg, oc):
+    """How the outcome's questions are asked: "neuron", "side" (1.14.0) or "animal"."""
+    sc = cfg["scoring"]
+    for where in ("animal", "side"):
+        ids = {q["id"] for q in sc.get(f"{where}_questions") or []}
+        if oc["questions"] and all(q in ids for q in oc["questions"]):
+            return where
+    return "neuron"
 
 
 def outcome_state(row, cfg, oc):
@@ -215,6 +238,9 @@ def outcome_state(row, cfg, oc):
         if "" in answers:
             return "incomplete"
         return "unclear" if any(a in oc.get("unclear_answers", []) for a in answers) else "normal"
+    if outcome_scope(cfg, oc) == "side":
+        from .ranks import SIDES
+        return animal_state([side_state(row, s, oc) for s in SIDES], oc.get("unclear", "exclude_neuron"))
     n_neurons = len(cfg["scoring"]["neurons"])
     states = [neuron_state(row, i, oc) for i in range(1, n_neurons + 1)]
     return animal_state(states, oc.get("unclear", "exclude_neuron"))
@@ -426,8 +452,9 @@ def reliability(pairs, cfg):
         for i, j in zip(range(1, n + 1), matched_neurons(a, b, cfg)):
             calls.append((a.get(f"score_n{i}_call", ""), b.get(f"score_n{j}_call", "")))
     rows.append(agreement_row("neuron call", calls, sc["calls"], weighted=cw, extra=ex))
-    rows.append(agreement_row("cells seen", [(a.get("score_cells_seen"), b.get("score_cells_seen")) for a, b in both],
-                              sc["count_question"]["options"], weighted=True, extra=ex))
+    if sc["count_question"]["options"]:      # 1.14.0: a form can ask no count per image
+        rows.append(agreement_row("cells seen", [(a.get("score_cells_seen"), b.get("score_cells_seen")) for a, b in both],
+                                  sc["count_question"]["options"], weighted=True, extra=ex))
     for oc in un["question_outcomes"]:
         rows.append(agreement_row(oc["name"], [(outcome_state(a, cfg, oc), outcome_state(b, cfg, oc)) for a, b in both],
                                   ["normal", "defect"], extra=ex))

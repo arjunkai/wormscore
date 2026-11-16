@@ -573,6 +573,9 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
 .sf-form select { display: block; width: 100%; margin-top: 10px; background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 8px; font: inherit; }
 .sf-form .opt-k { display: none; }
 .sf-form div.nq { margin: 10px 0 0; }
+.sf-form div.nq-side .nq-row { display: flex; align-items: flex-start; gap: 10px; }
+.sf-form .nq-sidek { flex: none; width: 3em; color: var(--muted); line-height: 1.9; }
+.sf-form div.nq-side .nq-row select { width: auto; max-width: 50%; margin: 4px 0; }
 .sf-form div.nq .nq-text { display: block; color: var(--muted); }
 .sf-form label.nq { display: flex; align-items: center; margin: 10px 0 0; gap: 10px; line-height: 1.4; cursor: default; }
 .sf-form .nq-text { flex: 1; min-width: 0; color: var(--muted); }

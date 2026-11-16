@@ -14,6 +14,7 @@ The animal is the unit. A question asked for each neuron is reduced to one value
 assessed neuron already has the worst level counts, since no other answer can change its value).
 A "can't tell" answer is never a level: that neuron is unclear. Neurons whose call skips the question
 are "not assessed". Animals left out are counted per reason, never dropped silently.
+A question asked for each side (1.14.0) is rolled up the same way over the left and the right side.
 
 Two genotypes are compared with the Mann-Whitney (Wilcoxon rank-sum) statistic on the animal values.
 The p-value comes from permuting the pooled midranks: exact (every rearrangement) when there are at
@@ -41,12 +42,25 @@ REASONS = ("not_assessed", "unclear", "incomplete")
 
 # ------------------------------------------------------------------ questions and levels
 
+SIDES = ("left", "right")    # a side question's answers are saved as left_<id> and right_<id>
+
+
 def questions(cfg):
-    """Every question by id: (question, "neuron" or "animal")."""
+    """Every question by id: (question, "neuron", "side" or "animal")."""
     sc = cfg["scoring"]
     out = {q["id"]: (q, "neuron") for q in sc["neuron_questions"]}
+    out.update({q["id"]: (q, "side") for q in sc.get("side_questions") or []})
     out.update({q["id"]: (q, "animal") for q in sc.get("animal_questions") or []})
     return out
+
+
+def side_answer_state(row, side, q, ro):
+    """(value, state) for one side: state is "value", "unclear" or "unanswered"."""
+    ans = row.get(f"score_{side}_{q['id']}", "")
+    if ans in unclear_of(q, ro):
+        return None, "unclear"
+    v = value_of(q, ro, ans)
+    return (v, "value") if v is not None else (None, "unanswered")
 
 
 def count_value(text):
@@ -133,8 +147,11 @@ def animal_value(row, cfg, ro):
             return None, "unclear"
         v = value_of(q, ro, ans)
         return (v, "") if v is not None else (None, "incomplete")
-    n = len(cfg["scoring"]["neurons"])
-    got = [neuron_answer_state(row, i, q, ro) for i in range(1, n + 1)]
+    if where == "side":
+        got = [side_answer_state(row, s, q, ro) for s in SIDES]
+    else:
+        got = [neuron_answer_state(row, i, q, ro) for i in range(1, len(cfg["scoring"]["neurons"]) + 1)]
+    n = len(got)
     vals = [v for v, s in got if s == "value"]
     states = {s for _, s in got}
     if "unanswered" in states:
@@ -188,7 +205,7 @@ def outcome_table(rows, cfg, ro):
         values[(system, geno)] = vals
         n = len(vals)
         row = {"outcome": ro["name"], "system": system, "genotype": geno,
-               "question_type": q["type"], "asked": "once per animal" if where == "animal" else "for each neuron",
+               "question_type": q["type"], "asked": ASKED[where],
                "rollup": how or "none (one answer per animal)", "animals": n,
                **{f"left_out_{x}": sum(1 for v, why in got if v is None and why == x) for x in REASONS},
                "median": _num(_quantile(vals, 0.5)), "q1": _num(_quantile(vals, 0.25)),
@@ -205,6 +222,9 @@ def outcome_table(rows, cfg, ro):
             row["pct_at_or_above_cutoff"] = round(100 * k / n, 1) if n else ""
         table.append(row)
     return table, values
+
+
+ASKED = {"neuron": "for each neuron", "side": "for each side", "animal": "once per animal"}
 
 
 def level_key(q, ro):
@@ -292,6 +312,9 @@ def describe(ro, cfg):
     what = {"worst": "worst level of any neuron", "mean": "mean level of the assessed neurons",
             "sum": "total over the neurons", "mean_per_neuron": "mean per assessed neuron",
             "": "the answer for the animal"}[how]
+    if where == "side":
+        what = {"worst": "worse side", "mean": "mean level of the assessed sides", "sum": "total over both sides",
+                "mean_per_neuron": "mean per assessed side"}[how]
     return f"\"{q.get('label', q['id'])}\" ({q['type']}; value per animal = {what})"
 
 
@@ -312,6 +335,14 @@ def methods_sentences(cfg, rank_tests):
                                                           if top_bin(q, ro) else "")
         if where == "animal":
             unit = "Each animal was answered once"
+        elif where == "side":
+            unit = "It was asked for the left and the right side of each animal, and " + {
+                "worst": "the animal's value was the worse side; animals with a side not assessed were left out "
+                         "unless the other side already had the worst level",
+                "mean": "the animal's value was the mean level of its assessed sides",
+                "sum": "the animal's value was the total over both sides; animals with a side not assessed were "
+                       "left out",
+                "mean_per_neuron": "the animal's value was the mean count per assessed side"}[how]
         else:
             unit = {"worst": "The animal's value was the worst level of its neurons; animals with a neuron not "
                              "assessed were left out unless an assessed neuron already had the worst level",
@@ -320,7 +351,7 @@ def methods_sentences(cfg, rank_tests):
                            "assessed were left out",
                     "mean_per_neuron": "The animal's value was the mean count per assessed neuron"}[how]
         skip = q.get("skip_when_calls") or []
-        drops = "neuron" if how in ("mean", "mean_per_neuron") and \
+        drops = ("side" if where == "side" else "neuron") if how in ("mean", "mean_per_neuron") and \
             ro.get("unclear", "exclude_neuron") == "exclude_neuron" else "animal"
         sentence = (f"For {ro['name']}, \"{q.get('label', q['id'])}\" was answered on {scale}. {unit}"
                     + (f"; neurons called {stats_or(skip)} were not assessed" if where == "neuron" and skip else "")
@@ -358,18 +389,21 @@ def check(cfg, outcome_names):
     outcome names."""
     sc, un = cfg["scoring"], cfg["unblinding"]
     aq = sc.get("animal_questions") or []
-    if not isinstance(aq, list):
-        raise SystemExit("scoring.animal_questions must be a list.")
-    for q in aq:
-        if not isinstance(q, dict) or not isinstance(q.get("id"), str) or not q["id"] \
-                or not isinstance(q.get("options"), list) or len(q["options"]) < 2:
-            raise SystemExit("Each animal question needs an 'id' and at least two 'options'.")
-    if not aq and not un.get("rank_outcomes") and not any("type" in q for q in sc["neuron_questions"]):
+    sq = sc.get("side_questions") or []
+    for what, group in (("animal", aq), ("side", sq)):
+        if not isinstance(group, list):
+            raise SystemExit(f"scoring.{what}_questions must be a list.")
+        for q in group:
+            if not isinstance(q, dict) or not isinstance(q.get("id"), str) or not q["id"] \
+                    or not isinstance(q.get("options"), list) or len(q["options"]) < 2:
+                raise SystemExit(f"Each {what} question needs an 'id' and at least two 'options'.")
+    if not aq and not sq and not un.get("rank_outcomes") and not any("type" in q for q in sc["neuron_questions"]):
         return []          # nothing from 1.4.0 is used: forms from earlier versions are checked as before
-    ids = [q.get("id") for q in sc["neuron_questions"]] + [q.get("id") for q in aq]
-    for q in sc["neuron_questions"] + aq:
+    ids = [q.get("id") for q in sc["neuron_questions"] + sq + aq]
+    for q in sc["neuron_questions"] + sq + aq:
         if ids.count(q["id"]) > 1:
-            raise SystemExit(f"question id {q['id']!r} is used twice (ids must differ across neuron and animal questions).")
+            raise SystemExit(f"question id {q['id']!r} is used twice (ids must differ across neuron, side and "
+                             "animal questions).")
         if q.get("type") not in (None, SCALE, COUNT):
             raise SystemExit(f"question {q['id']!r}: type must be \"scale\" or \"count\" (or left out).")
         if q.get("cant_tell") and q["cant_tell"] not in q["options"]:
@@ -377,11 +411,12 @@ def check(cfg, outcome_names):
         if q.get("type") == COUNT and not count_levels_ok([o for o in q["options"] if o != q.get("cant_tell")]):
             raise SystemExit(f"question {q['id']!r}: count answers must be whole numbers going up by one, "
                              "for example 0, 1, 2, 3+ (only the last may end in +).")
-    for q in aq:
-        if "skip_when_calls" in q:
-            raise SystemExit(f"animal question {q['id']!r}: skip_when_calls only applies to neuron questions.")
-        if not isinstance(q.get("required", False), bool):
-            raise SystemExit(f"animal question {q['id']!r}: required must be true or false.")
+    for what, group in (("animal", aq), ("side", sq)):
+        for q in group:
+            if "skip_when_calls" in q:
+                raise SystemExit(f"{what} question {q['id']!r}: skip_when_calls only applies to neuron questions.")
+            if not isinstance(q.get("required", False), bool):
+                raise SystemExit(f"{what} question {q['id']!r}: required must be true or false.")
     ros = un.get("rank_outcomes") or []
     if not isinstance(ros, list):
         raise SystemExit("rank_outcomes must be a list.")

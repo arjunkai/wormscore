@@ -42,7 +42,9 @@ NOT_COMPARED = {"code", "saved", "count_this_image", "confidence", "display_pres
 
 def key_fields(cfg):
     from .server import score_fields
-    return [f for f in score_fields(cfg) if f not in NOT_COMPARED]
+    # a form that asks no count per image (1.14.0) leaves cells_seen empty: nothing to compare
+    off = set() if cfg["scoring"]["count_question"]["options"] else {"cells_seen"}
+    return [f for f in score_fields(cfg) if f not in NOT_COMPARED | off]
 
 
 def _checksum(key):
@@ -193,6 +195,10 @@ def _label(field, cfg):
     qs = {q["id"]: q["label"] for q in sc["neuron_questions"] + (sc.get("animal_questions") or [])}
     if field.startswith("a_"):
         return qs.get(field[2:], field)
+    for q in sc.get("side_questions") or []:
+        for s in ("left", "right"):
+            if field == f"{s}_{q['id']}":
+                return f"{s.capitalize()} side: {q['label']}"
     head, _, rest = field.partition("_")
     i = int(head[1:]) if head[1:].isdigit() else 0
     neuron = sc["neurons"][i - 1] if 0 < i <= len(sc["neurons"]) else head

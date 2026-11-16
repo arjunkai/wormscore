@@ -9,10 +9,6 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ## Planned
 
-### Scoring criteria (from a review of published scoring schemes and tools, November 2026)
-
-- **Questions per left/right cell,** and a counts-and-position preset.
-
 ### Other planned features
 
 - **Analysis settings in the app.** The analysis plan, hidden repeats and the reference genotype
@@ -48,6 +44,14 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.14.0: **Questions for each side.** An extra question can be asked for each neuron, **for each side
+  (left and right)** or once per animal. The scoring page shows it once, with a Left and a Right row
+  of answers (saved as `left_<id>` and `right_<id>`). For a Yes / No or Choice outcome each side is
+  assessed like a neuron; a scale or count is rolled up over the two sides (the worse side, or the
+  total over both sides) and tested with the Mann-Whitney test. A new **Counts and position** template
+  counts marker-positive cells on each side and calls each neuron's cell body in place, anterior or
+  posterior (after Ch'ng et al. 2003, *Genetics*). A form can now ask no count for each image.
+  Criteria made before this release record, hash and analyse exactly as before.
 - 1.13.1: a practice set from someone else is checked before its result is recorded: its id must be
   one wormscore made (it names the file the result is stored in, so an edited set cannot write
   outside the project), and its name, dates and answer names go into `log.md` and the Methods draft

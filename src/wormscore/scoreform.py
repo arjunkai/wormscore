@@ -39,6 +39,7 @@ MAX_TEXT = 200
 MAX_QUESTIONS = 12           # per neuron; the page warns above WARN_QUESTIONS
 WARN_QUESTIONS = 6
 TYPES = ("yesno", "choice", "scale", "count")
+ASK = {"neuron": "per neuron", "side": "per side", "animal": "per animal"}   # how a question is asked
 RANKED = ("scale", "count")
 MAX_LEVELS = 21              # answers on a scale, or numbers on a count
 MAX_DEFINITION = 300
@@ -72,6 +73,9 @@ def form_record(cfg):
     if sc.get("animal_questions"):
         rec["animal_questions"] = [{"id": q["id"], "options": list(q["options"]), "required": bool(q.get("required")),
                                     **extra(q)} for q in sc["animal_questions"]]
+    if sc.get("side_questions"):        # 1.14.0, only when used, so earlier forms still match
+        rec["side_questions"] = [{"id": q["id"], "options": list(q["options"]), "required": bool(q.get("required")),
+                                  **extra(q)} for q in sc["side_questions"]]
     if un.get("rank_outcomes"):
         rec["rank_outcomes"] = copy.deepcopy(un["rank_outcomes"])
     return rec
@@ -111,7 +115,7 @@ def definitions(cfg):
     calls = keep(sc.get("call_definitions"), sc["calls"])
     if calls:
         out["call"] = calls
-    for q in sc["neuron_questions"] + (sc.get("animal_questions") or []):
+    for q in sc["neuron_questions"] + (sc.get("side_questions") or []) + (sc.get("animal_questions") or []):
         got = keep(q.get("definitions"), q.get("options") or [])
         if got:
             out[q["id"]] = got
@@ -260,6 +264,7 @@ def form_summary(project, cfg):
         changed = _changed_after_lock(project, cfg)
     return {"calls": len(sc["calls"]),
             "neuron_questions": len(sc["neuron_questions"]),
+            "side_questions": len(sc.get("side_questions") or []),
             "animal_questions": len(sc.get("animal_questions") or []),
             "recorded": form_recorded(project, cfg), "locked": why, "changed_after_lock": changed,
             # a second scorer's package must come back with the form it was made with
@@ -368,6 +373,13 @@ PRESETS = {
                 "compared with the Mann-Whitney test.",
         "source": "Heiman and Shaham 2009, Cell; Low et al. 2019, Development",
     },
+    "counts": {
+        "title": "Counts and position",
+        "desc": "Marker-positive cells counted on the left and on the right side, and each neuron's cell body "
+                "called in place, anterior or posterior. Each animal's value is its total over both sides, "
+                "compared with the Mann-Whitney test.",
+        "source": "Ch'ng et al. 2003, Genetics",
+    },
     "blank": {
         "title": "Blank",
         "desc": "One neuron and a seen / not seen call. Add your own questions.",
@@ -427,6 +439,26 @@ def preset_model(name):
                            "skip_when": ["not seen"], "outcome": outcome, "rollup": "worst", "cutoff": "",
                            "defs": defs}]
         m["primary"] = outcome
+    elif name == "counts":
+        m["calls"] = seen
+        m["count"] = {"label": m["count"]["label"], "options": []}     # counted for each side instead
+        m["rules"] = ["Count every marker-positive cell body on that side, through all planes.",
+                      "Position: compare the cell body with its usual landmark, such as a seam cell or the vulva. "
+                      "Name the landmark here.",
+                      "Score each neuron separately. The animal is the unit for statistics.",
+                      "Left and right scored separately after Ch'ng et al. 2003, Genetics."]
+        m["questions"] = [
+            {"id": "position", "label": "Cell body position", "type": "choice", "ask": "neuron",
+             "options": ["in place", "anterior", "posterior"], "count": None, "cant_tell": "can't tell",
+             "defect": ["anterior", "posterior"], "required": True, "skip_when": ["not seen"],
+             "outcome": "position defect", "rollup": "", "cutoff": "",
+             "defs": {"in place": {"text": "At its usual place next to the landmark in the rules.", "image": ""},
+                      "anterior": {"text": "Toward the head from its usual place.", "image": ""},
+                      "posterior": {"text": "Toward the tail from its usual place.", "image": ""}}},
+            {"id": "cells", "label": "Marker-positive cells", "type": "count", "ask": "side", "options": [],
+             "count": {"min": 0, "max": 3, "top": True}, "cant_tell": "can't tell", "defect": [], "required": True,
+             "skip_when": [], "outcome": "cell count", "rollup": "sum", "cutoff": "", "defs": {}}]
+        m["primary"] = "cell count"
     elif name == "blank":
         m["neurons"] = ["Neuron 1"]
         m["calls"] = [_call("seen", False), _call("not seen", True)]
@@ -458,7 +490,7 @@ def unsupported(cfg):
     """Why the builder cannot show this form faithfully (then it is shown read-only), or ""."""
     from . import ranks
     sc, un = cfg["scoring"], cfg["unblinding"]
-    aqs = sc.get("animal_questions") or []
+    aqs = (sc.get("animal_questions") or []) + (sc.get("side_questions") or [])    # no call, so never skipped
     seen = {}
     for oc in un["question_outcomes"]:
         for qid in oc.get("questions", []):
@@ -558,7 +590,9 @@ def to_model_cfg(cfg):
     rank = {ro["question"]: ro for ro in un.get("rank_outcomes") or [] if isinstance(ro, dict) and "question" in ro}
     raw_cdefs = sc.get("call_definitions") if isinstance(sc.get("call_definitions"), dict) else {}
     cdefs = {k: v for k, v in raw_cdefs.items() if isinstance(v, dict)}
-    questions = [_model_question(q, "neuron", owner, rank, sc["calls"]) for q in sc["neuron_questions"]]         + [_model_question(q, "animal", owner, rank, sc["calls"]) for q in sc.get("animal_questions") or []]
+    questions = [_model_question(q, ask, owner, rank, sc["calls"])
+                 for ask, key in (("neuron", "neuron_questions"), ("side", "side_questions"), ("animal", "animal_questions"))
+                 for q in sc.get(key) or []]
     return {
         "neurons": list(sc["neurons"]),
         "calls": [{"text": c, "defect": c in sc["defect_calls"],
@@ -641,8 +675,8 @@ def _clean_question(q, i, calls, taken, ids):
     if typ not in TYPES:
         raise ValueError(f"{where}: pick Yes / No, Choice, Scale or Count.")
     ask = q.get("ask") or "neuron"
-    if ask not in ("neuron", "animal"):
-        raise ValueError(f"{where}: ask it for each neuron or once per animal.")
+    if ask not in ASK:
+        raise ValueError(f"{where}: ask it for each neuron, for each side or once per animal.")
     qid = q.get("id") if isinstance(q.get("id"), str) and re.fullmatch(r"[a-z][a-z0-9_]{0,40}", q["id"]) else None
     if qid is None or qid in ids:
         qid = _new_id(label, taken | set(ids))
@@ -694,11 +728,11 @@ def _clean_question(q, i, calls, taken, ids):
     if not isinstance(q.get("required", False), bool):
         raise ValueError(f"{where}: required must be true or false.")
     rollup, cutoff = "", ""
-    if ranked and outcome and ask == "neuron":
+    if ranked and outcome and ask in ("neuron", "side"):
         from . import ranks
         rollup = q.get("rollup") or ranks.DEFAULT_ROLLUP[typ]
         if rollup not in ranks.ROLLUPS[typ]:
-            raise ValueError(f"{where}: pick how the neurons make one value per animal.")
+            raise ValueError(f"{where}: pick how the {'sides' if ask == 'side' else 'neurons'} make one value per animal.")
     if ranked and outcome and q.get("cutoff") not in (None, ""):
         cutoff = str(q["cutoff"])
         if typ == "scale" and (cutoff not in opts or cutoff == opts[0]):
@@ -728,15 +762,16 @@ def clean(model):
     if not defect:
         raise ValueError("Calls: tick at least one call that counts as a defect.")
     count = model.get("count") if isinstance(model.get("count"), dict) else {}
+    # no answers: no count is asked for each image (1.14.0)
     count = {"label": _text(count.get("label"), "The count question"),
-             "options": _texts(count.get("options"), "Count answer", 2)}
+             "options": _texts(count.get("options"), "Count answer", 2) if count.get("options") != [] else []}
     qs = model.get("questions") or []
     if not isinstance(qs, list):
         raise ValueError("Questions: expected a list.")
-    for kind in ("neuron", "animal"):
+    for kind in ASK:
         n = sum(1 for q in qs if isinstance(q, dict) and (q.get("ask") or "neuron") == kind)
         if n > MAX_QUESTIONS:
-            raise ValueError(f"At most {MAX_QUESTIONS} questions {'per neuron' if kind == 'neuron' else 'per animal'}.")
+            raise ValueError(f"At most {MAX_QUESTIONS} questions {ASK[kind]}.")
     taken, ids = set(), []
     for q in qs:
         if isinstance(q, dict) and isinstance(q.get("id"), str) and re.fullmatch(r"[a-z][a-z0-9_]{0,40}", q["id"]):
@@ -754,8 +789,8 @@ def clean(model):
                                  "an outcome name no other question uses.")
             continue
         if len({q["ask"] for q in group}) > 1:
-            raise ValueError(f"Outcome \"{name}\": combine questions asked for each neuron, or questions asked "
-                             "once per animal, not both.")
+            raise ValueError(f"Outcome \"{name}\": combine questions that are asked the same way (for each neuron, "
+                             "for each side or once per animal), not a mix.")
         if len({tuple(q["skip_when"]) for q in group}) > 1:
             raise ValueError(f"Outcome \"{name}\": its questions must be skipped for the same calls, "
                              "because the outcome leaves those neurons out.")
@@ -817,7 +852,8 @@ def apply(raw, model):
     out = copy.deepcopy(raw)
     old_cfg = _cfg_from_raw(raw)
     d_sc = C.DEFAULTS["scoring"]
-    old_q = {q["id"]: q for q in old_cfg["scoring"]["neuron_questions"] + (old_cfg["scoring"].get("animal_questions") or [])}
+    old_q = {q["id"]: q for q in old_cfg["scoring"]["neuron_questions"] + (old_cfg["scoring"].get("side_questions") or [])
+             + (old_cfg["scoring"].get("animal_questions") or [])}
     calls = [c["text"] for c in m["calls"]]
     new_sc = {
         "neurons": m["neurons"],
@@ -830,6 +866,7 @@ def apply(raw, model):
         "rules": m["rules"],
     }
     animal = [_config_question(q, old_q.get(q["id"], {})) for q in m["questions"] if q["ask"] == "animal"]
+    side = [_config_question(q, old_q.get(q["id"], {})) for q in m["questions"] if q["ask"] == "side"]
     call_defs = {c["text"]: _stored(c["def"], c["image"]) for c in m["calls"] if c["def"] or c["image"]}
     old_oc = {oc.get("name"): oc for oc in old_cfg["unblinding"]["question_outcomes"]}
     outcomes, ranked = [], []
@@ -868,6 +905,8 @@ def apply(raw, model):
             raw_sc[k] = v
     if animal or "animal_questions" in raw_sc:
         raw_sc["animal_questions"] = animal
+    if side or "side_questions" in raw_sc:
+        raw_sc["side_questions"] = side
     if call_defs:
         raw_sc["call_definitions"] = call_defs
     else:

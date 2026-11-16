@@ -275,7 +275,8 @@ function resultsCard(p) {
 function formFact(f) {
   const parts = [`a call (${f.calls} choices)`];
   if (f.neuron_questions) parts.push(plural(f.neuron_questions, "question"));
-  const ask = `Each neuron: ${parts.join(" and ")}` + (f.animal_questions ? `. Each animal: ${plural(f.animal_questions, "question")}` : "") + ".";
+  const ask = `Each neuron: ${parts.join(" and ")}` + (f.side_questions ? `. Each side: ${plural(f.side_questions, "question")}` : "")
+    + (f.animal_questions ? `. Each animal: ${plural(f.animal_questions, "question")}` : "") + ".";
   const status = f.changed_after_lock ? " Changed after scoring began: no planned test runs until they are changed back."
     : f.locked ? " Locked."
     : f.recorded ? "" : " Check them and press Save.";
@@ -567,7 +568,7 @@ function packageView(p, job) {
 function formForPreview(m) {
   const asQ = (q, i) => ({
     id: `p${i}`, label: q.label || "Untitled question", type: q.type, required: q.required,
-    skip_when_calls: q.ask === "animal" ? [] : q.skip_when,
+    skip_when_calls: q.ask === "neuron" ? q.skip_when : [],
     options: [...answersOf(q), ...(q.cant_tell ? [q.cant_tell] : [])],
     definitions: DEFINED.includes(q.type) ? q.defs || {} : {},
   });
@@ -577,7 +578,8 @@ function formForPreview(m) {
     call_definitions: Object.fromEntries(m.calls.map(c => [c.text || "(call)", { text: c.def || "", image: c.image || "" }])),
     sides: m.sides ? ["left", "right"] : [],
     count_question: { label: m.count.label || "(count question)", options: m.count.options },
-    neuron_questions: m.questions.map(asQ).filter((_, i) => m.questions[i].ask !== "animal"),
+    neuron_questions: m.questions.map(asQ).filter((_, i) => (m.questions[i].ask || "neuron") === "neuron"),
+    side_questions: m.questions.map(asQ).filter((_, i) => m.questions[i].ask === "side"),
     animal_questions: m.questions.map(asQ).filter((_, i) => m.questions[i].ask === "animal"),
     rules: m.rules,
   };
@@ -599,6 +601,11 @@ const ROLLUP_NAMES = {
   worst: "Worst neuron (the highest level of any neuron)", mean: "Mean level of the neurons that were assessed",
   sum: "Total over the neurons", mean_per_neuron: "Mean per assessed neuron",
 };
+const SIDE_ROLLUP_NAMES = {      // the same rollups for a question asked for each side (1.14.0)
+  worst: "Worse side (the higher level)", mean: "Mean level of the sides that were assessed",
+  sum: "Total over both sides", mean_per_neuron: "Mean per assessed side",
+};
+const ASK_NAMES = [["neuron", "For each neuron"], ["side", "For each side (left, right)"], ["animal", "Once per animal"]];
 const ROLLUPS = { scale: ["worst", "mean"], count: ["sum", "mean_per_neuron"] };
 
 // The Scoring form section: an editor on the left, a live preview on the right. Returns the
@@ -607,6 +614,7 @@ function formSection(info) {
   const m = structuredClone(info.model);
   let off = !!(info.locked || info.readonly);
   let reason = "";      // why a locked form is changed anyway; written to log.md with the change
+  let lastCount = null;  // the count answers while "Ask a count for each image" is off, to restore them
   const edit = h("div", { class: "sf-edit" });
   const prev = h("div", { class: "sf-prev" });
   const root = h("div", { class: "sf" });
@@ -761,15 +769,20 @@ function formSection(info) {
 
   const questionCard = (q, j) => {
     const answers = answersOf(q);
-    const ranked = RANKED.includes(q.type), perAnimal = q.ask === "animal";
+    const ranked = RANKED.includes(q.type), perAnimal = q.ask === "animal", perSide = q.ask === "side";
     const row = (label, ...body) => [h("span", { class: "sf-k" }, label), h("div", { class: "sf-v" }, ...body)];
     return h("div", { class: "s-card sf-card sf-q" },
       h("div", { class: "sf-row sf-q-head" }, h("span", { class: "sf-num" }, `${j + 1}`),
         text(q.label, v => { q.label = v; }, { placeholder: "The question, e.g. Axon reaches the nerve ring?", "aria-label": `Question ${j + 1}` }),
         tools(m.questions, j, `question ${j + 1}`, 0, confirmQuestion)),
       h("div", { class: "sf-grid" },
-        ...row("Asked", radioRow(j, "Ask", "asked", [["neuron", "For each neuron"], ["animal", "Once per animal"]], q.ask || "neuron",
-          v => { q.ask = v; if (v === "animal") { q.skip_when = []; q.rollup = ""; } else if (ranked && !q.rollup) q.rollup = ROLLUPS[q.type][0]; })),
+        ...row("Asked", radioRow(j, "Ask", "asked", ASK_NAMES, q.ask || "neuron",
+          v => {
+            q.ask = v;
+            if (v !== "neuron") q.skip_when = [];      // only a neuron has a call to skip on
+            if (v === "animal") q.rollup = "";
+            else if (ranked && !q.rollup) q.rollup = ROLLUPS[q.type][0];
+          })),
         ...row("Answers",
           radioRow(j, "Type", "answer type", Object.entries(TYPE_NAMES), q.type, t => setType(q, t)),
           q.type === "choice" ? text(q.options.join(", "), v => {
@@ -783,9 +796,9 @@ function formSection(info) {
             q.options.map(a => h("div", {}, h("div", { class: "sf-def-term" }, a), answerDef(q, j, a)))) : null,
           q.type === "scale" ? levelsEditor(q, j) : null,
           q.type === "count" ? countInputs(q, j) : null,
-          check(!!q.cant_tell, `Add a “can't tell” answer (that ${perAnimal ? "animal" : "neuron"} is left out of the results)`,
+          check(!!q.cant_tell, `Add a “can't tell” answer (that ${perAnimal ? "animal" : perSide ? "side" : "neuron"} is left out of the results)`,
             v => { q.cant_tell = v ? "can't tell" : ""; })),
-        ...(perAnimal ? [] : row("Skip when", h("div", { class: "sf-opts" }, m.calls.map(c => check(q.skip_when.includes(c.text), `call is ${c.text || "(call)"}`,
+        ...(perAnimal || perSide ? [] : row("Skip when", h("div", { class: "sf-opts" }, m.calls.map(c => check(q.skip_when.includes(c.text), `call is ${c.text || "(call)"}`,
           v => { q.skip_when = m.calls.map(x => x.text).filter(x => x === c.text ? v : q.skip_when.includes(x)); }))))),
         ...row("", check(q.required, "Required (Save waits until it is answered)", v => { q.required = v; })),
         h("div", { class: "sf-split", role: "presentation" }, "Analysis"),
@@ -801,7 +814,8 @@ function formSection(info) {
           v => { q.defect = answers.filter(x => x === a ? v : q.defect.includes(x)); }))))),
         ...(ranked && q.outcome && !perAnimal ? row("Per animal", h("select", { class: "f-input sf-select", disabled: off,
           "aria-label": `Question ${j + 1}: value per animal`, onchange: e => { q.rollup = e.target.value; } },
-          ROLLUPS[q.type].map(r => h("option", { value: r, selected: (q.rollup || ROLLUPS[q.type][0]) === r }, ROLLUP_NAMES[r])))) : []),
+          ROLLUPS[q.type].map(r => h("option", { value: r, selected: (q.rollup || ROLLUPS[q.type][0]) === r },
+            (perSide ? SIDE_ROLLUP_NAMES : ROLLUP_NAMES)[r])))) : []),
         ...(ranked && q.outcome ? row("Cutoff", cutoffSelect(q, j),
           h("div", { class: "f-help" }, "Optional: the share of animals at or past it is also compared.")) : [])));
   };
@@ -823,21 +837,23 @@ function formSection(info) {
     } }, "Add level"));
 
   const questionsCard = () => {
-    const nNeuron = m.questions.filter(q => q.ask !== "animal").length;
-    const nAnimal = m.questions.length - nNeuron;
+    const nNeuron = m.questions.filter(q => (q.ask || "neuron") === "neuron").length;
+    const nSide = m.questions.filter(q => q.ask === "side").length;
+    const nAnimal = m.questions.length - nNeuron - nSide;
     return h("section", { class: "sf-section", "aria-label": "Extra questions" },
       h("div", { class: "sf-section-head" },
         h("div", { class: "f-label" }, "Extra questions"),
-        h("div", { class: "f-help" }, "Asked for each neuron or once per animal.")),
+        h("div", { class: "f-help" }, "Asked for each neuron, for each side or once per animal.")),
       h("datalist", { id: "sfOutcomes" }, outcomes().map(o => h("option", { value: o }))),
       m.questions.length ? m.questions.map(questionCard) : h("div", { class: "f-help sf-none" }, "None. The call is the only answer for each neuron."),
       nNeuron > info.warn_questions ? h("div", { class: "pv warn" },
         `${nNeuron} questions per neuron. More than ${info.warn_questions} makes scoring slower and less consistent.`) : null,
-      off || (nNeuron >= info.max_questions && nAnimal >= info.max_questions) ? null : h("button", { class: "btn subtle add", onclick: () => {
+      off || [nNeuron, nSide, nAnimal].every(n => n >= info.max_questions) ? null : h("button", { class: "btn subtle add", onclick: () => {
         const last = m.calls.at(-1)?.text;
-        m.questions.push({ id: null, label: "", type: "yesno", ask: nNeuron >= info.max_questions ? "animal" : "neuron",
+        const ask = nNeuron < info.max_questions ? "neuron" : nSide < info.max_questions ? "side" : "animal";
+        m.questions.push({ id: null, label: "", type: "yesno", ask,
           options: [], count: null, cant_tell: "can't tell", defect: ["no"], required: true, defs: {},
-          skip_when: last && nNeuron < info.max_questions ? [last] : [], outcome: "", rollup: "", cutoff: "" });
+          skip_when: last && ask === "neuron" ? [last] : [], outcome: "", rollup: "", cutoff: "" });
         drawAll();
         $$(".sf-q").at(-1)?.querySelector("input")?.focus();
       } }, "Add question"));
@@ -856,11 +872,18 @@ function formSection(info) {
 
   const moreCard = () => h("details", { class: "s-card sf-card sf-more" },
     h("summary", {}, "Per-image questions and general rules"),
-    h("label", { class: "f-label", for: "sfCount" }, "Count question (one per image)"),
-    text(m.count.label, v => { m.count.label = v; }, { id: "sfCount" }),
-    // its own label, so the answers do not read as a second line of the question
-    h("label", { class: "f-label", for: "sfCountAnswers" }, "Its answers, separated by commas"),
-    text(m.count.options.join(", "), v => { m.count.options = splitList(v); }, { id: "sfCountAnswers", placeholder: "For example: 0, 1, 2, 3+" }),
+    // a form can ask no count for each image (1.14.0), for example when cells are counted for each side
+    check(m.count.options.length, "Ask a count for each image", v => {
+      if (v) m.count.options = lastCount?.length ? lastCount : ["0", "1", "2", "3+"];
+      else { lastCount = m.count.options; m.count.options = []; }
+    }),
+    ...(m.count.options.length ? [
+      h("label", { class: "f-label", for: "sfCount" }, "Count question (one per image)"),
+      text(m.count.label, v => { m.count.label = v; }, { id: "sfCount" }),
+      // its own label, so the answers do not read as a second line of the question
+      h("label", { class: "f-label", for: "sfCountAnswers" }, "Its answers, separated by commas"),
+      text(m.count.options.join(", "), v => { m.count.options = splitList(v); }, { id: "sfCountAnswers", placeholder: "For example: 0, 1, 2, 3+" }),
+    ] : []),
     h("label", { class: "f-label", for: "sfRules" }, "General rules shown above the questions, one per line"),
     h("div", { class: "f-help" }, "What each call or level means goes with that answer, below."),
     h("textarea", { id: "sfRules", class: "f-input", rows: 4, disabled: off,
@@ -936,8 +959,9 @@ function formSection(info) {
     const f = h("form", { class: "sf-form", "aria-label": "Preview of the scoring panel", onsubmit: e => e.preventDefault(),
       onchange: e => { if (/^n\d+_call$/.test(e.target.name)) wsForm.syncSkips(f, sc); } },
       sc.rules.length ? h("ul", { class: "sf-rules" }, sc.rules.map(r => h("li", {}, r))) : null,
-      h("fieldset", {}, h("legend", {}, sc.count_question.label), h("div", {}, wsForm.radios(h, "cells_seen", sc.count_question.options))),
-      ...wsForm.meanings(h, sc, { open: true }), ...wsForm.neurons(h, sc), ...wsForm.animal(h, sc));
+      sc.count_question.options.length ? h("fieldset", {}, h("legend", {}, sc.count_question.label),
+        h("div", {}, wsForm.radios(h, "cells_seen", sc.count_question.options))) : null,
+      ...wsForm.meanings(h, sc, { open: true }), ...wsForm.neurons(h, sc), ...wsForm.sides(h, sc), ...wsForm.animal(h, sc));
     wsForm.syncSkips(f, sc);
     prev.replaceChildren(h("div", { class: "sf-prev-head" }, h("span", { class: "f-label" }, "Preview"),
       h("span", { class: "f-help" }, "Click a call to see which questions it skips.")), f);

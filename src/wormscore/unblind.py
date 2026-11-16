@@ -230,7 +230,8 @@ def unblind(project, finished=False, anyway=False, log=print):
             if run else []
         outcome_tests += oc_tests
         lines.append("")
-        lines.append(f"{oc['name']} (from the per-neuron questions; outputs/unblinded/question_outcomes.csv)"
+        source = "the questions for each side" if stats.outcome_scope(cfg, oc) == "side" else "the per-neuron questions"
+        lines.append(f"{oc['name']} (from {source}; outputs/unblinded/question_outcomes.csv)"
                      + (": tests POOL genotypes over microscopes (allowed in config); a test is marked when "
                         "its genotypes come from different microscopes:" if t_test is not t else ":"))
         for p in rows_oc:

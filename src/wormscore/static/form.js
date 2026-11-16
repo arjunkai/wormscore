@@ -35,6 +35,27 @@ const wsForm = (() => {
       sc.neuron_questions.map(q => question(h, `n${n}_${q.id}`, q)));
   });
 
+  // Questions asked for each side (wormscore 1.14.0), after the neurons: the question once, then a
+  // Left and a Right row of answers, saved as left_<id> and right_<id>. [] if there are none.
+  const SIDES = [["left", "Left"], ["right", "Right"]];
+  const sideQuestion = (h, q) => {
+    const tid = `side_${q.id}_t`;
+    return h("div", { class: "nq nq-side", "data-q": q.id },
+      h("span", { class: "nq-text", id: tid }, q.label, q.required ? h("span", { class: "nq-req", title: "Required" }, " *") : null),
+      SIDES.map(([s, label]) => {
+        const name = `${s}_${q.id}`, sid = `${name}_s`;
+        const tag = h("span", { class: "nq-sidek", id: sid }, label);
+        return q.options.length <= MAX_BUTTONS
+          ? h("div", { class: "nq-row", role: "radiogroup", "aria-labelledby": `${tid} ${sid}` },
+            tag, h("div", { class: "nq-opts" }, radios(h, name, q.options, q.definitions)))
+          : h("label", { class: "nq-row" }, tag, h("select", { name, "aria-labelledby": `${tid} ${sid}` },
+            h("option", { value: "" }, "choose"), q.options.map(o => h("option", { title: q.definitions?.[o]?.text || null }, o))));
+      }));
+  };
+  const sides = (h, sc) => (sc.side_questions || []).length
+    ? [h("fieldset", { class: "side-qs" }, h("legend", {}, "Left and right"), sc.side_questions.map(q => sideQuestion(h, q)))]
+    : [];
+
   // Questions asked once per image (wormscore 1.4.0), after the neurons. [] if there are none.
   const animal = (h, sc) => (sc.animal_questions || []).length
     ? [h("fieldset", { class: "animal-qs" }, h("legend", {}, "This animal"),
@@ -64,7 +85,7 @@ const wsForm = (() => {
       if (rows.length) groups.push(h("div", { class: "m-group" }, h("div", { class: "m-head" }, title), ...rows));
     };
     group("Call", sc.calls, sc.call_definitions);
-    for (const q of [...(sc.neuron_questions || []), ...(sc.animal_questions || [])])
+    for (const q of [...(sc.neuron_questions || []), ...(sc.side_questions || []), ...(sc.animal_questions || [])])
       group(q.label, q.options, q.definitions);
     if (!groups.length) return [];
     let open = !!opts.open;
@@ -136,5 +157,8 @@ const wsForm = (() => {
   // True if a required question about the whole animal is unanswered.
   const missingAnimal = (values, sc) => (sc.animal_questions || []).some(q => q.required && !values[`a_${q.id}`]);
 
-  return { radios, neurons, animal, meanings, zoom, syncSkips, missingRequired, missingAnimal };
+  // True if a required question asked for each side is unanswered for either side.
+  const missingSide = (values, sc) => (sc.side_questions || []).some(q => q.required && SIDES.some(([s]) => !values[`${s}_${q.id}`]));
+
+  return { radios, neurons, sides, animal, meanings, zoom, syncSkips, missingRequired, missingSide, missingAnimal };
 })();
