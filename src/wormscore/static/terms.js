@@ -19,6 +19,7 @@ const WS_TERMS = {
   defect: "The answers that count as affected when results are calculated, for example dim or off.",
   kappa: "Cohen's kappa measures agreement between two scorers beyond what chance alone would give: 1 is perfect, 0 is no better than chance.",
   second_scorer: "Agreement between two people scoring the same coded images (inter-rater reliability), reported at unblinding as percent agreement and Cohen's kappa.",
+  bleed: "Light from one marker recorded in the other's channel. It is measured on control animals that carry one marker only, imaged at this project's settings.",
   practice: "A few coded images from a finished project, with an experienced scorer's answers as the key. Scoring them first shows how your calls compare before you score for real.",
   browse: "See images with their file names and genotypes, without scoring. It is off from Build blind set until Unblind, so it can never break blinding.",
   log: "log.md is the project's record: every step, setting and software version, with the time. Reviewers can check the Methods against it.",

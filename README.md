@@ -184,6 +184,13 @@ click it or press Enter, and Escape closes it.
    are left out. Afterwards a **Results** card at the top of the project shows the penetrance per
    genotype and the planned Fisher tests, with **Open results**.
 
+**Bleed-through check** (projects with an identity channel). Image a few animals that carry one marker
+only, at the project's settings, and choose their folder on the **Bleed-through check** card. wormscore
+measures how much of that marker's light lands in the other channel, as a percentage, and records it in
+`log.md` and the Methods draft. Identity-only controls matter most, since that light would add to the
+measured reporter; reporter-only controls show whether bright cells look brighter in the identity
+channel, which would make them easier to find.
+
 **Looking at images: Browse images** (`wormscore browse my_project`). After scanning, **Browse images**
 (next to Open folder and Project settings, at the top of the project) opens the scoring viewer with each image's file name and genotype, for checking
 images and setting the scoring criteria. It has the same views as scoring (planes, 3D, channels, both

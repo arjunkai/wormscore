@@ -184,6 +184,18 @@ color (green for GFP) and the identity channel in magenta (or green when the rep
 cell with both looks white. Since 1.19.0 the 3D view turns and tilts the identity channel with the
 reporter, each channel keeping its own brightest point along the line of sight.
 
+**Bleed-through check** (1.20.0, optional, projects with an identity channel). Light from one marker
+recorded in the other channel cannot be told apart from real signal in two-marker images, so it is
+measured on single-label controls imaged at the same settings (Bolte and Cordelieres 2006, J Microsc
+224:213). For each control image, over every plane: the background of each channel is its median; pixels
+with signal are those in the labelled channel above background plus half the range to its 99.9th
+percentile, with pixels saturated in either channel left out; the bleed-through is the least-squares
+slope, through the origin, of the other channel above its background against the labelled channel above
+its background, as a percentage. The project's value is the median over control images
+(`outputs/bleed_through_identity-only.csv`, `..._reporter-only.csv`). Identity-only controls give the
+share of identity light added to the measured reporter; reporter-only controls give the share of
+reporter light in the identity channel. Values are reported, never subtracted.
+
 ## 6. Measurements
 
 Before measuring, each plane is median-filtered (3 x 3 pixels by default), so a single hot pixel or a

@@ -11,8 +11,7 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Features
 
-- **More identity-channel tools.** A bleed-through check, and several identity channels (for
-  multi-color systems such as NeuroPAL).
+- **Several identity channels,** for multi-color systems such as NeuroPAL.
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
 - **Imaging-session tools.** Optional flat-field or reference-slide correction per imaging session,
   and a check for gut autofluorescence.
@@ -37,6 +36,13 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.20.0: **Bleed-through check.** In projects with an identity channel, an optional card measures each
+  marker's light in the other channel from a folder of single-label control images (animals with one
+  marker, imaged at the project's settings; Bolte and Cordelieres 2006). Identity-only controls matter
+  most: their light would add to the measured reporter. The result is the least-squares slope over
+  pixels with signal in every plane, saturated pixels left out, as a percentage (median over images).
+  It goes to `outputs/bleed_through_*.csv`, `log.md` and the Methods draft. Nothing in the blind set or
+  the scores is read or changed.
 - 1.19.0: **The identity channel in 3D.** In projects with an identity channel, 3D turns and tilts it with
   the reporter, and the reporter, identity and both buttons (keys 1, 2 and 3) now work in 3D too. Each
   channel keeps its own brightest point along the line of sight. Projects without an identity channel

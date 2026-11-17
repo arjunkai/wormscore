@@ -161,6 +161,15 @@ def project_status(path):
             st["practice_set"] = {"error": str(exc)}
     elif not info:
         st["practice"] = PR.summary(p)
+    # bleed-through check (1.20.0): only in projects with an identity channel
+    from . import bleed as BL
+    try:
+        bcfg = C.load(p) if not info else None
+    except (Exception, SystemExit):
+        bcfg = None          # a config.json that cannot be read is reported elsewhere on the page
+    st["bleed"] = BL.results(p) if bcfg and bcfg.get("identity") else None
+    if st["bleed"] is not None:
+        st["marker_label"], st["identity_label"] = bcfg["marker"]["label"], bcfg["identity"]["label"]
     inv = p / "outputs" / "inventory.csv"
     st["scanned"] = _rows(inv) if inv.is_file() else None
     blind = p / "blind"
@@ -820,6 +829,21 @@ class HomeApp:
             raise ValueError("Another step is still running.")
         return {"ok": True}
 
+    def bleed(self, body):
+        """Measure bleed-through on a folder of single-label control images (1.20.0)."""
+        from . import bleed as BL
+        p = self.need_project()
+        kind = body.get("kind")
+        if kind not in BL.KINDS:
+            raise ValueError("unknown kind of control")
+        d = self.pick("Choose the folder with the " + ("identity-only" if kind == "identity-only" else "reporter-only")
+                      + " control images (outside the project)")
+        if not d:
+            return {"ok": False}
+        if not self.job.start("Bleed-through check", p, lambda: BL.measure(p, d, kind, log=self.job.say)):
+            raise ValueError("Another step is still running.")
+        return {"ok": True}
+
     def interim(self):
         """Interim totals of the answers saved so far (1.17.0), recorded in log.md as an interim look.
         Pooled over all images: nothing by genotype, nothing about hidden repeats."""
@@ -1035,6 +1059,8 @@ class HomeApp:
             return self.practice(body)
         elif route == "interim":
             return self.interim()
+        elif route == "bleed":
+            return self.bleed(body)
         elif route == "run":
             return self.run_step(body)
         elif route == "score":

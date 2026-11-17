@@ -361,7 +361,8 @@ function renderMain(d) {
     p.unblinded && p.results && !busy ? resultsCard(p) : null,
     steps,
     built && !building ? secondScorerCard(p, busy) : null,
-    built && !building && p.practice ? practiceCard(p, busy) : null));
+    built && !building && p.practice ? practiceCard(p, busy) : null,
+    p.bleed && p.scanned !== null ? bleedCard(p, busy) : null));
   const log = $("#log");
   if (log) log.scrollTop = log.scrollHeight;
 }
@@ -477,6 +478,31 @@ async function interimReport() {
     h("p", { class: "f-help" }, "All images together. Results by genotype stay hidden until you unblind. "
       + "This look is recorded in log.md."));
   await ask("Interim totals", body, [], "Close", { wide: true });
+}
+
+// ---------------------------------------------------------------- bleed-through check (1.20.0)
+
+// Projects with an identity channel: measure each marker's light in the other channel on
+// single-label control images. Identity-only controls matter most: that light would add to the
+// measured reporter.
+function bleedCard(p, busy) {
+  const kinds = [["identity-only", `${p.identity_label}-only`], ["reporter-only", `${p.marker_label}-only`]];
+  const rows = kinds.filter(([k]) => p.bleed[k]).map(([k]) => {
+    const r = p.bleed[k];
+    return h("li", { class: "pk" }, h("div", { class: "pk-text" },
+      h("b", {}, `${r.from} into ${r.into}: ${r.median_pct}%`),
+      h("span", { class: "pk-meta" }, `median of ${plural(r.images, "control image")}, range ${r.min_pct} to ${r.max_pct}% · ${r.measured.slice(0, 10)}`)));
+  });
+  return h("section", { class: "extra" },
+    h("div", { class: "x-head" },
+      h("div", {},
+        h("div", { class: "s-title" }, "Bleed-through check", wsHelp(h, "bleed", "bleed-through"), h("span", { class: "chip wait" }, "Optional")),
+        h("div", { class: "s-desc" }, `Image animals with one marker only, at this project's settings, and choose their folder. `
+          + `${p.identity_label}-only controls matter most: their light would add to the measured ${p.marker_label}.`)),
+      h("div", { class: "x-act" },
+        kinds.map(([k, label]) => h("button", { class: "btn", "data-k": `bleed-${k}`, disabled: busy,
+          onclick: () => { st.log = []; st.since = 0; st.showLog = false; act("/api/bleed", { kind: k }); } }, `${label} controls...`)))),
+    rows.length ? h("ul", { class: "pk-list" }, rows) : null);
 }
 
 // ---------------------------------------------------------------- practice sets (1.13.0)
