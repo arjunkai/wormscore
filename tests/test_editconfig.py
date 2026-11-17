@@ -74,10 +74,10 @@ def test_rules_that_built_the_blind_set_lock_once_scoring_starts(fresh_project, 
     (fresh_project / "scoring").mkdir(exist_ok=True)
     (fresh_project / "scoring" / "scores.json").write_text("{}")
     assert E.current(fresh_project)["locked"] == 1
-    with pytest.raises(ValueError, match="cannot be changed or removed"):
+    with pytest.raises(ValueError, match="Change anyway"):
         E.save(fresh_project, body_of(fresh_project, lambda b: b["sources"][0]["genotypes"][0].update(genotype="wt")))
-    with pytest.raises(ValueError, match="cannot be changed or removed"):
-        E.save(fresh_project, body_of(fresh_project, lambda b: b.update(sources=[])))
+    with pytest.raises(ValueError, match="cannot be removed"):
+        E.save(fresh_project, body_of(fresh_project, lambda b: b.update(sources=[], folders_reason="tidying")))
     new = tmp_path / "later"
     new.mkdir()
     E.save(fresh_project, body_of(fresh_project, lambda b: b["sources"].append(

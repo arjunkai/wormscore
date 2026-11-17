@@ -24,6 +24,29 @@ def stack_shapes(rows):
     return shapes
 
 
+def excluded_after_scoring(project, cfg, rows):
+    """{code: reason} for coded images matching an exclusion rule, only in projects whose image folders were
+    changed in the app after scoring began (1.21.2); other projects report exactly as before."""
+    from .editconfig import FOLDERS_TITLE
+    log_path = Path(project) / "log.md"
+    if not log_path.is_file() or f" {FOLDERS_TITLE}\n" not in log_path.read_text(encoding="utf-8"):
+        return {}
+    srcs = {s.get("name"): s for s in cfg["sources"]}
+    out = {}
+    for r in rows:
+        s = srcs.get(r.get("source"))
+        if not s or not s.get("exclude"):
+            continue
+        try:
+            rel = str(Path(r.get("local_path", "")).relative_to(Path(s["path"]))).replace("\\", "/")
+        except ValueError:
+            continue
+        rule = C.exclude_rule_for(cfg, r["source"], rel)
+        if rule:
+            out[r["code"]] = rule.get("reason", "")
+    return out
+
+
 def plan_status(project, cfg, history):
     """'yes' if the analysis plan matches the one recorded before scoring began, 'changed' if it
     differs (then no test runs), 'NO (...)' if it was never recorded, '' if no plan is set."""
@@ -98,7 +121,12 @@ def unblind(project, finished=False, anyway=False, log=print):
     # Hidden repeats are only for the consistency check; they never count as animals.
     originals = [r for r in rows if not r.get("repeat_of")]
     counted = [r for r in originals if r.get("score_count_this_image") == "yes" and r.get("score_usable") == "yes"]
+    late_excl = excluded_after_scoring(project, cfg, originals)        # 1.21.2
+    counted = [r for r in counted if r["code"] not in late_excl]
     lines = [f"Scored {len(scores)} of {len(rows)} images."]
+    if late_excl:
+        lines.append(f"WARNING: {len(late_excl)} coded image(s) left out by exclusion rules changed after scoring "
+                     "began: " + "; ".join(f"{c} ({why})" for c, why in sorted(late_excl.items())) + ".")
     unscored = [r["code"] for r in rows if not r.get("score_saved")]
     if unscored:
         lines.append(f"Unscored: {', '.join(unscored)}")
@@ -144,6 +172,9 @@ def unblind(project, finished=False, anyway=False, log=print):
     status = plan_status(project, cfg, history)
     if analysis.ref_status(project, cfg, history) == "changed":      # 1.15.0
         status = "changed"
+    late = analysis.recorded_change(project, cfg) if status == "changed" else None
+    if late:                    # 1.21.2: changed in the app with a reason; tests run, marked as exploratory
+        status = analysis.CHANGED_STATUS
     fstatus = scoreform.form_status(project, cfg, history)
     run = status != "changed" and fstatus != "changed"
     stop_note = " ".join(
@@ -364,6 +395,11 @@ def unblind(project, finished=False, anyway=False, log=print):
     if status.startswith("NO"):
         lines.append("")
         lines.append("WARNING: the analysis plan was not recorded in log.md before scoring began.")
+    if late:
+        lines.append("")
+        lines.append(f"WARNING: the analysis plan was changed after scoring began ({late[0][:10]}; reason: {late[1]}). "
+                     "The tests were run on the new plan and are marked set_before_scoring = "
+                     f"\"{analysis.CHANGED_STATUS}\": report them as exploratory.")
     if fstatus.startswith("NO"):
         lines.append("")
         lines.append(f"WARNING: the scoring criteria were not recorded in log.md before scoring began ({fstatus[4:-1]}); "
@@ -414,7 +450,7 @@ def unblind(project, finished=False, anyway=False, log=print):
         added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key_orig) if d).items()),
         key_rows=key_orig, excluded_rows=excluded, reliability=rel, n_repeats=len(pairs), dim_rows=dims,
         dim_skipped=dim_skipped, second_scorers=second, between=between, form_status=fstatus,
-        form_changes=form_changes),
+        form_changes=form_changes, late_excluded=Counter(late_excl.values())),
         encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [

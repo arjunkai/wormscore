@@ -157,7 +157,10 @@ click it or press Enter, and Escape closes it.
    taken after scoring started can be added with **Add new images** (`wormscore prepare my_project
    --add-new-images`; scan first): existing codes stay the same and new images get codes after the last
    one. Once scoring has started, the folders and rules that built the blind set are locked, but you can
-   still add a folder for new images.
+   still add a folder for new images. **Change anyway...** unlocks them with a reason (written to `log.md`):
+   a moved or renamed folder is followed by the coded images, a corrected genotype rule is applied to them
+   (listed in `key/changes_after_scoring.csv`), and a new exclusion rule leaves matching images out at
+   unblinding, which the summary and the Methods draft say.
 4. **Score** (`wormscore app my_project`): for each image, answer any yellow questions, score each
    neuron, save, then outline each cell body (or accept a suggestion) and save the outlines (**Save outlines**).
    Outlining is optional. Every question is a row of buttons, so the whole image can be scored from
@@ -347,7 +350,10 @@ Hidden repeats measure intra-rater reliability (how consistently one scorer scor
 it once the blind set is built rebuilds the blind set with new codes (only before scoring);
 unblinding then reports how consistently you scored them (`reliability.csv`).
 
-All of these are recorded as an analysis plan before scoring and locked once scoring starts. See
+All of these are recorded as an analysis plan before scoring and locked once scoring starts.
+**Change anyway...** on the locked card asks for a reason: the tests then run on the new settings and are
+marked as not set before scoring, and the summary and the Methods draft call them exploratory and give the
+reason. The share of hidden repeats stays as it is (it decides the codes). See
 [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md#8-unblinding).
 
 ## Project folder

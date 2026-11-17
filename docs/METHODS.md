@@ -450,7 +450,20 @@ Results tables use counted, usable images only, with the animal as the unit (one
   cross-microscope measures, interaction model, dim cutoff) to `log.md`. Unblinding compares the current settings with
   the last plan recorded before the first score was saved. If they differ, no test is run and every test
   file says why; descriptive tables are still written. If no plan was recorded before scoring, tests run
-  but are marked `set_before_scoring = NO`.
+  but are marked `set_before_scoring = NO`. Since 1.21.2 the app can change the plan after scoring began
+  once a reason is typed; the reason and the new plan are written to `log.md`. If `config.json` still holds
+  that plan at unblinding, the tests run on it and are marked `set_before_scoring = no: changed after
+  scoring began`; the summary and the Methods draft call them exploratory and give the reason (a deviation
+  from the pre-registered plan, reported as such; Willroth & Atherton, 2024). A later hand edit of
+  `config.json` still runs no test.
+- **Image folders after scoring began** (1.21.2). With a reason typed in the app: a moved or renamed folder
+  is followed by `key.csv` and `inventory.csv` (backups in `key/backups/`); a changed genotype rule is applied
+  to the coded images, each change listed in `key/changes_after_scoring.csv` (not in `log.md`, which never
+  names a code's genotype); a new exclusion rule leaves matching coded images out at unblinding, and the
+  summary and the Methods draft give the number and the reason. Folders with coded images cannot be removed.
+- **Hidden repeats** are placed at least 15% of the set from their originals. Since 1.21.2, if a small set
+  cannot fit them that far apart, Build places them as far apart as they fit and warns with the distance
+  reached, which `log.md` records.
 - **Scoring criteria lock.** Unblinding compares the current form with the last one recorded before the first
   score (section 7). If it differs, no test is run, every test file says the scoring criteria changed, and the
   Methods draft says only descriptive results are reported. Since 1.6.0 the app can change a locked

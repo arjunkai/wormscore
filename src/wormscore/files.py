@@ -28,6 +28,18 @@ def read_csv(path):
         return list(csv.DictReader(fh))
 
 
+APP_FOLDERS = ("key", "blind", "scoring", "outputs", "practice", "scorers", "config_backups")
+
+
+def refuse_app_folder(project, destination, what):
+    """Stop only if destination is the project folder itself or inside one of the folders wormscore writes
+    (a package or practice set there could overwrite or be overwritten). Elsewhere in the project is fine."""
+    project, dest = Path(project).resolve(), Path(destination).resolve()
+    if dest == project or any(dest == project / f or (project / f) in dest.parents for f in APP_FOLDERS):
+        raise SystemExit(f"Choose another folder for the {what}: this one is part of the project's own files "
+                         f"({', '.join(APP_FOLDERS[:4])}, ...).")
+
+
 def append_log(project, title, lines, cfg=None):
     with open(Path(project) / "log.md", "a", encoding="utf-8") as fh:
         fh.write(f"\n## {now()} {title}\n")

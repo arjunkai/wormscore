@@ -37,6 +37,16 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.21.2: **Warnings instead of blocks.** Steps that were refused only to prevent a mistake the researcher
+  can knowingly accept are now allowed with a warning, recorded in `log.md` and, where it matters, the
+  Methods draft. **Change anyway...** unlocks the analysis settings after scoring began (the tests then run
+  and are reported as exploratory, with the reason) and the image folders (a moved folder is followed, a
+  corrected genotype rule is applied, a new exclusion leaves images out at unblinding and says so). Hidden
+  repeats that do not fit at the planned distance are placed as far apart as they fit. A practice set may
+  have fewer than 5 images (up to 500), and a practice result can be recorded before every image is
+  scored. A package or practice set may go anywhere except wormscore's own folders. Every warning has
+  one look (an icon, the next step, beside what it is about), and a finished step lists its warnings
+  instead of leaving them in the log. Blocks that protect blinding, saved scores or data stay.
 - 1.21.1: **Flat-field correction that never gets in the way.** Nothing that can be worked around stops
   the build any more. An image from a day without slide images uses the nearest day's (the pattern of
   light across the field changes little unless the microscope is realigned), an image without a date

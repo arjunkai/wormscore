@@ -35,7 +35,7 @@ KEY_FILE = "practice_key.json"
 SET_ID = re.compile(r"[0-9a-f]{12}")       # secrets.token_hex(6), as make_practice_set writes it
 KEY_FORMAT = "wormscore-practice-key"
 RESULTS_DIR = "practice"
-MIN_IMAGES, MAX_IMAGES = 5, 100
+MIN_IMAGES, MAX_IMAGES = 5, 500     # 1.21.2: fewer than MIN_IMAGES is allowed with a warning
 # Answers compared with the key. Confidence, notes and the like describe the scorer, not the image.
 NOT_COMPARED = {"code", "saved", "count_this_image", "confidence", "display_preset_when_saved", "flag_answers", "notes"}
 
@@ -85,12 +85,12 @@ def make_practice_set(project, destination, n=20, sure_only=True, log=print):
     if not (project / "outputs" / "unblinded" / "summary.txt").is_file():
         raise SystemExit("Practice sets are made from a finished project: unblind it first. "
                          "(Then nobody practises on images that are still being scored blind.)")
-    if isinstance(n, bool) or not isinstance(n, int) or not MIN_IMAGES <= n <= MAX_IMAGES:
-        raise SystemExit(f"A practice set has {MIN_IMAGES} to {MAX_IMAGES} images.")
+    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= MAX_IMAGES:
+        raise SystemExit(f"A practice set has 1 to {MAX_IMAGES} images.")
     if destination.exists() and any(destination.iterdir()):
         raise SystemExit(f"{destination} is not empty. Choose a new, empty folder for the practice set.")
-    if project.resolve() in destination.resolve().parents or destination.resolve() == project.resolve():
-        raise SystemExit("Make the practice set outside the project folder, so it can be handed over on its own.")
+    from .files import refuse_app_folder
+    refuse_app_folder(project, destination, "practice set")
     cfg = C.load(project)
     C.check(cfg)
     raw = json.loads((project / "config.json").read_text(encoding="utf-8"))
@@ -98,9 +98,14 @@ def make_practice_set(project, destination, n=20, sure_only=True, log=print):
     key = [r for r in read_csv(project / "key" / "key.csv") if not r.get("repeat_of")]
     candidates = [r for r in key if r["code"] in scores and (not sure_only or scores[r["code"]].get("confidence") == "sure")
                   and (project / "blind" / r["code"] / "meta.json").is_file()]
-    if len(candidates) < MIN_IMAGES:
-        raise SystemExit(f"Only {len(candidates)} scored image(s)" + (" marked sure" if sure_only else "")
-                         + f" can be used; a practice set needs at least {MIN_IMAGES}.")
+    if not candidates:
+        raise SystemExit("No scored image" + (" marked sure" if sure_only else "") + " can be used for a practice set.")
+    if len(candidates) < n:
+        log(f"Warning: only {len(candidates)} scored image(s)" + (" marked sure" if sure_only else "")
+            + f" can be used, so the set has {len(candidates)} instead of {n}.")
+        n = len(candidates)
+    if n < MIN_IMAGES:
+        log(f"Warning: agreement from {n} image(s) is very imprecise; {MIN_IMAGES} or more give a usable estimate.")
     rng = random.Random(secrets.randbits(32))
     codes = _pick(candidates, n, rng)
     order = rng.sample(codes, len(codes))
@@ -206,7 +211,7 @@ def _label(field, cfg):
     return f"{neuron}: " + {"call": "call", "side": "side"}.get(rest, qs.get(rest, rest))
 
 
-def result(folder, verify=True):
+def result(folder, verify=True, partial=False):
     """How a practice set's scores compare with its key: {"done", "scored", "total", "measures",
     "differences", ...}. Agreement is only given once every image is scored. verify: also check
     every image against its checksum (done when a result is recorded; the home page, which asks
@@ -222,8 +227,9 @@ def result(folder, verify=True):
     out = {"id": key["id"], "source": key["source"], "made": key["made"], "total": len(codes),
            "scored": sum(1 for c in codes if c in mine), "key_sha256": key["sha256"], "form": key["form"]}
     out["done"] = out["scored"] == out["total"]
-    if not out["done"]:
+    if not out["done"] and not (partial and out["scored"]):
         return out
+    codes = [c for c in codes if c in mine]      # every image, or (partial) the scored ones
     for c in codes if verify else []:
         if folder_hashes(folder / "blind" / c) != info["blind_sha256"].get(c):
             raise SystemExit(f"The images of {c} in the practice set were changed, so it cannot be compared.")
@@ -256,12 +262,17 @@ def add_result(project, folder, log=print):
     from .editconfig import scoring_started
     project = Path(project)
     refuse_in_package(project, "Adding a practice result")
-    r = result(folder)
-    if not r["done"]:
-        raise SystemExit(f"The practice set is not finished: {r['scored']} of {r['total']} images are scored.")
+    r = result(folder, partial=True)
+    if not r["scored"]:
+        raise SystemExit("Nothing in the practice set is scored yet.")
+    if not r["done"]:      # 1.21.2: recorded as a partial result, with a warning
+        log(f"Warning: the practice set is not finished ({r['scored']} of {r['total']} images scored); the agreement "
+            "is recorded for the scored images, and log.md and the Methods draft say so.")
     cfg = C.load(project)
     same = form_hash(cfg) == r["form"]
     rec = {k: r[k] for k in ("id", "source", "made", "total", "practised", "key_sha256", "measures")}
+    if not r["done"]:
+        rec["scored"] = r["scored"]
     # answer and outcome names come from the set's own config.json: one plain line each in log.md
     rec["measures"] = [dict(m, measure=_plain(m["measure"], 80)) for m in rec["measures"]]
     r = dict(r, measures=rec["measures"])
@@ -276,7 +287,9 @@ def add_result(project, folder, log=print):
     h = _headline(r["measures"])
     append_log(project, f"practice result added ({r['id']})", [
         f"Practice set of {r['total']} images from \"{r['source']}\" (made {r['made']}), scored {r['practised']}"
-        + ("" if rec["before_scoring"] else ", added after scoring had begun") + ".",
+        + ("" if rec["before_scoring"] else ", added after scoring had begun")
+        + (f"; not finished: {r['scored']} of {r['total']} images scored, agreement from those" if not r["done"] else "")
+        + ".",
         f"Answer key SHA-256: {r['key_sha256']}",
         ("Agreement with the key: " + "; ".join(f"{m['measure']} {m['same_answer']}/{m['pairs']}"
                                                  + (f", kappa {m['kappa']}" if m["kappa"] != "" else "")
@@ -313,7 +326,8 @@ def methods_sentence(project):
         agree = (f", agreeing with the key on {h['same_answer']} of {h['pairs']} {h['measure']}s ({h['percent_agreement']}%"
                  + (f"; Cohen's kappa {h['kappa']}" if h["kappa"] != "" else "") + ")") if h else ""
         crit = "" if r.get("same_criteria") else " with scoring criteria that differ from this project's"
-        out.append(f"{when}, {who} practised on a set of {r['total']} coded images from an earlier project "
+        part = f"{r['scored']} of " if r.get("scored") else ""
+        out.append(f"{when}, {who} practised on {part}a set of {r['total']} coded images from an earlier project "
                    f"(\"{r['source']}\"){crit}, scored against an answer key of an experienced scorer's saved answers{agree}; "
                    f"answer key SHA-256 {str(r['key_sha256'])[:16]}, full value in log.md. ")
     return "".join(out)

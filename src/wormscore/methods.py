@@ -259,6 +259,17 @@ def definitions_sentence(cfg):
             "were recorded in the project log with the scoring criteria. ")
 
 
+def late_plan_sentence(project, cfg, tests):
+    """1.21.2: the analysis plan changed in the app after scoring began, with the reason; "" otherwise."""
+    from . import analysis
+    if not any(t.get("set_before_scoring") == analysis.CHANGED_STATUS for t in tests):
+        return ""
+    when, why = analysis.recorded_change(project, cfg) or ("", "")
+    return (f" The analysis plan was changed after scoring began{' (' + when[:10] + ')' if when else ''}"
+            + (f", because {why.rstrip('.')}" if why else "")
+            + "; the tests were therefore not set in advance and are reported as exploratory.")
+
+
 def form_sentences(cfg, form_status, form_changes=()):
     """The primary outcome and whether the score form was locked (nothing for older forms that match)."""
     out = []
@@ -300,7 +311,7 @@ def browsed_sentence(project):
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
               dim_rows=(), dim_skipped=0, second_scorers=(), between=(), form_status="yes", rank_tests=(),
-              form_changes=()):
+              form_changes=(), late_excluded=None):
     """added: (date, number of images) for each batch added to an existing key.
     key_rows, excluded_rows: for the table of images per genotype and microscope.
     reliability, n_repeats: agreement of hidden repeats. dim_rows: the measured check of calls."""
@@ -326,6 +337,9 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "(https://github.com/arjunkai/wormscore). Inclusion rules were set before scoring and applied "
         f"without regard to genotype: {n_included} of {n_included + n_excluded} images were included"
         + (" (the reason for each exclusion is listed in excluded.csv)" if n_excluded else "")
+        + (". After scoring began, " + "; ".join(f"{n} image{'s were' if n != 1 else ' was'} left out because "
+                                                  f"{why.rstrip('.') or '[reason]'}" for why, n in sorted(late_excluded.items()))
+           + " (by exclusion rules changed after scoring began)" if late_excluded else "")
         + f". On {_date(project / 'key' / 'seed.txt')}, "
         f"{who('coded_by', '[name]')} assigned every included image a random code; the key linking codes to "
         "files and genotypes was kept in a separate folder that the scoring software does not read. "
@@ -362,7 +376,8 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
            if C.analysis_plan(cfg) and all(t.get("set_before_scoring") == "yes"
                                            for t in list(tests) + list(interaction_tests)) and
            (tests or interaction_tests) else "")
-        + "".join(" " + x for x in form_sentences(cfg, form_status, form_changes)),
+        + "".join(" " + x for x in form_sentences(cfg, form_status, form_changes))
+        + late_plan_sentence(project, cfg, list(tests) + list(interaction_tests)),
         "",
         *([f"**Limitations.** {' '.join(cfg['unblinding']['methods_notes'])}", ""]
           if cfg["unblinding"].get("methods_notes") else []),

@@ -237,21 +237,28 @@ def spaced_order(images, repeats, rng):
     order = list(images)
     rng.shuffle(order)
     gap = max(2, round(REPEAT_GAP * (len(images) + len(repeats))))
+    start = list(order)
 
     def spaced(seq):
         pos = {id(s): i for i, s in enumerate(seq)}
         return all(abs(pos[id(r)] - pos[id(r["_orig"])]) >= gap for r in repeats if id(r) in pos)
-    for r in repeats:
-        for _ in range(2000):
-            at = rng.randrange(len(order) + 1)
-            trial = order[:at] + [r] + order[at:]
-            if spaced(trial):
-                order = trial
+    # 1.21.2: if they do not fit at the planned distance (a small set with many repeats), they are placed
+    # as far apart as they fit, and Build warns with the distance reached, instead of stopping.
+    while True:
+        order, placed = list(start), True
+        for r in repeats:
+            for _ in range(2000):
+                at = rng.randrange(len(order) + 1)
+                trial = order[:at] + [r] + order[at:]
+                if spaced(trial):
+                    order = trial
+                    break
+            else:
+                placed = False
                 break
-        else:
-            raise SystemExit("Could not place the hidden repeats far enough from their originals. "
-                             "Lower reliability.repeat_fraction.")
-    return order, gap
+        if placed or gap <= 1:
+            return order, gap
+        gap -= 1
 
 
 def assign_codes(project, images, reassign, add=False, cfg=None):
@@ -328,7 +335,9 @@ def assign_codes(project, images, reassign, add=False, cfg=None):
         return list(images)
     rng = random.Random(seed)
     repeats = [{**s, "_orig": s} for s in pick_repeats(images, fraction, rng)]
-    order, _ = spaced_order(images, repeats, rng)
+    order, gap = spaced_order(images, repeats, rng)
+    for r in repeats:
+        r["_gap"] = gap
     width = max(4, len(str(len(order))))
     for n, s in enumerate(order, start=1):
         s["code"] = f"W{n:0{width}d}"
@@ -647,10 +656,18 @@ def prepare(project, reassign=False, add=False, log=print):
         return ranges
     n_counted = sum(s["counted_by_default"] for s in images)
     per_system = dict(Counter(s["system"] for s in images))
+    target = max(2, round(REPEAT_GAP * (len(images) + len(repeats))))
+    gap_done = repeats[0].get("_gap", target) if repeats else target     # a kept key: as it was placed
     hidden = [f"Hidden repeats for scorer consistency: {len(repeats)} images shown a second time under new "
               f"codes (repeat_fraction {C.repeat_fraction(cfg)} of each genotype, at least one; each at least "
-              f"{max(2, round(REPEAT_GAP * (len(images) + len(repeats))))} codes from its original). Which codes "
+              f"{gap_done} codes from its original). Which codes "
               "are repeats is recorded only in the key; repeats are never counted in results."] if repeats else []
+    if repeats and gap_done < target:     # 1.21.2: placed as far apart as they fit
+        warn = (f"Warning: the hidden repeats are at least {gap_done} codes from their originals, not the "
+                f"planned {target}: the set is small for this share of repeats. A scorer may remember an image "
+                "seen that recently; a smaller share of repeats spaces them further apart.")
+        hidden.append(warn[len("Warning: "):])
+        log(warn)
     append_log(project, "prepare", [
         f"Software: {json.dumps(software_versions())}",
         f"Included images: {len(images)} {per_system} ({n_counted} counted by default, "

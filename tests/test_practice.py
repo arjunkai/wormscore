@@ -40,11 +40,11 @@ def test_a_practice_set_holds_coded_images_and_answers_only(fresh_project, tmp_p
     with pytest.raises(SystemExit, match="unblind it first"):
         PR.make_practice_set(fresh_project, tmp_path / "early", n=6)
     key = finished(fresh_project)
-    for bad in (4, 101, True):
-        with pytest.raises(SystemExit, match="5 to 100"):
+    for bad in (0, 501, True):
+        with pytest.raises(SystemExit, match="1 to 500"):
             PR.make_practice_set(fresh_project, tmp_path / "x", n=bad)
-    with pytest.raises(SystemExit, match="outside the project"):
-        PR.make_practice_set(fresh_project, fresh_project / "inside", n=6)
+    with pytest.raises(SystemExit, match="part of the project's own files"):
+        PR.make_practice_set(fresh_project, fresh_project / "outputs" / "inside", n=6)
     folder = PR.make_practice_set(fresh_project, tmp_path / "set", n=6, log=lambda *a: None)
     codes = sorted(d.name for d in (folder / "blind").iterdir())
     assert len(codes) == 6
@@ -73,8 +73,11 @@ def test_only_images_marked_sure_by_default(fresh_project, tmp_path):
     for r in rows[:-4]:
         r["confidence"] = "unsure"
     write_scores(fresh_project, rows)
-    with pytest.raises(SystemExit, match="marked sure"):
-        PR.make_practice_set(fresh_project, tmp_path / "set", n=6)
+    said = []                       # 1.21.2: made with the 4 sure images, with warnings
+    small = PR.make_practice_set(fresh_project, tmp_path / "set", n=6, log=said.append)
+    assert len(list((small / "blind").iterdir())) == 4
+    assert any("marked sure" in x and x.startswith("Warning:") for x in said)
+    assert any("very imprecise" in x for x in said)
     assert len(list((PR.make_practice_set(fresh_project, tmp_path / "any", n=6, sure_only=False, log=lambda *a: None)
                      / "blind").iterdir())) == 6
     assert len(key) >= 6
@@ -121,8 +124,13 @@ def test_a_practice_result_is_recorded_and_named_in_the_methods(demo_project, fr
     shutil.copytree(demo_project, mine)
     assert methods.practice_sentence(mine) == ""  # nothing recorded: the Methods read as before
     score_set(folder, upto=2)
-    with pytest.raises(SystemExit, match="not finished"):
-        PR.add_result(mine, folder)
+    partial = tmp_path / "partial"                # 1.21.2: a partial result is recorded with a warning
+    shutil.copytree(demo_project, partial)
+    said = []
+    rec = PR.add_result(partial, folder, log=said.append)
+    assert rec["scored"] == 2 and any(x.startswith("Warning:") for x in said)
+    assert "practised on 2 of a set of 6" in methods.practice_sentence(partial)
+    assert "not finished: 2 of 6" in (partial / "log.md").read_text(encoding="utf-8")
     key = score_set(folder, change=1)
     rec = PR.add_result(mine, folder, log=lambda *a: None)
     assert rec["before_scoring"] and rec["same_criteria"] and rec["differences"] == 1

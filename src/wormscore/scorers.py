@@ -182,8 +182,8 @@ def export_package(project, scorer, destination, fraction=0.3, log=print):
     sid = f"{slug}_{dt.date.today():%Y%m%d}_{pid[:4]}"
     if destination.exists() and any(destination.iterdir()):
         raise SystemExit(f"{destination} is not empty. Choose a new, empty folder for the package.")
-    if project.resolve() in destination.resolve().parents or destination.resolve() == project.resolve():
-        raise SystemExit("Make the package outside the project folder, so it can be handed over on its own.")
+    from .files import refuse_app_folder
+    refuse_app_folder(project, destination, "package")      # 1.21.2: elsewhere in the project is fine
 
     rng = random.Random(secrets.randbits(32))
     key = read_csv(key_path)

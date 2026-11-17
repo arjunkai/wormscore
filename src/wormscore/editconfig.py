@@ -112,9 +112,12 @@ def merged(project, body):
     old = raw.get("sources", [])
     locked = info["locked"]
     if locked:
-        if len(sources) < locked or any(_editable(old[i]) != _editable(sources[i]) for i in range(locked)):
-            raise ValueError("Scoring has started, so the folders and rules that built the blind set cannot be "
-                             "changed or removed. You can add a new folder for Add new images.")
+        if len(sources) < locked:
+            raise ValueError("Scoring has started, so a folder whose images have codes cannot be removed. "
+                             "Exclude images with a rule instead.")
+        if any(_editable(old[i]) != _editable(sources[i]) for i in range(locked)) and not folders_reason(body):
+            raise ValueError("Scoring has started, so the folders and rules that built the blind set are locked. "
+                             "Use Change anyway... to change them with a reason, which goes into log.md.")
     new_sources = []
     for i, s in enumerate(sources):
         frm = _origin(body, i, len(old))
@@ -135,6 +138,90 @@ def merged(project, body):
     return out
 
 
+def folders_reason(body):
+    """The reason typed for changing image folders after scoring began (1.21.2), or ""."""
+    r = body.get("folders_reason")
+    return " ".join(r.split())[:MAX_REASON] if isinstance(r, str) else ""
+
+
+def folder_changes(project, old_raw, raw, reason):
+    """After scoring began (1.21.2): apply changed folders and rules to the coded images and record them.
+    - A moved or renamed folder: key.csv and inventory.csv follow (backups in key/backups/), so Browse,
+      Add new images and the results still find the images.
+    - Genotype rules: each coded image's genotype is worked out again; changes go to
+      key/changes_after_scoring.csv (not to log.md, which never names a code's genotype).
+    - Exclusion rules: applied at unblinding, which leaves matching images out and says so.
+    Returns the log.md lines (none if nothing in a coded folder changed)."""
+    import datetime as dt
+    import shutil
+    from .files import read_csv, write_csv
+    project = Path(project)
+    old_s, new_s = old_raw.get("sources", []), raw.get("sources", [])
+    pairs = [(o, n) for o, n in zip(old_s, new_s) if _editable(o) != _editable(n)]
+    if not pairs:
+        return []
+    key_path, inv_path = project / "key" / "key.csv", project / "outputs" / "inventory.csv"
+    stamp = f"{dt.datetime.now():%Y%m%d-%H%M%S}"
+    rows = read_csv(key_path) if key_path.is_file() else []
+    inv = read_csv(inv_path) if inv_path.is_file() else []
+    if rows:
+        (project / "key" / "backups").mkdir(exist_ok=True)
+        shutil.copy2(key_path, project / "key" / "backups" / f"key-{stamp}.csv")
+    changes, lines = [], [f"Reason given: {reason}"]
+    for o, n in pairs:
+        name_o, name_n = o.get("name", ""), n.get("name", "")
+        base_o, base_n = Path(o.get("path", "")), Path(n.get("path", ""))
+        orig_o, orig_n = o.get("original_path", ""), n.get("original_path", "")
+
+        def rel(local):
+            try:
+                return str(Path(local).relative_to(base_o)).replace("\\", "/")
+            except ValueError:
+                return None
+        moved = genos = 0
+        for r in rows + inv:
+            if r.get("source") != name_o:
+                continue
+            rp = rel(r.get("local_path", ""))
+            if rp is None:
+                continue
+            is_key = "code" in r
+            if base_n != base_o:
+                r["local_path"] = str(base_n / rp)
+                moved += is_key
+            if orig_n != orig_o and orig_n:
+                r["original_path"] = str(Path(orig_n) / rp)
+            r["source"] = name_n
+            g = C.genotype_for(n, rp)
+            if g != r.get("genotype"):
+                if is_key:
+                    changes.append({"code": r["code"], "field": "genotype", "before": r.get("genotype", ""), "after": g,
+                                    "changed": stamp})
+                    genos += 1
+                r["genotype"] = g
+        what = []
+        if name_n != name_o:
+            what.append(f"renamed from {name_o!r}")
+        if base_n != base_o:
+            what.append(f"moved from {base_o} to {base_n} ({moved} coded images follow)")
+        if orig_n != orig_o:
+            what.append("original path changed")
+        if genos or o.get("genotypes") != n.get("genotypes") or o.get("default_genotype") != n.get("default_genotype"):
+            what.append(f"genotype rules changed: {genos} coded image(s) now have another genotype "
+                        "(key/changes_after_scoring.csv)")
+        if o.get("exclude", []) != n.get("exclude", []):
+            what.append("exclusion rules changed: unblinding leaves matching coded images out and lists them")
+        lines.append(f"Image folder {name_n!r}: " + "; ".join(what or ["changed"]) + ".")
+    if rows:
+        write_csv(key_path, rows)
+    if inv:
+        write_csv(inv_path, inv)
+    if changes:
+        f = project / "key" / "changes_after_scoring.csv"
+        write_csv(f, (read_csv(f) if f.is_file() else []) + changes)
+    return lines
+
+
 def _editable(s):
     return {"name": s.get("name", ""), "path": s.get("path", ""), "original_path": s.get("original_path", ""),
             "genotypes": [{"match": r.get("match"), "genotype": r.get("genotype")} for r in s.get("genotypes", [])],
@@ -151,6 +238,7 @@ def _origin(body, i, n_old):
 
 
 MAX_REASON = 500
+FOLDERS_TITLE = "image folders changed after scoring began"
 
 
 def unlock_reason(body):
@@ -222,7 +310,18 @@ def save(project, body):
     elif checked:
         append_log(project, "score form checked in Project settings",
                    ["Checked before the first score and kept as it was."] + S.form_log_lines(cfg, project))
-    if analysis_changed:
+    if was_locked and folders_reason(body):
+        lines = folder_changes(project, old_raw, raw, folders_reason(body))
+        if lines:
+            append_log(project, FOLDERS_TITLE, lines)
+    if analysis_changed and S.locked(project):
+        from .pipeline import interaction_log_lines
+        append_log(project, analysis.CHANGE_TITLE,
+                   analysis.change_log_lines(cfg, analysis.unlock_reason(body.get("analysis")))
+                   # not interaction_log_lines: its "set before scoring" lines must keep the plan from before scoring
+                   + [f"Changed: {', '.join(sorted(analysis_changed))}. Unblinding runs the tests on this plan and marks "
+                      "them as not set before scoring (exploratory); the summary and the Methods draft say so."])
+    elif analysis_changed:
         from .pipeline import interaction_log_lines
         append_log(project, "analysis settings saved in Project settings",
                    ["Saved before the first score; the last settings recorded before the first score are the "

@@ -28,10 +28,17 @@ const ICONS = {
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   folder: '<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2.5h7.5A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/>',
   lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  warn: '<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
   up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
   down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 };
+// One look for every warning (1.21.2): beside what it is about, an icon (not colour alone) with "Warning:"
+// for screen readers, at most two lines, and what to do next (Carbon, GOV.UK warning text, NN/g).
+function warnNote(text, extra = {}) {
+  return h("p", { class: "warn-note", ...extra }, icon("warn", 16), h("span", { class: "sr" }, "Warning: "), h("span", {}, text));
+}
+
 function icon(name, size = 16) {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   s.setAttribute("viewBox", "0 0 24 24");
@@ -375,16 +382,21 @@ function activity(job) {
   const done = !job.running;
   const pct = job.frac !== null && job.frac !== undefined ? Math.round(100 * job.frac) : null;
   const cls = done ? (job.outcome === "done" ? " ok" : job.outcome ? " bad" : "") : "";
+  // warnings stay with the finished step, so they do not depend on opening the log (1.21.2)
+  const warns = done && job.outcome === "done" ? job.warnings || [] : [];
   const meta = job.running
     ? [pct !== null ? `${pct}%` : "working", job.eta_s ? `about ${duration(job.eta_s)} left` : null, `${duration(job.elapsed_s)} so far`].filter(Boolean).join(" · ")
-    : job.outcome === "done" ? `Done in ${duration(job.elapsed_s)}` : job.outcome ? "Stopped. See the log." : "";
+    : job.outcome === "done" ? `Done in ${duration(job.elapsed_s)}` + (warns.length ? ` · ${plural(warns.length, "warning")}` : "")
+    : job.outcome ? "Stopped. See the log." : "";
   const width = done ? 100 : pct ?? 0;
   const last = [...st.log].reverse().find(l => l.trim() && !l.startsWith("---")) || "";
   return h("section", { class: "activity" + cls, "aria-live": "polite" },
     h("div", { class: "a-head" }, h("span", { class: "a-title" }, job.running ? job.title : `Last step: ${job.title}`),
       h("span", { class: "a-meta" }, meta)),
     h("div", { class: "bar" + (job.running && pct === null ? " indet" : "") }, h("div", { style: `transform:scaleX(${width / 100})` })),
-    h("div", { class: "a-last", title: last }, last),
+    warns.length ? null : h("div", { class: "a-last", title: last }, last),
+    warns.length ? h("ul", { class: "warn-list" }, warns.slice(0, 3).map(w => h("li", {}, warnNote(w))),
+      warns.length > 3 ? h("li", { class: "a-meta" }, `${warns.length - 3} more in the log.`) : null) : null,
     h("button", { class: "btn subtle log-toggle", "data-k": "log", onclick: () => { st.showLog = !st.showLog; render(); } },
       st.showLog ? "Hide log" : "Show log"),
     st.showLog ? h("pre", { class: "log", id: "log" }, st.log.join("\n")) : null);
@@ -528,9 +540,9 @@ function flatFieldCard(p, busy) {
     ].filter(Boolean).join(" · "))))) : null;
   // after Build: images whose own session had no slide images (warned in the Build log too)
   const b = on && ff.build, warn = b && (b.other || b.none) ? [
-    b.other ? `${plural(b.other, "image")} from days without slide images ${b.other === 1 ? "was" : "were"} corrected with the nearest session's` : null,
-    b.none ? `${plural(b.none, "image")} could not be corrected and ${b.none === 1 ? "is" : "are"} used as recorded` : null,
-  ].filter(Boolean).join("; ") + ". Add slide images for those days to correct them fully; see key.csv, column flat_field." : null;
+    b.other ? `${plural(b.other, "image")} used another day's slide images` : null,
+    b.none ? `${plural(b.none, "image")} could not be corrected` : null,
+  ].filter(Boolean).join(", ") + ". Add slide images for those days to correct them fully." : null;
   return h("section", { class: "extra" },
     h("div", { class: "x-head" },
       h("div", {},
@@ -544,7 +556,7 @@ function flatFieldCard(p, busy) {
           : h("button", { class: "btn", "data-k": "ff-set", disabled: busy || !!ff.locked, title: ff.locked || null,
             onclick: () => flatFieldDialog(p) }, "Slide images..."))),
     row,
-    warn ? h("p", { class: "pv warn ff-warn" }, warn) : null);
+    warn ? warnNote(warn, { title: "Listed in key.csv, column flat_field" }) : null);
 }
 
 // With the correction on: add slide images for later days (allowed after scoring began: nothing
@@ -620,7 +632,7 @@ function practiceCard(p, busy) {
 }
 
 async function makePracticeSet() {
-  const n = h("input", { type: "number", id: "prN", class: "f-input pr-n", min: "5", max: "100", step: "1", value: "20" });
+  const n = h("input", { type: "number", id: "prN", class: "f-input pr-n", min: "1", max: "500", step: "1", value: "20" });
   const sure = h("input", { type: "checkbox", id: "prSure", checked: true });
   const body = h("div", { class: "form" },
     h("label", { class: "f-label", for: "prN" }, "Number of images"), n,
@@ -628,7 +640,7 @@ async function makePracticeSet() {
     h("p", { class: "f-help" }, "Images are taken in turn from each genotype, with your saved answers as the answer key. "
       + "The set has no genotypes or file names. Next, choose a new, empty folder outside this project."));
   const go = await ask("Make a practice set", body, [{ value: true, label: "Choose folder..." }], "Cancel", {
-    check: () => { const v = Number(n.value); return Number.isInteger(v) && v >= 5 && v <= 100 ? null : "Choose 5 to 100 images."; } });
+    check: () => { const v = Number(n.value); return Number.isInteger(v) && v >= 1 && v <= 500 ? null : "Choose 1 to 500 images."; } });
   if (!go) return;
   st.log = []; st.since = 0; st.showLog = false;
   act("/api/practice", { action: "make", n: Number(n.value), sure_only: sure.checked });
@@ -1222,6 +1234,8 @@ async function openProjectSettings(section) {
     "test_secondary", "dim_cutoff_sd", "allow_cross_microscope", "cross_microscope_reason"];
   model.analysis = structuredClone(Object.fromEntries(AN_KEYS.map(k => [k, an[k]])));
   let moreOpen = false;      // "More planned tests" stays open across redraws once opened
+  let srcReason = "";        // 1.21.2: why coded image folders are changed after scoring began (to log.md)
+  let anReason = "";         // 1.21.2: why the analysis settings are changed after scoring began (to log.md)
   const foldersAtOpen = JSON.stringify([model.project_name, model.sources]);
   // Two pages: the scoring criteria (opened from step 2) and the project's name and image folders.
   const criteria = section === "form";
@@ -1229,7 +1243,8 @@ async function openProjectSettings(section) {
   // form_checked: opened from the criteria step, so Save records the criteria even if unchanged
   const payload = () => criteria
     ? (form.payload() ? { form: form.payload(), form_checked: true, ...(form.reason() ? { unlock_reason: form.reason() } : {}) } : {})
-    : { project_name: model.project_name, sources: model.sources, analysis: model.analysis };
+    : { project_name: model.project_name, sources: model.sources, ...(srcReason ? { folders_reason: srcReason } : {}),
+        analysis: anReason ? { ...model.analysis, unlock_reason: anReason } : model.analysis };
   const box = h("div", { class: "settings ps" });
   const err = h("div", { class: "m-err", role: "alert", hidden: true });
   let pvTimer = null, previews = [];
@@ -1274,8 +1289,41 @@ async function openProjectSettings(section) {
 
   // The analysis plan: who is compared with whom, hidden repeats, and the other planned tests
   // (1.15.0, 1.16.0). Recorded in log.md at each save, Build and the first score; locked from the first score.
+  // Folders and rules after scoring began (1.21.2): a moved drive, a wrong genotype rule or a late exclusion
+  // is allowed with a reason; each is recorded, and the results and Methods say so.
+  const unlockFolders = async () => {
+    const box = h("textarea", { id: "srcReason", class: "f-input", rows: 3, maxlength: 500,
+      placeholder: "For example: the images moved to a new drive." });
+    const go = await ask("Change the image folders after scoring began?", h("div", { class: "sf-unlock" },
+      h("p", {}, h("b", {}, "Moved or renamed folder"), ": the coded images follow. Scores do not change."),
+      h("p", {}, h("b", {}, "Genotype rules"), ": each coded image's genotype is worked out again; the changes are listed in key\\changes_after_scoring.csv."),
+      h("p", {}, h("b", {}, "Exclusion rules"), ": matching images keep their scores but are left out at unblinding, "
+        + "and the summary and Methods draft say so."),
+      h("label", { class: "f-label", for: "srcReason" }, "Reason (written to log.md with the change)"), box),
+      [{ value: true, label: "Unlock the image folders", danger: true }], "Keep them locked",
+      { wide: true, check: () => box.value.trim() ? null : "Write a reason first. It goes into log.md with the change." });
+    if (!go) return;
+    srcReason = box.value.trim().replace(/\s+/g, " ");
+    draw();
+  };
+  // Changing the plan after scoring began is possible but never quiet: the reason goes into log.md, and
+  // the tests are reported as exploratory (not set before scoring) in the summary and the Methods.
+  const unlockAnalysis = async () => {
+    const box = h("textarea", { id: "anReason", class: "f-input", rows: 3, maxlength: 500,
+      placeholder: "For example: the reviewer asked for every pair to be compared." });
+    const go = await ask("Change the analysis settings after scoring began?", h("div", { class: "sf-unlock" },
+      h("p", {}, "These settings were recorded in log.md before the first score, so the tests count as planned."),
+      h("p", {}, "If you change them, the tests run on the new settings and are reported as exploratory, "
+        + "with your reason, in the summary and the Methods draft. Scores do not change. Hidden repeats stay as they are."),
+      h("label", { class: "f-label", for: "anReason" }, "Reason (written to log.md with the change)"), box),
+      [{ value: true, label: "Unlock the analysis settings", danger: true }], "Keep them locked",
+      { wide: true, check: () => box.value.trim() ? null : "Write a reason first. It goes into log.md with the change." });
+    if (!go) return;
+    anReason = box.value.trim().replace(/\s+/g, " ");
+    draw();
+  };
   const analysisCard = () => {
-    const a = model.analysis, off = !!an.locked;
+    const a = model.analysis, off = !!an.locked && !anReason;
     const pct = f => f ? `${Math.round(f * 100)}% of each genotype's images` : "Off";
     const built = an.repeats_in_key !== null && an.repeats_in_key !== undefined;
     const PAIRS = "\tpairs";        // the "only these pairs" choice: a genotype name never has a tab
@@ -1321,9 +1369,12 @@ async function openProjectSettings(section) {
 
     const extras = !!(a.secondary_defect_calls.length || Object.keys(ia).length || a.dim_cutoff_sd || a.allow_cross_microscope.length);
     return h("div", { class: "s-card src" + (off ? " locked" : "") },
+      an.locked && !off ? warnNote(`Unlocked for this save. Reason: ${anReason} The tests then run on the new plan and are reported as exploratory.`,
+        { class: "warn-note top" }) : null,
       h("div", { class: "src-head" },
         h("label", { class: "f-label", for: "psRef" }, "Compare each genotype with"),
-        off ? h("span", { class: "chip wait" }, an.packages ? "Locked: a second-scorer package exists" : "Locked: scoring has started") : null),
+        off ? h("span", { class: "chip wait" }, an.packages ? "Locked: a second-scorer package exists" : "Locked: scoring has started") : null,
+        off ? h("button", { class: "linkish", "data-k": "anUnlock", onclick: unlockAnalysis }, "Change anyway...") : null),
       select({ id: "psRef" }, [["", "Every other genotype (each pair)"], ...genos, ...(an.genotypes.length > 1 ? [[PAIRS, "Only the pairs I list"]] : [])],
         mode, v => {
           if (v === PAIRS) { if (!a.comparisons.length) a.comparisons = [[...an.genotypes.slice(0, 2)]]; return; }
@@ -1333,7 +1384,7 @@ async function openProjectSettings(section) {
         + (an.genotypes.length ? "" : " Scan data first to see the genotypes.")),
       ...(mode === PAIRS ? pairRows() : []),
       h("label", { class: "f-label", for: "psRepeats" }, "Hidden repeats"),
-      h("select", { id: "psRepeats", class: "f-input sf-select", disabled: off, onchange: e => { a.repeat_fraction = Number(e.target.value); } },
+      h("select", { id: "psRepeats", class: "f-input sf-select", disabled: !!an.locked, onchange: e => { a.repeat_fraction = Number(e.target.value); } },
         an.repeat_choices.map(f => h("option", { value: f, selected: a.repeat_fraction === f }, pct(f)))),
       h("div", { class: "f-help" }, "Images shown a second time under a new code, to measure how consistently you score. "
         + "They never count in the results." + (built && !off ? " Changing this rebuilds the blind set with new codes." : "")),
@@ -1366,13 +1417,16 @@ async function openProjectSettings(section) {
 
   const draw = focusLast => {
     const cards = model.sources.map((s, i) => {
-      const off = i < locked;
+      const off = i < locked && !srcReason;
       const [cls, text] = previewText(previews[i], scanned, s) || ["", ""];
       return h("div", { class: "s-card src" + (off ? " locked" : "") },
+        i === 0 && locked && srcReason ? warnNote(`Unlocked for this save. Reason: ${srcReason} Coded images follow a moved folder; `
+          + "changed genotypes and exclusions are recorded and used at unblinding.", { class: "warn-note top" }) : null,
         h("div", { class: "src-head" },
           h("label", { class: "f-label", for: `srcName${i}` }, "Folder name"),
           off ? h("span", { class: "chip wait" }, "Locked: scoring has started") : null,
-          off || model.sources.length < 2 ? null : removeBtn("Remove this image folder", () => { model.sources.splice(i, 1); draw(); preview(); })),
+          off ? h("button", { class: "linkish", "data-k": `srcUnlock${i}`, onclick: unlockFolders }, "Change anyway...") : null,
+          i < locked || model.sources.length < 2 ? null : removeBtn("Remove this image folder", () => { model.sources.splice(i, 1); draw(); preview(); })),
         field(s, "name", { id: `srcName${i}`, placeholder: "For example: confocal 2026", disabled: off }),
         h("label", { class: "f-label", for: `srcPath${i}` }, "Folder with the images"),
         h("div", { class: "f-row" }, field(s, "path", { id: `srcPath${i}`, placeholder: "C:\\data\\my images (ideally a read-only copy)", disabled: off }),

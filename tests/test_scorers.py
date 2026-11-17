@@ -107,11 +107,11 @@ def test_a_package_can_only_be_scored(made, tmp_path):
     ("Sam/../x", 0.3, "new", "short name"),
     ("Sam", 0, "new", "more than 0"),
     ("Sam", 1.5, "new", "more than 0"),
-    ("Sam", 0.3, "inside", "outside the project"),
+    ("Sam", 0.3, "inside", "part of the project's own files"),
     ("Sam", 0.3, "full", "not empty"),
 ])
 def test_export_refuses_bad_requests(fresh_project, tmp_path, name, fraction, where, message):
-    dest = {"new": tmp_path / "pkg", "inside": fresh_project / "pkg", "full": tmp_path / "full"}[where]
+    dest = {"new": tmp_path / "pkg", "inside": fresh_project / "blind" / "pkg", "full": tmp_path / "full"}[where]
     if where == "full":
         dest.mkdir()
         (dest / "something.txt").write_text("x")

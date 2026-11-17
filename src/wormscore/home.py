@@ -246,10 +246,14 @@ class Job:
         self.started = 0.0
         self.ended = 0.0
         self.outcome = ""
+        self.warnings = []           # lines starting "Warning:", shown with the finished step (1.21.2)
 
     def say(self, text):
         for line in str(text).splitlines() or [""]:
             self.lines.append(line)
+            if line.startswith("Warning:"):
+                w = line[len("Warning:"):].strip()
+                self.warnings.append(w[:1].upper() + w[1:])       # shown as a sentence
             m = PROGRESS_LINE.search(line)
             if m and int(m.group(2)):
                 self.frac = int(m.group(1)) / int(m.group(2))
@@ -263,6 +267,7 @@ class Job:
                 return False
             self.running, self.title, self.project = True, title, str(project)
             self.frac, self.started, self.ended, self.outcome = None, time.time(), 0.0, ""
+            self.warnings = []
         self.say(f"--- {title} ---")
 
         def work():
@@ -289,7 +294,8 @@ class Job:
         eta = elapsed * (1 - self.frac) / self.frac if self.running and self.frac and self.frac > 0.02 else None
         return {"running": self.running, "title": self.title, "project": self.project, "outcome": self.outcome,
                 "lines": self.lines[since:], "next": len(self.lines), "frac": self.frac,
-                "elapsed_s": round(elapsed), "eta_s": None if eta is None else round(eta)}
+                "elapsed_s": round(elapsed), "eta_s": None if eta is None else round(eta),
+                "warnings": list(self.warnings)}
 
 
 # ------------------------------------------------------------------ windows and dialogs
@@ -918,8 +924,8 @@ class HomeApp:
             raise ValueError("This folder is a package or practice set: it can only be scored.")
         if body.get("action") == "make":
             n, sure = body.get("n"), body.get("sure_only", True)
-            if isinstance(n, bool) or not isinstance(n, int) or not PR.MIN_IMAGES <= n <= PR.MAX_IMAGES:
-                raise ValueError(f"A practice set has {PR.MIN_IMAGES} to {PR.MAX_IMAGES} images.")
+            if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= PR.MAX_IMAGES:
+                raise ValueError(f"A practice set has 1 to {PR.MAX_IMAGES} images.")
             d = self.pick("Choose a new, empty folder for the practice set (outside the project)")
             if not d:
                 return {"ok": False}

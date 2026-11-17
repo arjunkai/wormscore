@@ -20,12 +20,55 @@ from pathlib import Path
 from . import config as C
 
 REF_LOG = "Reference genotype set before scoring: "
+# 1.21.2: a change made in the app after scoring began, with a reason. Unblinding then runs the tests on
+# the new plan, marked as not set before scoring (exploratory); a hand edit of config.json still runs none.
+CHANGE_TITLE = "analysis settings changed after scoring began"
+REASON_LOG = "Reason given: "
+PLAN_AFTER_LOG = "Analysis plan after this change: "
+REF_AFTER_LOG = "Reference genotype after this change: "
+CHANGED_STATUS = "no: changed after scoring began"
 REPEAT_CHOICES = (0, 0.05, 0.1, 0.15, 0.2, 0.25)
 
 
 def ref_record(cfg):
     """The reference genotype as log.md records it: a JSON string, "" for every pair."""
     return json.dumps(cfg["unblinding"]["reference_genotype"] or "")
+
+
+def unlock_reason(body):
+    """The reason typed for changing the settings after scoring began, or ""."""
+    r = (body or {}).get("unlock_reason")
+    return " ".join(r.split())[:MAX_TEXT] if isinstance(r, str) else ""
+
+
+def change_log_lines(cfg, reason):
+    """log.md lines for a change made after scoring began: the reason and the plan it leads to."""
+    return [REASON_LOG + reason, PLAN_AFTER_LOG + json.dumps(C.analysis_plan(cfg), sort_keys=True),
+            REF_AFTER_LOG + ref_record(cfg)]
+
+
+def recorded_change(project, cfg):
+    """(date, reason) of the last change made in the app after scoring began, if config.json still holds
+    the plan and reference genotype it recorded; otherwise None (for example a later hand edit)."""
+    log_path = Path(project) / "log.md"
+    if not log_path.is_file():
+        return None
+    last, cur, when = None, None, ""
+    for line in log_path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("## "):
+            if cur:
+                last = cur
+            when = line[3:19]
+            cur = {"when": when} if line.rstrip().endswith(CHANGE_TITLE) else None
+        elif cur is not None:
+            for key, prefix in (("reason", "- " + REASON_LOG), ("plan", "- " + PLAN_AFTER_LOG), ("ref", "- " + REF_AFTER_LOG)):
+                if line.startswith(prefix):
+                    cur[key] = line[len(prefix):]
+    if cur:
+        last = cur
+    if not last or last.get("plan") != json.dumps(C.analysis_plan(cfg), sort_keys=True) or last.get("ref") != ref_record(cfg):
+        return None
+    return last["when"], last.get("reason", "")
 
 
 def ref_log_lines(cfg):
@@ -249,9 +292,12 @@ def change(project, old_raw, raw, body):
         return raw, changed
     why = locked(project)
     if why:
-        raise ValueError(why.replace("scoring criteria are", "analysis settings are")
-                         .replace("these criteria", "these settings")
-                         + " Change them in config.json only if you must; unblinding then runs no planned test.")
+        if not unlock_reason(body):
+            raise ValueError(why.replace("scoring criteria are", "analysis settings are")
+                             .replace("these criteria", "these settings")
+                             + " Use Change anyway... to change them with a reason, which goes into log.md.")
+        if "repeat_fraction" in changed:
+            raise ValueError("The share of hidden repeats decides the codes, so it stays as it is once scoring has begun.")
     if "repeat_fraction" in changed and repeats_in_key(project) is not None and body.get("rebuild") is not True:
         raise ValueError("The blind set is already built. A new share of hidden repeats needs a rebuild with new codes.")
     return apply(raw, new, changed), changed
