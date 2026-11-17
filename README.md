@@ -170,6 +170,13 @@ click it or press Enter, and Escape closes it.
    loses nothing: open the image again and click Save. If the connection to wormscore is lost, the
    window shows "Reconnecting..." and reconnects by itself; if wormscore is not running it says so, with
    a Start wormscore button (Windows app).
+   **Interim totals...** on the Score step shows totals of your answers so far: images scored and not
+   usable (and why), the calls, the share of animals with a defect call, confidence, and the time per
+   image and time left. It also compares the first and second half of the images you scored: the codes
+   are in random order, so a large difference suggests the criteria are being applied differently over
+   time. All images are pooled. Nothing is shown by genotype or about hidden repeats, not even counts,
+   since a count that changes after a save would reveal that image's genotype. Each look is recorded in
+   `log.md`, and the Methods draft says how many were taken.
 5. **Unblind** (`wormscore unblind my_project --i-have-finished-scoring`), only when scoring is
    finished: reveals the genotypes and writes the results tables and a draft Methods paragraph (see
    [Results](#results) below). The confirmation says how many images are scored and that unscored ones

@@ -16,8 +16,6 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 - **More 3D.** Depth of the brightest point under the cursor, and turning about the horizontal axis
   too (both keep brightness unchanged; no depth cueing in the scoring view).
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
-- **Interim report.** Totals for the images scored so far, with no codes shown, recorded in the
-  log as an interim look.
 - **Imaging-session tools.** Optional flat-field or reference-slide correction per imaging session,
   and a check for gut autofluorescence.
 - **Example data.** An optional NeuroPAL example download, if its license allows.
@@ -41,6 +39,13 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.17.0: **Interim totals.** **Interim totals...** on the Score step shows totals of the answers so
+  far: images scored and not usable (and why), the calls, the share of animals with a defect call,
+  confidence, the time per image and the time left, and a check for drift (the first half of the
+  scored images against the second; the codes are in random order, so both halves hold the same mix
+  of genotypes on average). All images are pooled: nothing by genotype or about hidden repeats, not
+  even counts, because a count that changes after a save would reveal that image's group. Each look
+  is recorded in `log.md` as an interim look, and the Methods draft says how many were taken.
 - 1.16.0: **Analysis settings in the app, part 2.** The Analysis card in Project settings now sets the
   whole analysis plan: **Only the pairs I list** with a test **direction**, and under **More planned
   tests** a **second definition of affected** (reported, or also tested), a **genetic interaction**

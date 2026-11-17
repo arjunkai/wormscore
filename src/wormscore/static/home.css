@@ -705,3 +705,9 @@ select.f-input, .sf-form select { font: inherit; appearance: none; -webkit-appea
 .an-more div > .f-label + .f-input { margin-top: 6px; }
 .f-row .f-input.sf-number { flex: none; width: 6em; }
 .an-more .f-row + .f-help { margin-top: 6px; }
+
+/* Interim totals (1.17.0) */
+.interim dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px var(--space-lg); margin: 0 0 var(--space-md); font-size: var(--text-sm); }
+.interim dt { color: var(--muted); }
+.interim dd { margin: 0; overflow-wrap: anywhere; }
+.interim .pv { margin: 0 0 var(--space-sm); }

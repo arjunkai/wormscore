@@ -327,7 +327,9 @@ function renderMain(d) {
     stepCard(4, s3, ["Score", wsHelp(h, "score", "Score")], "Score each coded image. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
       [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },
-        allScored ? "Open scoring" : p.scored ? "Continue scoring" : "Start scoring")],
+        allScored ? "Open scoring" : p.scored ? "Continue scoring" : "Start scoring"),
+       p.scored && !p.unblinded && !p.package ? h("button", { class: "btn subtle", "data-k": "interim", disabled: busy,
+         title: "Totals of your answers so far, all images together", onclick: interimReport }, "Interim totals...") : null],
       built && p.coded && !building ? h("div", { class: "mini" }, h("div", { style: `width:${Math.min(100, 100 * p.scored / p.coded)}%` })) : null),
     stepCard(5, s4, ["Unblind", wsHelp(h, "unblind", "Unblind")], "Reveal the genotypes and write the results. Do this when scoring is finished.",
       p.unblinded ? "Results are in outputs\\unblinded." : null,
@@ -445,6 +447,36 @@ async function importScores() {
   if (!go) return;
   st.log = []; st.since = 0; st.showLog = false;
   act("/api/second-scorer", { action: "import" });
+}
+
+// ---------------------------------------------------------------- interim totals (1.17.0)
+
+// Totals of the answers saved so far, all images together: nothing by genotype or about hidden
+// repeats (either would show, after a save, which group the image belonged to). Each look is in log.md.
+async function interimReport() {
+  let r;
+  try { r = (await api("/api/interim", {})).report; }
+  catch (e) { return toast(e.message); }
+  const row = (k, v) => [h("dt", {}, k), h("dd", {}, v)];
+  const list = obj => Object.entries(obj).filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(", ") || "none";
+  const time = m => m >= 90 ? `about ${Math.round(m / 60)} hours` : `about ${m} minutes`;
+  const d = r.drift;
+  const body = h("div", { class: "interim" },
+    h("dl", {},
+      ...row("Scored", `${r.scored} of ${r.coded}` + (r.unusable ? ` (${r.unusable} not usable)` : "")),
+      ...(r.unusable ? row("Not usable because", Object.entries(r.unusable_reasons).map(([k, n]) => `${k}: ${n}`).join("; ")) : []),
+      ...(r.neurons ? row("Calls", list(r.calls)) : []),
+      ...(r.judged ? row("Defect call in", `${r.affected} of ${r.judged} animals (${r.affected_pct}%)`) : []),
+      ...(r.usable ? row("Confidence", list(r.confidence)) : []),
+      ...(d ? row("First half, second half", `${d.first}% and ${d.second}% with a defect call`) : []),
+      ...(r.minutes_per_image !== null ? row("Pace", `${r.minutes_per_image} min per image`
+        + (r.left ? `; ${time(r.minutes_left)} left` : "")) : [])),
+    d?.large ? h("p", { class: "pv warn" }, "The two halves differ by 20 points or more. The codes are in random order, "
+      + "so both halves hold the same mix of genotypes on average: re-read the criteria and the reference images "
+      + "before you go on.") : null,
+    h("p", { class: "f-help" }, "All images together. Results by genotype stay hidden until you unblind. "
+      + "This look is recorded in log.md."));
+  await ask("Interim totals", body, [], "Close", { wide: true });
 }
 
 // ---------------------------------------------------------------- practice sets (1.13.0)

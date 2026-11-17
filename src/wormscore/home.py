@@ -820,6 +820,19 @@ class HomeApp:
             raise ValueError("Another step is still running.")
         return {"ok": True}
 
+    def interim(self):
+        """Interim totals of the answers saved so far (1.17.0), recorded in log.md as an interim look.
+        Pooled over all images: nothing by genotype, nothing about hidden repeats."""
+        from . import interim as I
+        p = self.need_project()
+        if (p / "outputs" / "unblinded" / "summary.txt").is_file():
+            raise ValueError("The project is unblinded: the results are in outputs\\unblinded.")
+        rep = I.report(p)
+        if not rep["scored"]:
+            raise ValueError("Nothing is scored yet.")
+        I.record(p, rep)
+        return {"ok": True, "report": rep}
+
     def practice(self, body):
         """Make a practice set from this (finished) project, or record a finished practice set."""
         from . import practice as PR
@@ -1020,6 +1033,8 @@ class HomeApp:
             return self.second_scorer(body)
         elif route == "practice":
             return self.practice(body)
+        elif route == "interim":
+            return self.interim()
         elif route == "run":
             return self.run_step(body)
         elif route == "score":
