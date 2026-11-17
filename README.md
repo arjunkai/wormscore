@@ -52,7 +52,8 @@ mTagBFP2 blue) are shown together in 2D and 3D, each scaled per image and never 
 identity channels yourself, `"identity": [{"preset": "mCherry"}, {"preset": "BFP"}]`, the first one finding
 the cells. GFP and CyOFP1 are both green, so use keys 1 and 2 to see each on its own. Markers are found
 at Scan data, so after a change run Scan data again and rebuild; once scoring has started they are locked,
-and **Change anyway...** records the change and your reason in `log.md`. See
+and **Change anyway...** records the change and your reason in `log.md` (not while a second-scorer
+package exists). See
 [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md) sections 2 and 6.
 
 ## Install

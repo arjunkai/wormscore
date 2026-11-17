@@ -32,7 +32,7 @@ def reporter_choice(raw):
     """The preset the reporter matches exactly, or "custom"."""
     try:
         have = C.resolve_marker(raw.get("marker"))
-    except SystemExit:
+    except (SystemExit, ValueError, TypeError):     # a hand-edited value such as "marker": "GFP"
         return CUSTOM
     have.setdefault("color", [0, 1, 0])   # the defaults have none: green is drawn (config.marker_color)
     for name in C.PRESETS:
@@ -52,7 +52,7 @@ def identity_choice(raw):
     if isinstance(ident, dict):
         try:
             have = C.resolve_identity(ident)
-        except SystemExit:
+        except (SystemExit, ValueError, TypeError):
             return CUSTOM, ident.get("spots_from", "identity")
         if not (set(ident) - {"preset", "spots_from", "required"}) and ident.get("required", True) is True:
             for name in C.PRESETS:
@@ -67,7 +67,16 @@ def current(project, raw):
     rep = reporter_choice(raw)
     ident, spots = identity_choice(raw)
     return {"reporter": rep, "identity": ident, "spots_from": spots, "presets": list(C.PRESETS),
-            "locked": _scoring_started(project)}
+            "locked": _scoring_started(project) or _packages(project), "packages": _packages(project),
+            "bands": {k: v["emission_band_start_nm"] for k, v in C.PRESETS.items()},
+            "neuropal": [x["preset"] for x in C.NEUROPAL]}
+
+
+def _packages(project):
+    """A second-scorer package keeps the images it was made with, so the markers cannot change while one exists:
+    the two scorers would see different pictures under the same codes."""
+    from .scoreform import packages_exist
+    return packages_exist(project)
 
 
 def _scoring_started(project):
@@ -105,6 +114,9 @@ def change(project, old_raw, raw, body):
         spots = sp0                       # nothing to choose without a preset identity channel
     if (rep, ident, spots) == (rep0, id0, sp0):
         return raw, []
+    if _packages(project):
+        raise ValueError("A second-scorer package was made with these markers, so they are locked: its images "
+                         "would no longer match the project's.")
     if _scoring_started(project) and not unlock_reason(body):
         raise ValueError("Scoring has started, so the markers are locked. Use Change anyway... to change them "
                          "with a reason, which goes into log.md.")

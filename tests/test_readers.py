@@ -131,3 +131,12 @@ def test_a_bfp_channel_is_not_brightfield_when_the_project_uses_bfp():
     assert marker_from_named("BFP", None, None, False, with_bfp) == "OTHER"   # then claimed as IDENTITY2
     assert marker_from_named("Brightfield", None, None, False, with_bfp) == "BF"
     assert marker_from_named("BF", None, None, False, with_bfp) == "BF"
+
+
+def test_a_very_short_hand_edited_prefix_does_not_hide_brightfield():
+    from wormscore import config as C
+    from wormscore.readers import marker_from_named
+    cfg = C.merge(C.DEFAULTS, {})
+    cfg["marker"] = dict(cfg["marker"], channel_name_prefixes=["GFP", "T", ""])
+    assert marker_from_named("Trans", None, None, False, cfg) == "BF"
+    assert marker_from_named("DIC", None, None, False, cfg) == "BF"

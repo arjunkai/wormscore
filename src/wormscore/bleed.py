@@ -103,14 +103,28 @@ def joint(sources, tgt):
     if X.shape[0] > MAX_PIXELS:
         idx = np.random.default_rng(0).choice(X.shape[0], MAX_PIXELS, replace=False)
         X, y = X[idx], y[idx]
-    try:
-        vif = float(np.max(np.diag(np.linalg.inv(np.corrcoef(X, rowvar=False)))))
-    except np.linalg.LinAlgError:
-        vif = float("inf")
+    vif = uncentred_vif(X)
     if not np.isfinite(vif) or vif > VIF_MAX:
         return None, n, vif
     coef = np.linalg.lstsq(X, y, rcond=None)[0]
     return [float(100 * c) for c in coef], n, vif
+
+
+def uncentred_vif(X):
+    """The largest variance inflation factor of the columns of X for a fit through the origin: X'X scaled to a
+    unit diagonal, inverted, largest diagonal entry (Belsley 1991, Conditioning Diagnostics). Centred
+    correlations would describe a fit with an intercept and miss columns that share an offset. inf if a
+    column is all zero or the columns are exactly dependent."""
+    import numpy as np
+    g = X.T @ X
+    d = np.sqrt(np.diag(g))
+    if not np.all(d > 0):
+        return float("inf")
+    try:
+        v = float(np.max(np.diag(np.linalg.inv(g / np.outer(d, d)))))
+    except np.linalg.LinAlgError:
+        return float("inf")
+    return v if np.isfinite(v) and v > 0 else float("inf")
 
 
 def _joint_roles(cfg):
@@ -246,9 +260,11 @@ def methods_sentence(project):
     if j and j["channels"]:
         text += (f"Because the identity channels label the same cells, the {got['identity-only']['into']} channel of the same "
                  "control images was also fitted to all of them together (multiple least squares through the origin; "
-                 f"images with a variance inflation factor above {VIF_MAX:g} left out): "
+                 f"images with an uncentred variance inflation factor above {VIF_MAX:g} left out): "
                  + ", ".join(f"{c['from']} {c['median_pct']}%" for c in j["channels"])
                  + f" of each channel's signal (medians of {plural(j['images'], 'image')}). ")
     elif j:
-        text += "The identity channels could not be separated in these control images, so their joint bleed-through was not measured. "
+        why = ("the identity channels were too alike to separate" if j.get("not_separable") else
+               "not every identity channel was found" if j.get("missing") else "there was too little signal")
+        text += f"Their joint bleed-through was not measured: in these control images {why}. "
     return text

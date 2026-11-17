@@ -121,3 +121,20 @@ def test_several_identity_channels_are_also_fitted_together(project, tmp_path):
     assert "fitted to all of them together" in B.methods_sentence(p)
     # reporter-only controls, and projects with one identity channel, are measured as before
     assert "joint" not in B.results(project).get("identity-only", {})
+
+
+def test_channels_sharing_an_offset_are_not_separable_through_the_origin():
+    rng = np.random.default_rng(5)
+    c = rng.uniform(1000, 1200, 5000)                   # bright pixels: every column mostly the same offset
+    X = np.stack([c + rng.normal(0, 5, c.size), c + rng.normal(0, 5, c.size)], axis=1)
+    assert B.uncentred_vif(X) > B.VIF_MAX
+    assert B.uncentred_vif(np.stack([c, np.zeros_like(c)], axis=1)) == float("inf")
+    assert B.uncentred_vif(np.stack([rng.normal(0, 1, 5000), rng.normal(0, 1, 5000)], axis=1)) < 1.1
+
+
+def test_the_methods_name_the_real_reason_a_joint_fit_failed(tmp_path, monkeypatch):
+    res = {"identity-only": {"kind": "identity-only", "from": "A", "into": "GFP", "images": 2, "median_pct": 1.0,
+                             "min_pct": 1.0, "max_pct": 1.0, "joint": {"images": 0, "not_separable": 0, "missing": 2,
+                                                                       "too_little": 0, "channels": []}}}
+    monkeypatch.setattr(B, "results", lambda p: res)
+    assert "not every identity channel was found" in B.methods_sentence(tmp_path)

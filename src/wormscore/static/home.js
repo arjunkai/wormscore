@@ -1388,13 +1388,17 @@ async function openProjectSettings(section) {
     const custom = v => v === CUSTOM ? [[CUSTOM, "Custom (set in config.json)"]] : [];
     const select = (id, choices, value, set) => h("select", { id, class: "f-input sf-select", disabled: off,
       onchange: e => { set(e.target.value); draw(); } }, opts(choices, value));
+    // two proteins whose emission overlaps are easily taken for each other at Scan data (warn, don't block)
+    const used = m.identity === "NeuroPAL" ? mk.neuropal : mk.bands[m.identity] ? [m.identity] : [];
+    const near = (a, b) => a && b && a[0] <= b[1] && b[0] <= a[1];
+    const clash = used.find(x => x !== m.reporter && near(mk.bands[x], mk.bands[m.reporter]));
     return h("div", { class: "s-card src" + (off ? " locked" : "") },
       mk.locked && !off ? warnNote(`Unlocked for this save (reason: “${mkReason}”). `
         + "Run Scan data, then rebuild keeping the codes, to use the change.", { class: "warn-note first" }) : null,
       h("div", { class: "src-head" },
         h("label", { class: "f-label", for: "psReporter" }, "Reporter"),
-        off ? h("span", { class: "chip wait" }, "Locked: scoring has started") : null,
-        off ? h("button", { class: "linkish", "data-k": "mkUnlock", onclick: unlockMarkers }, "Change anyway...") : null),
+        off ? h("span", { class: "chip wait" }, mk.packages ? "Locked: a second-scorer package exists" : "Locked: scoring has started") : null,
+        off && !mk.packages ? h("button", { class: "linkish", "data-k": "mkUnlock", onclick: unlockMarkers }, "Change anyway...") : null),
       select("psReporter", [...custom(mk.reporter), ...presets], m.reporter, v => { m.reporter = v; }),
       h("div", { class: "f-help" }, "The fluorescent protein you score and measure."),
       h("label", { class: "f-label", for: "psIdentity" }, "Identity channel"),
@@ -1402,6 +1406,8 @@ async function openProjectSettings(section) {
         v => { m.identity = v; }),
       h("div", { class: "f-help" }, "A second marker that shows which cells to score, such as a pan-neuronal marker. "
         + "It is shown with the reporter and never measured."),
+      clash && !off ? warnNote(`${m.reporter} and ${clash} emit at similar wavelengths, so their channels may be confused. `
+        + "After Scan data, check the flags in outputs\\inventory.csv.") : null,
       m.identity && m.identity !== CUSTOM ? [
         h("label", { class: "f-label", for: "psSpots" }, "Suggest cells from"),
         select("psSpots", [["identity", "The identity channel"], ["reporter", "The reporter"]], m.spots_from, v => { m.spots_from = v; })] : null);

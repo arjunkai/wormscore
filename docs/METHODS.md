@@ -54,7 +54,8 @@ starting 575 to 625 nm, emission 595 to 645 nm). Any field given next to the pre
 a preset the GFP settings above are used exactly as before, so GFP projects build the same blind set.
 Since 1.24.0 the reporter and identity channel can be chosen from these presets in Project settings,
 which writes the same `preset` entries; a channel with its own settings is kept as it is. A change is
-written to `log.md`. Once scoring has started, a change needs a reason, which is written with it.
+written to `log.md`. Once scoring has started, a change needs a reason, which is written with it; while a
+second-scorer package exists the markers cannot change, since its images would no longer match the project's.
 
 **Identity channel** (optional, since 1.0.0). `"identity": {"preset": "mCherry"}` names a second
 marker that labels the cells independently of the reporter being scored, such as a pan-neuronal or
@@ -214,8 +215,9 @@ pixels with signal in any identity channel (saturated pixels in any channel left
 above its background is fitted to every identity channel above its background together, by multiple least
 squares through the origin; each coefficient is that channel's bleed-through. The channels can only be told
 apart where their patterns differ (NeuroPAL's color code differs between neurons): an image whose largest
-variance inflation factor is above 10 (the usual limit for collinear predictors; Kutner et al. 2005, Applied
-Linear Statistical Models) is left out of the joint fit and counted. The project's values are the medians over
+uncentred variance inflation factor (X'X scaled to a unit diagonal, as suited to a fit through the origin;
+Belsley 1991, Conditioning Diagnostics) is above 10 (the usual limit for collinear predictors; Kutner et al. 2005,
+Applied Linear Statistical Models) is left out of the joint fit and counted. The project's values are the medians over
 the remaining images (columns `joint_<channel>_pct` and `joint_max_vif` in the same file). The single slope
 above is still reported as before.
 

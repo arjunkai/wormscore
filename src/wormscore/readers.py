@@ -98,7 +98,9 @@ def _fluor_name(name, cfg):
     """True if the channel name starts with a name of one of the project's own fluorophores (1.26.0): "BFP"
     begins like the brightfield name "BF", so in a project with a BFP channel it is that channel, not brightfield."""
     ms = [cfg["marker"], cfg.get("identity")] + list(cfg.get("identity_extra") or [])
-    return any(name.upper().startswith(p.upper()) for m in ms if m for p in m.get("channel_name_prefixes", []))
+    # prefixes under 3 letters are ignored, so a hand-edited "T" or "" cannot turn "Trans" or "DIC" into a fluorophore
+    return any(name.upper().startswith(p.upper()) for m in ms if m
+               for p in m.get("channel_name_prefixes", []) if isinstance(p, str) and len(p) >= 3)
 
 
 def marker_from_named(name, fluor, excitation, transmitted, cfg, emission=None):

@@ -32,6 +32,15 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.2: **Fixes from an independent review of 1.24 to 1.26.**
+  - Markers lock while a second-scorer package exists (no Change anyway...), as the criteria and analysis do:
+    the package keeps the images it was made with.
+  - The joint bleed-through fit checks collinearity with the uncentred variance inflation factor, which suits a fit
+    through the origin; the centred one missed channels that share an offset.
+  - The Markers card warns when the reporter and an identity channel emit at similar wavelengths.
+  - The Methods draft gives the real reason a joint fit was not measured.
+  - A hand-written `"marker": "GFP"` shows as Custom instead of stopping Project settings; channel name prefixes
+    under 3 letters no longer affect brightfield detection.
 - 1.26.1: **Fix: the "Unlocked for this save" notes in Project settings** pushed a one-line text to the right
   edge (their class clashed with the top bar's). Found in a check of the new screens at 125% scaling.
 - 1.26.0: **Bleed-through of each NeuroPAL channel.** With several identity channels, identity-only controls

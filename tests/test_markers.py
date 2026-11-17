@@ -121,3 +121,18 @@ def test_markers_lock_once_scoring_starts_and_change_anyway_records_the_reason(f
     log = (fresh_project / "log.md").read_text(encoding="utf-8")
     assert MK.CHANGE_TITLE in log and "Reason given: set up wrongly" in log
     assert raw_of(fresh_project)["identity"] == {"preset": "mCherry"}
+
+
+def test_a_second_scorer_package_locks_the_markers_without_change_anyway(fresh_project):
+    (fresh_project / "scorers" / "Second").mkdir(parents=True)
+    m = E.current(fresh_project)["markers"]
+    assert m["locked"] and m["packages"]
+    E.save(fresh_project, body(fresh_project))                  # unchanged: saves as before
+    with pytest.raises(ValueError, match="second-scorer package"):
+        E.save(fresh_project, body(fresh_project, identity="mCherry", unlock_reason="even with a reason"))
+    assert "identity" not in raw_of(fresh_project)
+
+
+def test_a_hand_written_marker_string_reads_as_custom():
+    assert MK.reporter_choice({"marker": "GFP"}) == "custom"
+    assert MK.identity_choice({"identity": {"preset": "Nope"}}) == ("custom", "identity")
