@@ -521,12 +521,16 @@ function flatFieldCard(p, busy) {
   const row = on && sm ? h("ul", { class: "pk-list" }, h("li", { class: "pk" }, h("div", { class: "pk-text" },
     h("b", {}, `Corrected ${what}`),
     h("span", { class: "pk-meta" }, [
-      `${plural(sm.sessions.length, "session")}, ${plural(sm.reference_images, "reference image")}`,
+      `${plural(sm.sessions.length, "session")}, ${plural(sm.reference_images, "slide image")}`,
       on.across_field ? `light ${range(sm.sessions.map(s => Math.round(s.light_min_pct)))}% at the dimmest point` : null,
       on.between_sessions && sm.sessions.length > 1 ? `factors ${range(sm.sessions.map(s => s.factor))}` : null,
       sm.dark_folder ? "dark images subtracted" : "no dark images",
     ].filter(Boolean).join(" · "))))) : null;
-  const lockTitle = ff.locked || null;
+  // after Build: images whose own session had no slide images (warned in the Build log too)
+  const b = on && ff.build, warn = b && (b.other || b.none) ? [
+    b.other ? `${plural(b.other, "image")} from days without slide images ${b.other === 1 ? "was" : "were"} corrected with the nearest session's` : null,
+    b.none ? `${plural(b.none, "image")} could not be corrected and ${b.none === 1 ? "is" : "are"} used as recorded` : null,
+  ].filter(Boolean).join("; ") + ". Add slide images for those days to correct them fully; see key.csv, column flat_field." : null;
   return h("section", { class: "extra" },
     h("div", { class: "x-head" },
       h("div", {},
@@ -536,11 +540,28 @@ function flatFieldCard(p, busy) {
           : "Image a uniform fluorescent slide in each imaging session, at this project's settings. "
             + "The light is then evened out across the field and between sessions before you score.")),
       h("div", { class: "x-act" },
-        h("button", { class: "btn", "data-k": "ff-set", disabled: busy || !!ff.locked, title: lockTitle, onclick: () => flatFieldDialog(p) },
-          on ? "Change..." : "Reference images..."),
-        on ? h("button", { class: "btn subtle", "data-k": "ff-off", disabled: busy || !!ff.locked, title: lockTitle,
-          onclick: flatFieldOff }, "Turn off") : null)),
-    row);
+        on ? h("button", { class: "btn", "data-k": "ff-sessions", disabled: busy, onclick: () => flatFieldSessions(p) }, "Sessions...")
+          : h("button", { class: "btn", "data-k": "ff-set", disabled: busy || !!ff.locked, title: ff.locked || null,
+            onclick: () => flatFieldDialog(p) }, "Slide images..."))),
+    row,
+    warn ? h("p", { class: "pv warn ff-warn" }, warn) : null);
+}
+
+// With the correction on: add slide images for later days (allowed after scoring began: nothing
+// already coded changes); start again or turn off only before scoring (either would change scored images).
+async function flatFieldSessions(p) {
+  const ff = p.flat_field;
+  const choices = [{ value: "add", label: "Add slide images...",
+    desc: "For days imaged since. Sessions already in use do not change." }];
+  if (!ff.locked) choices.push(
+    { value: "change", label: "Start again with new slide images...", desc: "Replaces every session. The blind set is rebuilt with the same codes." },
+    { value: "off", label: "Turn off", desc: "Images are used as recorded." });
+  const v = await ask("Flat-field sessions", ff.locked ? ff.locked + " Slide images for later days can still be added." : "", choices);
+  if (!v) return;
+  if (v === "change") return flatFieldDialog(p);
+  if (v === "off") return flatFieldOff();
+  st.log = []; st.since = 0; st.showLog = false;
+  act("/api/flat-field", { action: "add" });
 }
 
 async function flatFieldDialog(p) {
@@ -553,7 +574,7 @@ async function flatFieldDialog(p) {
     box("ffBetween", "Even out the brightness between sessions", on.between_sessions),
     box("ffDark", "I also have dark images (taken with the light off)", false),
     h("p", { class: "f-help" }, "Take the slide images on the same microscope, with the same settings, on each day you imaged. "
-      + "Images from a day without slide images stop the build. Keep the folders outside the project."
+      + "Images from a day without them use the nearest day's, with a warning."
       + (built ? " The blind set is rebuilt with the same codes." : "")));
   const go = await ask("Flat-field correction", body, [{ value: true, label: "Choose folder..." }], "Cancel", {
     check: () => $("#ffAcross").checked || $("#ffBetween").checked ? null : "Choose at least one thing to correct." });

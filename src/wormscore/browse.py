@@ -194,8 +194,7 @@ class Browse:
             raise ValueError(f"The {self.cfg['marker']['label']} channel of this image could not be identified, "
                              "so it cannot be shown.")
         cfg = self.cfg
-        corr = self.corr if self.corr is not None and self.corr.session_for(s) is not None else None
-        v = read_for_viewer(s, cfg, corr)
+        v = read_for_viewer(s, cfg, self.corr)
         raw, mip = v["raw"], v["mip"]
         sat = saturation_for(s, cfg)
 

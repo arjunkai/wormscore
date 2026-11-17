@@ -109,14 +109,16 @@ def test_saturated_pixels_are_still_counted(project, tmp_path):
     assert m["saturated_px_mip"] == 1
 
 
-def test_saturated_reference_images_are_not_used(project, tmp_path):
-    with pytest.raises(SystemExit, match="No reference image could be used"):
+def test_saturated_slide_images_are_not_used(project, tmp_path):
+    with pytest.raises(SystemExit, match="None of the slide images could be used"):
         FF.measure(project, slides(tmp_path / "sat", saturate=True), **QUIET)
 
 
-def test_reference_folder_must_be_outside_the_project(project):
-    with pytest.raises(SystemExit, match="outside the project"):
+def test_only_the_projects_own_image_folders_are_refused(project):
+    with pytest.raises(SystemExit, match="holds the project's own images"):
         FF.measure(project, project / "data", **QUIET)
+    res = FF.measure(project, slides(project / "slides"), **QUIET)     # a folder inside the project is fine
+    assert res["reference_images"] == 2
 
 
 def test_sessions_match_by_microscope_settings_and_day():
@@ -144,27 +146,50 @@ def test_the_session_factor_scales_the_signal_above_the_dark_level():
     assert (corr.apply(raw, img) == 600).all()         # factor not used
 
 
-def test_build_stops_when_an_image_has_no_reference_session(project, tmp_path):
+def test_changed_measurements_stop_the_build(project, tmp_path):
     FF.measure(project, slides(tmp_path / "ref"), **QUIET)
-    sm = json.loads((project / "outputs" / "flat_field" / "sessions.json").read_text(encoding="utf-8"))
-    sm["sessions"][0]["system"] = "another microscope"
-    (project / "outputs" / "flat_field" / "sessions.json").write_text(json.dumps(sm), encoding="utf-8")
+    f = project / "outputs" / "flat_field" / "sessions.json"
+    sm = json.loads(f.read_text(encoding="utf-8"))
+    sm["sessions"][0]["factor"] = 3.0
+    f.write_text(json.dumps(sm), encoding="utf-8")
     with pytest.raises(SystemExit, match="changed after they were made"):
         pipeline.prepare(project, **QUIET)
-    corr = FF.Correction.__new__(FF.Correction)
-    corr.sessions = sm["sessions"]
-    with pytest.raises(SystemExit, match="have no reference images"):
-        corr.check(pipeline.load_images(project))
 
 
-def test_locked_once_scoring_has_started(tmp_path):
+def test_an_image_without_usable_slide_images_is_built_as_recorded_with_a_warning(tmp_path):
+    p = tmp_path / "p"
+    make_demo(p, n_per_group=1, **QUIET)
+    pipeline.inventory(p, **QUIET)
+    FF.measure(p, slides(tmp_path / "ref"), **QUIET)
+    f = p / "outputs" / "flat_field" / "sessions.json"
+    sm = json.loads(f.read_text(encoding="utf-8"))
+    sm["sessions"][0]["system"] = "another microscope"
+    f.write_text(json.dumps(sm), encoding="utf-8")
+    with np.load(p / "outputs" / "flat_field" / "flats.npz") as z:
+        flats = {k: z[k] for k in z.files}
+    FF._save(p, sm, flats, {"across_field": True, "between_sessions": True})     # as if measured so
+    said = []
+    pipeline.prepare(p, log=said.append)
+    assert any(x.startswith("Warning:") and "used as recorded" in x for x in said)
+    key = read_csv(p / "key" / "key.csv")
+    assert all(r["flat_field"].startswith("not corrected") for r in key)
+    img = next(i for i in pipeline.load_images(p) if i["local_path"] == key[0]["local_path"])
+    rec = pipeline.R.read(img, img["marker_channel"])[0]
+    got = np.array(Image.open(p / "blind" / key[0]["code"] / "planes" / "z00.png"))
+    assert np.array_equal(got[..., 0].astype(np.uint16) * 256 + got[..., 1], rec)
+    assert FF.build_note(p) == {"same": 0, "other": 0, "none": 2}
+    assert "used as recorded" in methods.flat_field_sentence(p, pipeline.C.load(p))
+    assert "Warning:" in (p / "log.md").read_text(encoding="utf-8")
+
+
+def test_starting_again_and_turning_off_wait_for_scoring_but_adding_does_not(tmp_path):
     p = tmp_path / "p"
     make_demo(p, n_per_group=1, **QUIET)
     (p / "scoring").mkdir()
     (p / "scoring" / "scores.json").write_text("{}")
-    with pytest.raises(SystemExit, match="flat-field correction is locked"):
+    with pytest.raises(SystemExit, match="stay as they are"):
         FF.measure(p, tmp_path, **QUIET)
-    with pytest.raises(SystemExit, match="flat-field correction is locked"):
+    with pytest.raises(SystemExit, match="stay as they are"):
         FF.turn_off(p, **QUIET)
 
 
@@ -186,3 +211,80 @@ def test_the_home_page_gets_the_setting_without_its_checksum(project, tmp_path):
     ff = project_status(project)["flat_field"]
     assert ff["on"] == {"across_field": True, "between_sessions": True} and ff["summary"]["reference_images"] == 2
     assert ff["locked"] == ""
+
+
+# ------------------------------------------------------------------ 1.21.1: later sessions, nearest day
+
+def test_sessions_can_be_added_after_scoring_began_without_changing_coded_images(tmp_path, monkeypatch):
+    p = tmp_path / "p"
+    make_demo(p, n_per_group=1, **QUIET)
+    pipeline.inventory(p, **QUIET)
+    FF.measure(p, slides(tmp_path / "ref"), **QUIET)
+    pipeline.prepare(p, **QUIET)
+    code = read_csv(p / "key" / "key.csv")[0]["code"]
+    plane = (p / "blind" / code / "planes" / "z00.png").read_bytes()
+    first = json.loads((p / "outputs" / "flat_field" / "sessions.json").read_text(encoding="utf-8"))["sessions"][0]
+    (p / "scoring").mkdir()
+    (p / "scoring" / "scores.json").write_text("{}")
+    real = FF._images
+    def later_day(folder, cfg, log, skipped):     # the demo writes no dates: give the new slides a day
+        return [{**r, "key": r["key"][:2] + ("2026-03-02",)} for r in real(folder, cfg, log, skipped)]
+    monkeypatch.setattr(FF, "_images", later_day)
+    (new,) = FF.add_sessions(p, slides(tmp_path / "later", level=1000), **QUIET)
+    # brought to the level the first session's microscope was brought to (half the light: about twice the factor)
+    assert new["added_after_scoring_began"] and new["factor"] == pytest.approx(first["group_brightness"]
+                                                                               / new["brightness"], abs=1e-3)
+    assert 1.8 < new["factor"] < 2.0
+    sm = json.loads((p / "outputs" / "flat_field" / "sessions.json").read_text(encoding="utf-8"))
+    assert sm["sessions"][0] == first and len(sm["sessions"]) == 2
+    corr = FF.load(p, pipeline.C.load(p))                  # the stored checksum matches what was written
+    assert np.array_equal(corr.arrays["flat_0"], FF.Correction(p, pipeline.C.load(p)).arrays["flat_0"])
+    assert (p / "blind" / code / "planes" / "z00.png").read_bytes() == plane
+    log = (p / "log.md").read_text(encoding="utf-8")
+    assert "scoring had begun" in log and "(added after scoring began)" in log
+    assert "added after scoring began" in methods.flat_field_sentence(p, pipeline.C.load(p))
+    with pytest.raises(SystemExit, match="No new session was added"):
+        FF.add_sessions(p, slides(tmp_path / "again"), **QUIET)
+
+
+def _corr(sessions, ff=None):
+    corr = FF.Correction.__new__(FF.Correction)
+    corr.sessions = [{"settings": "", "factor": 1.0, "dark_level": 0.0, "height": 2, "width": 2, **x} for x in sessions]
+    corr.arrays = {}
+    for x in corr.sessions:
+        corr.arrays[f"flat_{x['index']}"] = np.full((2, 2), x.get("flat", 1.0), np.float32)
+        corr.arrays[f"dark_{x['index']}"] = np.zeros((2, 2), np.float32)
+    corr.ff = ff or {"across_field": True, "between_sessions": True}
+    return corr
+
+
+def test_a_day_without_slide_images_uses_the_nearest_day():
+    corr = _corr([{"index": 0, "system": "A", "day": "2026-03-01", "factor": 2.0, "flat": 0.5},
+                  {"index": 1, "system": "A", "day": "2026-03-10", "factor": 0.5}])
+    img = {"system": "A", "settings": "", "acquired": "2026-03-04 09:00:00", "height": 2, "width": 2}
+    ses = corr.resolve(img)
+    assert ses["how"] == "nearest day, 2026-03-01"
+    raw = np.full((1, 2, 2), 500, np.uint16)
+    assert (corr.apply(raw, img) == 1000).all()            # its flat (0.5), but no brightness factor
+    cols = corr.key_columns(img)
+    assert cols["flat_field"] == "nearest day, 2026-03-01" and cols["session_factor"] == "not corrected"
+    assert "nearest day" in corr.warnings([img])[0]
+
+
+def test_an_image_without_a_date_uses_the_average_of_several_sessions():
+    corr = _corr([{"index": 0, "system": "A", "day": "2026-03-01", "flat": 0.5},
+                  {"index": 1, "system": "A", "day": "2026-03-10", "flat": 1.0}])
+    img = {"system": "A", "settings": "", "acquired": "", "height": 2, "width": 2}
+    assert corr.resolve(img)["how"] == "average of 2 sessions"
+    assert (corr.apply(np.full((1, 2, 2), 750, np.uint16), img) == 1000).all()
+
+
+def test_other_settings_of_the_same_size_stand_in_and_other_sizes_do_not():
+    corr = _corr([{"index": 0, "system": "A", "settings": "gain 2", "day": ""}])
+    img = {"system": "A", "settings": "gain 5", "acquired": "", "height": 2, "width": 2}
+    assert corr.resolve(img)["how"].endswith("(other settings)")
+    assert corr.resolve({**img, "height": 4}) is None
+    assert corr.not_corrected({**img, "height": 4}) == "slide images of another size"
+    assert corr.resolve({**img, "system": "B"}) is None
+    raw = np.full((1, 4, 4), 7, np.uint16)
+    assert corr.apply(raw, {**img, "system": "B", "height": 4, "width": 4}) is raw

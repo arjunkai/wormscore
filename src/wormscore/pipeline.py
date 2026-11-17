@@ -429,7 +429,17 @@ def prepare(project, reassign=False, add=False, log=print):
     from . import flatfield as FF
     corr = FF.load(project, cfg)          # None unless the project turned the correction on (1.21.0)
     if corr is not None:
-        corr.check(images)
+        # only the images this run renders: when adding, coded images keep the planes they were scored on
+        coded = {(r["local_path"], r["location_in_file"]) for r in read_csv(project / "key" / "key.csv")} \
+            if add and (project / "key" / "key.csv").is_file() else set()
+        render = [s for s in images if (s["local_path"], s["location_in_file"]) not in coded]
+        # never stops the build: images without their own session's slide images use another's, or are
+        # used as recorded, each with a warning here, in log.md and in key.csv (column flat_field)
+        ff_lines = corr.warnings(render)
+        for line in ff_lines:
+            log(line)
+    else:
+        ff_lines = []
 
     groups = same_field_groups(images, cfg["inclusion"]["same_field_tolerance_um"])
     for s in images:
@@ -612,6 +622,8 @@ def prepare(project, reassign=False, add=False, log=print):
         key_rows = read_csv(project / "key" / "key.csv") + key_rows
         auto_rows = [r for r in read_csv(out / "auto_measurements.csv") if r.get("code") != "none"] + auto_rows
     write_csv(project / "key" / "key.csv", key_rows)
+    if corr is not None:
+        FF.record_build(project, key_rows)
     write_csv(project / "key" / "settings_groups.csv",
               [{"settings_group": l, "system": c[0], "settings": c[1]} for c, l in letters.items()])
     write_csv(out / "auto_measurements.csv", auto_rows or [{"code": "none"}])
@@ -629,7 +641,7 @@ def prepare(project, reassign=False, add=False, log=print):
             "Images added after scoring began can be recognised as a later batch by the scorer; if a batch is "
             "one genotype, blinding is weaker for it.",
             f"Display ranges: {json.dumps(ranges)}",
-        ] + identity_log_lines(cfg) + FF.log_lines(project, cfg) + interaction_log_lines(cfg)
+        ] + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + interaction_log_lines(cfg)
           + form_log_lines(cfg, project), cfg)
         log(f"Added {len(todo)} images {added}; {len(images)} images in blind/ in total.")
         return ranges
@@ -647,7 +659,7 @@ def prepare(project, reassign=False, add=False, log=print):
         "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
         f"Settings groups: {len(letters)} (key/settings_groups.csv).",
         f"Display ranges: {json.dumps(ranges)}",
-    ] + browse_log_line(project) + identity_log_lines(cfg) + FF.log_lines(project, cfg) + interaction_log_lines(cfg)
+    ] + browse_log_line(project) + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + interaction_log_lines(cfg)
       + form_log_lines(cfg, project), cfg)
     log(f"{len(images)} images in blind/ {per_system}" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
         + f"; {len(excluded)} excluded.")

@@ -37,6 +37,17 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.21.1: **Flat-field correction that never gets in the way.** Nothing that can be worked around stops
+  the build any more. An image from a day without slide images uses the nearest day's (the pattern of
+  light across the field changes little unless the microscope is realigned), an image without a date
+  uses the average of its microscope's sessions, and slide images taken at other settings stand in when
+  they are the same size; the light across the field is then corrected, the brightness between sessions
+  is not. An image with no usable slide images is used as recorded. Each case is a warning in the Build
+  log, on the card, in `log.md`, in `key.csv` (column `flat_field`) and in the Methods draft. Slide
+  images for later days can be added at any time, also after scoring began, without changing any coded
+  image. Unusable slide images (saturated, another size, a slide that did not fill the field) are left
+  out with the reason instead of stopping. Slide and control images may sit in any folder, also inside
+  the project; only the project's own image folders are refused.
 - 1.21.0: **Flat-field correction.** An optional card corrects the reporter for uneven light across the
   field and for brightness drift between imaging sessions, from images of a uniform fluorescent slide
   taken at the project's settings in each session (one microscope, settings group and acquisition day),

@@ -195,8 +195,11 @@ channel, which would make them easier to find.
 fluorescent slide at the project's settings (and, if you can, a few dark images with the light off).
 Choose the folder on the **Flat-field correction** card. Build then evens out the reporter's light
 across the field and between sessions before anything is shown or measured, so a cell at the edge of the
-field is not judged dimmer than one in the middle. It is recorded in `log.md` and the Methods draft and
-locked from the first score; a blind set already built is rebuilt with the same codes.
+field is not judged dimmer than one in the middle. It is recorded in `log.md` and the Methods draft; a
+blind set already built is rebuilt with the same codes. A day without slide images uses the nearest
+day's, with a warning (the build never stops for it), and slide images for later days can be added with
+**Sessions... > Add slide images** at any time, also after scoring began, without changing images
+already coded.
 
 **Looking at images: Browse images** (`wormscore browse my_project`). After scanning, **Browse images**
 (next to Open folder and Project settings, at the top of the project) opens the scoring viewer with each image's file name and genotype, for checking

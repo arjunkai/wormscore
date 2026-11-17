@@ -173,7 +173,7 @@ def project_status(path):
     # flat-field correction (1.21.0): any project's own folder (not a package)
     from . import flatfield as FF
     st["flat_field"] = None if info or not bcfg else {
-        "on": FF.settings_of(bcfg), "summary": FF.summary(p), "locked": FF.lock_reason(p)}
+        "on": FF.settings_of(bcfg), "summary": FF.summary(p), "locked": FF.lock_reason(p), "build": FF.build_note(p)}
     if st["flat_field"] and st["flat_field"]["on"]:
         st["flat_field"]["on"] = {k: v for k, v in st["flat_field"]["on"].items() if k != "checksum"}
     inv = p / "outputs" / "inventory.csv"
@@ -843,7 +843,7 @@ class HomeApp:
         if kind not in BL.KINDS:
             raise ValueError("unknown kind of control")
         d = self.pick("Choose the folder with the " + ("identity-only" if kind == "identity-only" else "reporter-only")
-                      + " control images (outside the project)")
+                      + " control images")
         if not d:
             return {"ok": False}
         if not self.job.start("Bleed-through check", p, lambda: BL.measure(p, d, kind, log=self.job.say)):
@@ -863,16 +863,25 @@ class HomeApp:
             across, between = body.get("across_field") is True, body.get("between_sessions") is True
             if not (across or between):
                 raise ValueError("Choose what to correct.")
-            d = self.pick("Choose the folder with the reference-slide images (outside the project)")
+            d = self.pick("Choose the folder with the slide images")
             if not d:
                 return {"ok": False}
             dark = None
             if body.get("dark") is True:
-                dark = self.pick("Choose the folder with the dark images (outside the project)")
+                dark = self.pick("Choose the folder with the dark images")
                 if not dark:
                     return {"ok": False}
             fn0 = lambda: FF.measure(p, d, dark, across, between, log=self.job.say)
             title = "Flat-field correction"
+        elif body.get("action") == "add":
+            # 1.21.1: allowed after scoring began; nothing already coded changes, so no rebuild
+            d = self.pick("Choose the folder with the slide images of the new sessions")
+            if not d:
+                return {"ok": False}
+            fn, title = (lambda: FF.add_sessions(p, d, log=self.job.say)), "Add slide images"
+            if not self.job.start(title, p, fn):
+                raise ValueError("Another step is still running.")
+            return {"ok": True}
         else:
             raise ValueError("unknown flat-field action")
 

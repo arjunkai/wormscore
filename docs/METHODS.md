@@ -213,14 +213,28 @@ imaging session (one microscope, one settings group, one acquisition day from th
 - dark (optional): images taken with the light off at the same settings, median over images. Without
   them the camera offset is taken as 0, and the Methods draft says so.
 
-Formats with no acquisition date (Leica LIF, ImageJ TIFF) use the microscope's only reference session;
-if it has several, or an image's session has no slide images, Build stops and names the images, so the
-correction is never applied to some images and not to others. Pixels at the detector maximum are found
-on the raw stack and stored per image (`saturated.png`), so `saturated_px_mip` still counts them. Raw
-files are never changed. Each session's light range and factor are in `outputs/flat_field/sessions.csv`,
-`log.md` (at each setting and each Build, with checksums of the slide images and the measured
-correction) and the Methods draft; `key.csv` gets `imaging_session` and `session_factor`. The setting is
-locked from the first score. Projects without it are built exactly as before.
+Slide images that cannot be used are left out with the reason (more than 0.1% of pixels at the detector
+maximum, another size than the session's other slide images, or a flat below 20% of its mean anywhere,
+meaning the slide did not fill the field). Since 1.21.1 nothing that can be worked around stops the
+build; each fallback is a warning in the Build log and `log.md`, the `flat_field` column of `key.csv`
+and the Methods draft. The pattern of light across the field changes little unless the microscope is
+realigned (UCSF Center for Advanced Light Microscopy, flat-field notes), so an image without slide images from its own session uses, in order: the nearest
+day's (same microscope and settings), for an image without a date the average of the microscope's
+sessions, or slide images of the same size taken at other settings on that microscope. Its light across
+the field is then corrected, its brightness between sessions is not. An image with no usable slide
+images at all is used as recorded. Formats with no acquisition date (Leica LIF, ImageJ TIFF) use the
+microscope's only session directly.
+
+Pixels at the detector maximum are found on the raw stack and stored per image (`saturated.png`), so
+`saturated_px_mip` still counts them. Raw files are never changed. Each session's light range and factor
+are in `outputs/flat_field/sessions.csv`, `log.md` (at each setting and each Build, with checksums of the
+slide images and the measured correction) and the Methods draft; `key.csv` gets `imaging_session`,
+`flat_field` and `session_factor`. Slide images for later sessions can be added at any time, also after
+scoring began: sessions in use are not changed, and a new session's factor brings it to the level its
+microscope's sessions were brought to, so every coded image keeps the planes it was scored on. Starting
+again or turning the correction off would change images already scored, so those wait for nothing to be
+scored (and no second-scorer package to exist). Projects without the correction are built exactly as
+before.
 
 ## 6. Measurements
 

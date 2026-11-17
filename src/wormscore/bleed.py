@@ -84,13 +84,9 @@ def measure(project, folder, kind, log=print):
     cfg = C.load(project)
     if not cfg.get("identity"):
         raise SystemExit("This project has no identity channel, so there is no bleed-through to check.")
-    if not folder.is_dir():
-        raise SystemExit(f"{folder} is not a folder.")
-    try:
-        folder.resolve().relative_to(project.resolve())
-        raise SystemExit("Choose a folder of control images outside the project.")
-    except ValueError:
-        pass
+    # only the project's own image folders are refused (their images would be read as controls)
+    from .flatfield import check_folder
+    check_folder(project, folder, cfg, "control images")
     src_role, tgt_role = KINDS[kind]
     src_name, tgt_name = _names(cfg, kind)
     source, files = control_files(folder, cfg)

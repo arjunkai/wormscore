@@ -64,7 +64,7 @@ def test_the_methods_draft_names_each_direction(project):
 
 
 def test_controls_must_be_outside_the_project_and_readable(project, tmp_path):
-    with pytest.raises(SystemExit, match="outside the project"):
+    with pytest.raises(SystemExit, match="holds the project.s own images"):
         B.measure(project, project / "data", "identity-only", **QUIET)
     (tmp_path / "empty").mkdir()
     with pytest.raises(SystemExit, match="No control image could be measured"):
