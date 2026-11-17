@@ -36,6 +36,9 @@ organisms work the same way.
 - **Reproducible:** every parameter and software version is appended to `log.md` on each run.
 - **Local:** runs on your computer only. Nothing is uploaded.
 
+Something wrong, unclear or missing? [Open an issue](https://github.com/arjunkai/wormscore/issues/new)
+with what you did and what you saw (the project's `log.md` helps; it never names a code's genotype).
+
 Supported raw formats: Leica `.lif`, Zeiss `.czi`, OME-TIFF (including Micro-Manager style files with
 a `.companion.ome`), Nikon `.nd2`, Olympus FluoView `.oib` and `.oif`, and ImageJ hyperstack TIFF (only
 where you turn it on, because ImageJ files do not record which channel is which). Channel identity
@@ -60,7 +63,8 @@ package exists). See
 
 **Windows, no Python needed:** click **Download for Windows** above (or get `wormscore-windows.zip`
 from the [Releases page](https://github.com/arjunkai/wormscore/releases)), unzip it, and double-click
-`wormscore.exe`. It opens in its own window (drawn by WebView2, the web engine built into Windows 10 and
+`wormscore.exe`. The app is not signed with a paid code-signing certificate, so the first time Windows
+may show "Windows protected your PC": click **More info**, then **Run anyway**. It opens in its own window (drawn by WebView2, the web engine built into Windows 10 and
 11), so it behaves like any other app: one taskbar button, and it closes when you close its window. Your
 projects are on the left, and the five steps (Scan data, Set scoring criteria, Build blind set, Score, Unblind) are
 a guided list on the right. The older launcher window is still available: `wormscore.exe --classic`.
