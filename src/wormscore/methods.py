@@ -234,6 +234,12 @@ def bleed_sentence(project):
     return methods_sentence(project)
 
 
+def flat_field_sentence(project, cfg):
+    """The flat-field correction made before scoring (1.21.0), or "" (the Methods then read as before)."""
+    from .flatfield import methods_sentence
+    return methods_sentence(project, cfg)
+
+
 def interim_sentence(project):
     """The interim looks taken during scoring (1.17.0), or "" (the Methods then read as before)."""
     from .interim import methods_sentence
@@ -334,6 +340,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         f"had been scored.",
         "",
         "**Measurement.** "
+        + flat_field_sentence(project, cfg)
         + "".join(x + " " for x in identity_sentence(cfg))
         + f"Each plane was median-filtered ({mc['median_filter_px']} x {mc['median_filter_px']} pixels). For each "
         "scored region, background was the median of a ring starting "

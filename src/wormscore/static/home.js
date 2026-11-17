@@ -362,6 +362,7 @@ function renderMain(d) {
     steps,
     built && !building ? secondScorerCard(p, busy) : null,
     built && !building && p.practice ? practiceCard(p, busy) : null,
+    p.flat_field && p.scanned !== null && (p.flat_field.on || !p.flat_field.locked) ? flatFieldCard(p, busy) : null,
     p.bleed && p.scanned !== null ? bleedCard(p, busy) : null));
   const log = $("#log");
   if (log) log.scrollTop = log.scrollHeight;
@@ -503,6 +504,73 @@ function bleedCard(p, busy) {
         kinds.map(([k, label]) => h("button", { class: "btn", "data-k": `bleed-${k}`, disabled: busy,
           onclick: () => { st.log = []; st.since = 0; st.showLog = false; act("/api/bleed", { kind: k }); } }, `${label} controls...`)))),
     rows.length ? h("ul", { class: "pk-list" }, rows) : null);
+}
+
+// ---------------------------------------------------------------- flat-field correction (1.21.0)
+
+// Reference-slide images from each imaging session even out the light across the field and between
+// sessions. Set before scoring; Build corrects the reporter planes before anything is shown or measured.
+function flatFieldCard(p, busy) {
+  const ff = p.flat_field, on = ff.on, sm = ff.summary;
+  const range = (xs, unit = "") => {
+    const lo = Math.min(...xs), hi = Math.max(...xs);
+    return lo === hi ? `${lo}${unit}` : `${lo} to ${hi}${unit}`;
+  };
+  const what = on ? [on.across_field ? "across the field" : null, on.between_sessions ? "between sessions" : null]
+    .filter(Boolean).join(" and ") : "";
+  const row = on && sm ? h("ul", { class: "pk-list" }, h("li", { class: "pk" }, h("div", { class: "pk-text" },
+    h("b", {}, `Corrected ${what}`),
+    h("span", { class: "pk-meta" }, [
+      `${plural(sm.sessions.length, "session")}, ${plural(sm.reference_images, "reference image")}`,
+      on.across_field ? `light ${range(sm.sessions.map(s => Math.round(s.light_min_pct)))}% at the dimmest point` : null,
+      on.between_sessions && sm.sessions.length > 1 ? `factors ${range(sm.sessions.map(s => s.factor))}` : null,
+      sm.dark_folder ? "dark images subtracted" : "no dark images",
+    ].filter(Boolean).join(" · "))))) : null;
+  const lockTitle = ff.locked || null;
+  return h("section", { class: "extra" },
+    h("div", { class: "x-head" },
+      h("div", {},
+        h("div", { class: "s-title" }, "Flat-field correction", wsHelp(h, "flat_field", "flat-field correction"),
+          h("span", { class: `chip ${on ? "done" : "wait"}` }, on ? "On" : "Optional")),
+        h("div", { class: "s-desc" }, on ? "Build corrects the reporter in every image before it is shown or measured."
+          : "Image a uniform fluorescent slide in each imaging session, at this project's settings. "
+            + "The light is then evened out across the field and between sessions before you score.")),
+      h("div", { class: "x-act" },
+        h("button", { class: "btn", "data-k": "ff-set", disabled: busy || !!ff.locked, title: lockTitle, onclick: () => flatFieldDialog(p) },
+          on ? "Change..." : "Reference images..."),
+        on ? h("button", { class: "btn subtle", "data-k": "ff-off", disabled: busy || !!ff.locked, title: lockTitle,
+          onclick: flatFieldOff }, "Turn off") : null)),
+    row);
+}
+
+async function flatFieldDialog(p) {
+  const on = p.flat_field.on || { across_field: true, between_sessions: true };
+  const box = (id, label, checked) => h("label", { class: "check" },
+    h("input", { type: "checkbox", id, checked }), label);
+  const built = p.coded !== null && p.coded !== undefined;
+  const body = h("div", { class: "form" },
+    box("ffAcross", "Even out the light across the field", on.across_field),
+    box("ffBetween", "Even out the brightness between sessions", on.between_sessions),
+    box("ffDark", "I also have dark images (taken with the light off)", false),
+    h("p", { class: "f-help" }, "Take the slide images on the same microscope, with the same settings, on each day you imaged. "
+      + "Images from a day without slide images stop the build. Keep the folders outside the project."
+      + (built ? " The blind set is rebuilt with the same codes." : "")));
+  const go = await ask("Flat-field correction", body, [{ value: true, label: "Choose folder..." }], "Cancel", {
+    check: () => $("#ffAcross").checked || $("#ffBetween").checked ? null : "Choose at least one thing to correct." });
+  if (!go) return;
+  st.log = []; st.since = 0; st.showLog = false;
+  act("/api/flat-field", { action: "set", across_field: $("#ffAcross").checked, between_sessions: $("#ffBetween").checked,
+    dark: $("#ffDark").checked });
+}
+
+async function flatFieldOff() {
+  const p = st.data.project;
+  const built = p.coded !== null && p.coded !== undefined;
+  const go = await ask("Turn off flat-field correction?", "The images are then used as recorded."
+    + (built ? " The blind set is rebuilt with the same codes." : ""), [{ value: true, label: "Turn off", plain: true }]);
+  if (!go) return;
+  st.log = []; st.since = 0; st.showLog = false;
+  act("/api/flat-field", { action: "off" });
 }
 
 // ---------------------------------------------------------------- practice sets (1.13.0)

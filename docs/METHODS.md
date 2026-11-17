@@ -196,6 +196,32 @@ its background, as a percentage. The project's value is the median over control 
 share of identity light added to the measured reporter; reporter-only controls give the share of
 reporter light in the identity channel. Values are reported, never subtracted.
 
+**Flat-field correction** (1.21.0, optional, set before scoring). Most microscopes light the middle of
+the field more than the edges, and lamp or laser power changes from day to day. With the correction on,
+Build blind set corrects the reporter channel of every image before anything is shown, suggested or
+measured, using images of a uniform fluorescent reference slide taken at the project's settings in each
+imaging session (one microscope, one settings group, one acquisition day from the metadata):
+
+    corrected = (raw - dark) / flat x factor + mean(dark)
+
+- flat: the session's slide images, each averaged over its planes, then averaged together, less the
+  dark image, smoothed with a Gaussian (sigma 2% of the shorter side) and divided by its mean. Slide
+  images with more than 0.01% of pixels at the detector maximum are not used; a flat below 20% of its
+  mean anywhere is refused (the slide did not fill the field).
+- factor (only with "between sessions"): the median slide brightness over that microscope's sessions
+  with the same settings, divided by this session's.
+- dark (optional): images taken with the light off at the same settings, median over images. Without
+  them the camera offset is taken as 0, and the Methods draft says so.
+
+Formats with no acquisition date (Leica LIF, ImageJ TIFF) use the microscope's only reference session;
+if it has several, or an image's session has no slide images, Build stops and names the images, so the
+correction is never applied to some images and not to others. Pixels at the detector maximum are found
+on the raw stack and stored per image (`saturated.png`), so `saturated_px_mip` still counts them. Raw
+files are never changed. Each session's light range and factor are in `outputs/flat_field/sessions.csv`,
+`log.md` (at each setting and each Build, with checksums of the slide images and the measured
+correction) and the Methods draft; `key.csv` gets `imaging_session` and `session_factor`. The setting is
+locked from the first score. Projects without it are built exactly as before.
+
 ## 6. Measurements
 
 Before measuring, each plane is median-filtered (3 x 3 pixels by default), so a single hot pixel or a

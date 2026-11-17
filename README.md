@@ -191,6 +191,13 @@ measures how much of that marker's light lands in the other channel, as a percen
 measured reporter; reporter-only controls show whether bright cells look brighter in the identity
 channel, which would make them easier to find.
 
+**Flat-field correction** (optional, before scoring). In each imaging session, image a uniform
+fluorescent slide at the project's settings (and, if you can, a few dark images with the light off).
+Choose the folder on the **Flat-field correction** card. Build then evens out the reporter's light
+across the field and between sessions before anything is shown or measured, so a cell at the edge of the
+field is not judged dimmer than one in the middle. It is recorded in `log.md` and the Methods draft and
+locked from the first score; a blind set already built is rebuilt with the same codes.
+
 **Looking at images: Browse images** (`wormscore browse my_project`). After scanning, **Browse images**
 (next to Open folder and Project settings, at the top of the project) opens the scoring viewer with each image's file name and genotype, for checking
 images and setting the scoring criteria. It has the same views as scoring (planes, 3D, channels, both

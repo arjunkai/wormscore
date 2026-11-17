@@ -41,6 +41,18 @@ def _names(cfg, kind):
     return (ident, rep) if kind == "identity-only" else (rep, ident)
 
 
+def control_files(folder, cfg):
+    """(ImageJ source settings or None, image files in folder) as Scan data decides it: ImageJ TIFFs
+    only if the project's images are ImageJ TIFFs. Also used for flat-field reference images."""
+    from . import readers as R
+    source = next((s for s in cfg["sources"] if s.get("imagej_tiff")), None)
+    def usable(p):
+        role = R.file_role(p)
+        return role == "raw image" or (role == R.NOT_USED and source is not None
+                                       and p.suffix.lower() in (".tif", ".tiff") and R.is_imagej_stack(p))
+    return source, sorted(p for p in Path(folder).rglob("*") if p.is_file() and usable(p))
+
+
 def slope(src, tgt):
     """(bleed-through %, signal pixels used) for one image: (z, y, x) arrays of the same shape."""
     import numpy as np
@@ -81,13 +93,8 @@ def measure(project, folder, kind, log=print):
         pass
     src_role, tgt_role = KINDS[kind]
     src_name, tgt_name = _names(cfg, kind)
-    source = next((s for s in cfg["sources"] if s.get("imagej_tiff")), None)
+    source, files = control_files(folder, cfg)
     rows, skipped = [], []
-    def usable(p):     # as Scan data decides it; ImageJ TIFFs only if the project's images are ImageJ TIFFs
-        role = R.file_role(p)
-        return role == "raw image" or (role == R.NOT_USED and source is not None
-                                       and p.suffix.lower() in (".tif", ".tiff") and R.is_imagej_stack(p))
-    files = sorted(p for p in folder.rglob("*") if p.is_file() and usable(p))
     for path in files:
         rel = str(path.relative_to(folder))
         try:

@@ -116,7 +116,14 @@ def roi_mask(roi, h, w, cands):
     return np.array(im, bool)
 
 
-def measure_regions(code, raw, cands, meta, rois, cfg):
+def saturated_mask(d):
+    """A flat-field corrected image's saturated pixels (saturated.png, 1.21.0), or None."""
+    np, Image, _, _ = heavy_imports()
+    f = Path(d) / "saturated.png"
+    return np.array(Image.open(f)) > 0 if f.is_file() else None
+
+
+def measure_regions(code, raw, cands, meta, rois, cfg, sat_mask=None):
     """Measure drawn or suggested regions on one image stack. cands maps "arr_<rank-1>" to the
     suggested cells' masks. Used when a scorer saves regions, and by Browse images (not saved)."""
     np, _, _, M = heavy_imports()
@@ -130,7 +137,7 @@ def measure_regions(code, raw, cands, meta, rois, cfg):
     user_bg = masks.get("background")
     rows = []
     for label, m in cells.items():
-        r = M.measure_region(raw, filt, m, exclude, meta["pixel_um"], meta["saturation_value"], cfg)
+        r = M.measure_region(raw, filt, m, exclude, meta["pixel_um"], meta["saturation_value"], cfg, sat_mask)
         if user_bg is not None and user_bg.any():
             bz = r["best_z"]
             r["user_bg_mip"] = float(np.median(raw.max(0)[user_bg]))
@@ -234,7 +241,7 @@ class Project:
         meta = self.meta(code)
         d = self.blind / code
         raw = np.stack([M.unpack16(np.array(Image.open(d / "planes" / f"z{z:02d}.png"))) for z in range(meta["n_z"])])
-        return measure_regions(code, raw, np.load(d / "candidates.npz"), meta, rois, self.cfg)
+        return measure_regions(code, raw, np.load(d / "candidates.npz"), meta, rois, self.cfg, saturated_mask(d))
 
     def save_rois(self, code, rois):
         check_writable(*(self.scoring / n for n in ("rois.json", "roi_measurements.json", "roi_measurements.csv")))

@@ -108,12 +108,14 @@ def background_ring(mask, exclude, px_um, cfg):
     return (dist_um > gap) & (dist_um <= gap + width) & ~exclude & ~mask
 
 
-def measure_region(raw, filt, mask, exclude, px_um, sat, cfg):
+def measure_region(raw, filt, mask, exclude, px_um, sat, cfg, sat_mask=None):
     """All numbers for one region (a drawn region or an automatic suggestion).
 
     raw, filt: (z, y, x) marker stacks, unfiltered and median-filtered.
     mask: (y, x) region. exclude: (y, x) pixels to keep out of the background ring.
-    sat: the highest value this microscope's detector can record."""
+    sat: the highest value this microscope's detector can record.
+    sat_mask: (y, x) pixels at that maximum in any plane, for flat-field corrected stacks (1.21.0),
+    whose values no longer show it; None counts pixels of the projection at sat, as before."""
     mip_raw = raw.max(0)
     mip_f = filt.max(0)
     ring = background_ring(mask, exclude, px_um, cfg)
@@ -155,7 +157,7 @@ def measure_region(raw, filt, mask, exclude, px_um, sat, cfg):
         "mean_best_minus_bg": round(mean_best - bg_best, 2),
         "integrated_best_minus_bg": round(float((best[mask] - bg_best).sum()), 1),
         "stack_sum_minus_bg": round(stack_sum, 1),
-        "saturated_px_mip": int((mip_raw[mask] >= sat).sum()),
+        "saturated_px_mip": int((mip_raw[mask] >= sat).sum() if sat_mask is None else sat_mask[mask].sum()),
         "ring_px": int(ring.sum()),
     } | extra
 

@@ -170,6 +170,12 @@ def project_status(path):
     st["bleed"] = BL.results(p) if bcfg and bcfg.get("identity") else None
     if st["bleed"] is not None:
         st["marker_label"], st["identity_label"] = bcfg["marker"]["label"], bcfg["identity"]["label"]
+    # flat-field correction (1.21.0): any project's own folder (not a package)
+    from . import flatfield as FF
+    st["flat_field"] = None if info or not bcfg else {
+        "on": FF.settings_of(bcfg), "summary": FF.summary(p), "locked": FF.lock_reason(p)}
+    if st["flat_field"] and st["flat_field"]["on"]:
+        st["flat_field"]["on"] = {k: v for k, v in st["flat_field"]["on"].items() if k != "checksum"}
     inv = p / "outputs" / "inventory.csv"
     st["scanned"] = _rows(inv) if inv.is_file() else None
     blind = p / "blind"
@@ -844,6 +850,43 @@ class HomeApp:
             raise ValueError("Another step is still running.")
         return {"ok": True}
 
+    def flat_field(self, body):
+        """Set or turn off the flat-field correction (1.21.0). With a blind set already built (allowed only
+        before scoring), it is rebuilt keeping its codes, so the coded images match the setting."""
+        from . import flatfield as FF
+        from .pipeline import prepare
+        p = self.need_project()
+        if body.get("action") == "off":
+            fn0 = lambda: FF.turn_off(p, log=self.job.say)
+            title = "Turn off flat-field correction"
+        elif body.get("action") == "set":
+            across, between = body.get("across_field") is True, body.get("between_sessions") is True
+            if not (across or between):
+                raise ValueError("Choose what to correct.")
+            d = self.pick("Choose the folder with the reference-slide images (outside the project)")
+            if not d:
+                return {"ok": False}
+            dark = None
+            if body.get("dark") is True:
+                dark = self.pick("Choose the folder with the dark images (outside the project)")
+                if not dark:
+                    return {"ok": False}
+            fn0 = lambda: FF.measure(p, d, dark, across, between, log=self.job.say)
+            title = "Flat-field correction"
+        else:
+            raise ValueError("unknown flat-field action")
+
+        def fn():
+            fn0()
+            if (p / "key" / "key.csv").is_file():
+                self.job.say("Rebuilding the blind set, keeping its codes...")
+                prepare(p, log=self.job.say)
+        if self.scoring and self.scoring[0] == str(p) and (p / "key" / "key.csv").is_file():
+            self.stop_scoring()
+        if not self.job.start(title, p, fn):
+            raise ValueError("Another step is still running.")
+        return {"ok": True}
+
     def interim(self):
         """Interim totals of the answers saved so far (1.17.0), recorded in log.md as an interim look.
         Pooled over all images: nothing by genotype, nothing about hidden repeats."""
@@ -1061,6 +1104,8 @@ class HomeApp:
             return self.interim()
         elif route == "bleed":
             return self.bleed(body)
+        elif route == "flat-field":
+            return self.flat_field(body)
         elif route == "run":
             return self.run_step(body)
         elif route == "score":

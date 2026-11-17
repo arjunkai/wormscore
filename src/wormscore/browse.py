@@ -27,7 +27,7 @@ from pathlib import Path
 from . import __version__
 from . import config as C
 from .files import append_log, read_csv
-from .server import LOCAL_HOSTS, STATIC, STATIC_FILES, LocalServer, heavy_imports, measure_regions
+from .server import LOCAL_HOSTS, STATIC, STATIC_FILES, LocalServer, heavy_imports, measure_regions, saturated_mask
 
 ITEM = re.compile(r"^[WF]\d{4,6}$")        # W = a code (after unblinding), F = a scanned image
 BROWSED = "browsed_images.csv"
@@ -100,6 +100,13 @@ class Browse:
         self.viewed = set()          # images recorded in this session
         self.logged = set()          # states whose log.md line this session has written
         self.cache = OrderedDict()   # rendered images, newest last (memory only)
+        # Flat-field correction (1.21.0): images not yet coded are shown as Build would make them.
+        # One without a reference session (Build would stop) is shown as recorded.
+        from . import flatfield as FF
+        try:
+            self.corr = FF.load(self.path, self.cfg)
+        except SystemExit:
+            self.corr = None
         state, why = browse_state(self.path)
         if state in ("locked", "none"):
             raise SystemExit(why)
@@ -187,7 +194,8 @@ class Browse:
             raise ValueError(f"The {self.cfg['marker']['label']} channel of this image could not be identified, "
                              "so it cannot be shown.")
         cfg = self.cfg
-        v = read_for_viewer(s, cfg)
+        corr = self.corr if self.corr is not None and self.corr.session_for(s) is not None else None
+        v = read_for_viewer(s, cfg, corr)
         raw, mip = v["raw"], v["mip"]
         sat = saturation_for(s, cfg)
 
@@ -197,6 +205,8 @@ class Browse:
             return buf.getvalue()
         files = {f"planes/z{z:02d}.png": png(M.pack16(raw[z])) for z in range(raw.shape[0])}
         files["mip.png"] = png(M.pack16(mip))
+        if v["sat_mask"] is not None:
+            files["saturated.png"] = png(v["sat_mask"].astype(np.uint8) * 255)
         if v["bf"] is not None:
             files["brightfield.png"] = png(v["bf"])
         if v["has_identity"]:
@@ -240,11 +250,14 @@ class Browse:
             raw = np.stack([M.unpack16(np.array(Image.open(io.BytesIO(got["files"][f"planes/z{z:02d}.png"]))))
                             for z in range(meta["n_z"])])
             cands = got["masks"]
+            sat_mask = (np.array(Image.open(io.BytesIO(got["files"]["saturated.png"]))) > 0
+                        if "saturated.png" in got["files"] else None)
         else:
             d = got["dir"]
             raw = np.stack([M.unpack16(np.array(Image.open(d / "planes" / f"z{z:02d}.png"))) for z in range(meta["n_z"])])
             cands = np.load(d / "candidates.npz")
-        return measure_regions(item_id, raw, cands, meta, rois, self.cfg)
+            sat_mask = saturated_mask(d)
+        return measure_regions(item_id, raw, cands, meta, rois, self.cfg, sat_mask)
 
     def saved(self, item_id):
         """After unblinding: the scorer's saved answers and regions for a code (read only)."""

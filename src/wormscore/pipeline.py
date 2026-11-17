@@ -367,12 +367,19 @@ def saturation_for(img, cfg):
     return cfg["saturation_value"].get(img["system"], 2 ** img["bits"] - 1)
 
 
-def read_for_viewer(s, cfg):
+def read_for_viewer(s, cfg, corr=None):
     """Read one image and make what the viewer shows and measures: the marker stack (raw and
     median-filtered), its projection, brightfield, the identity channel and the suggested cells.
-    Build blind set saves these as the coded image; Browse images shows them without saving."""
+    Build blind set saves these as the coded image; Browse images shows them without saving.
+    corr: the project's flat-field correction (1.21.0), applied to the marker stack before anything
+    else, or None (the stack as recorded, as before)."""
     mc, ident = cfg["measurement"], cfg.get("identity")
     raw = R.read(s, s["marker_channel"])
+    sat_mask = None
+    if corr is not None:
+        # pixels at the detector's maximum, found before correction (corrected values can be above or below it)
+        sat_mask = (raw >= saturation_for(s, cfg)).any(0)
+        raw = corr.apply(raw, s)
     filt = M.median_filter_stack(raw, mc["median_filter_px"])
     mip = raw.max(0)
     bf = M.brightfield_plane(R.read(s, s["bf_channel"]), cfg) if s["bf_channel"] is not None else None
@@ -393,7 +400,7 @@ def read_for_viewer(s, cfg):
         del iraw
     cands = M.candidate_spots(spot_mip, s["pixel_um"], cfg)
     return {"raw": raw, "filt": filt, "mip": mip, "bf": bf, "has_identity": has_identity,
-            "id_planes": id_planes, "id_mip": id_mip, "cands": cands}
+            "id_planes": id_planes, "id_mip": id_mip, "cands": cands, "sat_mask": sat_mask}
 
 
 def prepare(project, reassign=False, add=False, log=print):
@@ -419,6 +426,10 @@ def prepare(project, reassign=False, add=False, log=print):
     write_csv(project / "outputs" / "excluded.csv", excluded or [{"reason": "none excluded"}])
     if not images:
         raise SystemExit("No images passed the inclusion rules. See outputs/excluded.csv.")
+    from . import flatfield as FF
+    corr = FF.load(project, cfg)          # None unless the project turned the correction on (1.21.0)
+    if corr is not None:
+        corr.check(images)
 
     groups = same_field_groups(images, cfg["inclusion"]["same_field_tolerance_um"])
     for s in images:
@@ -462,7 +473,10 @@ def prepare(project, reassign=False, add=False, log=print):
         code, d = s["code"], blind / s["code"]
         (d / "planes").mkdir(parents=True)
         sat = saturation_for(s, cfg)
-        v = read_for_viewer(s, cfg)
+        v = read_for_viewer(s, cfg, corr)
+        sat_mask = v["sat_mask"]          # None unless corrected: then saturation is read from this mask
+        if sat_mask is not None:
+            Image.fromarray(sat_mask.astype(np.uint8) * 255).save(d / "saturated.png")
         raw, filt, mip, bf_disp, cands, has_identity = v["raw"], v["filt"], v["mip"], v["bf"], v["cands"], v["has_identity"]
         px = s["pixel_um"]
         stats.setdefault(s["system"], []).append((float(np.median(mip)), float(np.percentile(mip, 99.9))))
@@ -484,7 +498,7 @@ def prepare(project, reassign=False, add=False, log=print):
             exclude |= c["mask"]
         cand_meta = []
         for rank, c in enumerate(cands, start=1):
-            m = M.measure_region(raw, filt, c["mask"], exclude, px, sat, cfg)
+            m = M.measure_region(raw, filt, c["mask"], exclude, px, sat, cfg, sat_mask)
             auto_rows.append({"code": code, "candidate": rank, "y_px": c["y"], "x_px": c["x"],
                               "prominence": round(c["prominence"], 1),
                               **({"spots_found_on": ident["label"] if has_identity and ident["spots_from"] == "identity"
@@ -538,6 +552,7 @@ def prepare(project, reassign=False, add=False, log=print):
             "stage_y_um": "" if s["stage_y"] is None else round(s["stage_y"], 1),
             "same_field_group": s["field_group"], "counted_by_default": s["counted_by_default"],
             **({"identity_channel_used": has_identity} if ident else {}),
+            **(corr.key_columns(s) if corr is not None else {}),
             **({"added_on": s["added_on"]} if add else {}), **extra,
         })
         log(f"{code} ({n}/{len(todo)})")
@@ -614,7 +629,8 @@ def prepare(project, reassign=False, add=False, log=print):
             "Images added after scoring began can be recognised as a later batch by the scorer; if a batch is "
             "one genotype, blinding is weaker for it.",
             f"Display ranges: {json.dumps(ranges)}",
-        ] + identity_log_lines(cfg) + interaction_log_lines(cfg) + form_log_lines(cfg, project), cfg)
+        ] + identity_log_lines(cfg) + FF.log_lines(project, cfg) + interaction_log_lines(cfg)
+          + form_log_lines(cfg, project), cfg)
         log(f"Added {len(todo)} images {added}; {len(images)} images in blind/ in total.")
         return ranges
     n_counted = sum(s["counted_by_default"] for s in images)
@@ -631,7 +647,8 @@ def prepare(project, reassign=False, add=False, log=print):
         "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
         f"Settings groups: {len(letters)} (key/settings_groups.csv).",
         f"Display ranges: {json.dumps(ranges)}",
-    ] + browse_log_line(project) + identity_log_lines(cfg) + interaction_log_lines(cfg) + form_log_lines(cfg, project), cfg)
+    ] + browse_log_line(project) + identity_log_lines(cfg) + FF.log_lines(project, cfg) + interaction_log_lines(cfg)
+      + form_log_lines(cfg, project), cfg)
     log(f"{len(images)} images in blind/ {per_system}" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
         + f"; {len(excluded)} excluded.")
     return ranges

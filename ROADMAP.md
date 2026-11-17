@@ -13,8 +13,9 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 - **Several identity channels,** for multi-color systems such as NeuroPAL.
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
-- **Imaging-session tools.** Optional flat-field or reference-slide correction per imaging session,
-  and a check for gut autofluorescence.
+- **Gut autofluorescence check.** For projects that record a channel with no label (for example
+  blue): flag outlines that are also bright there, since gut granules glow in every channel and GFP
+  does not. Reported in the outputs and at unblinding, never on the scoring page.
 - **Example data.** An optional NeuroPAL example download, if its license allows.
 - **Open (non-blind) scoring, under consideration.** An optional project type for pilots or
   phenotypes that cannot be hidden, chosen when the project is created. Every output and the
@@ -36,6 +37,14 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.21.0: **Flat-field correction.** An optional card corrects the reporter for uneven light across the
+  field and for brightness drift between imaging sessions, from images of a uniform fluorescent slide
+  taken at the project's settings in each session (one microscope, settings group and acquisition day),
+  with optional dark images. Build applies it before anything is shown, suggested or measured, so the
+  scorer's calls and the numbers rest on the same corrected image. Saturated pixels are found before
+  correction and still counted. It is set before scoring, recorded in `log.md` (with checksums) and the
+  Methods draft, and locked from the first score. An image whose session has no slide images stops the
+  build. Raw files are never changed, and projects without the correction build exactly as before.
 - 1.20.0: **Bleed-through check.** In projects with an identity channel, an optional card measures each
   marker's light in the other channel from a folder of single-label control images (animals with one
   marker, imaged at the project's settings; Bolte and Cordelieres 2006). Identity-only controls matter
