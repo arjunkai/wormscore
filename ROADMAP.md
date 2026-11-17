@@ -13,8 +13,6 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 - **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
   several identity channels (for multi-color systems such as NeuroPAL).
-- **More 3D.** Depth of the brightest point under the cursor, and turning about the horizontal axis
-  too (both keep brightness unchanged; no depth cueing in the scoring view).
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
 - **Imaging-session tools.** Optional flat-field or reference-slide correction per imaging session,
   and a check for gut autofluorescence.
@@ -39,6 +37,12 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.18.0: **More 3D.** The 3D view also tilts the stack about the horizontal axis: up and down keys,
+  dragging up or down, or the new Tilt slider (each -60 to +60 degrees). At no tilt it is drawn exactly
+  as before. In Projection and 3D, the keys line under the image shows which plane holds the brightest
+  point under the cursor (only where the image is lit), and a double-click there opens that plane in
+  Planes. It shows a plane number, never a brightness value. Turn and Tilt fit in the Plane slider's
+  place, so the toolbar keeps one row on a 1366-pixel screen; each slider's tooltip gives its angle.
 - 1.17.0: **Interim totals.** **Interim totals...** on the Score step shows totals of the answers so
   far: images scored and not usable (and why), the calls, the share of animals with a defect call,
   confidence, the time per image and the time left, and a check for drift (the first half of the

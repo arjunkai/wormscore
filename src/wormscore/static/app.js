@@ -44,7 +44,8 @@ const st = {
   // Identity channel (projects that set one): which channel is shown, and its display-only images
   // (8-bit, scaled per image when the blind set was built, so they hold no brightness numbers).
   chan: "both", idMip: null, idPlanes: [],
-  angle: 0, rot: new Map(),   // 3D: the turn in degrees, and turned projections already drawn for this image
+  angle: 0, tilt: 0, rot: new Map(),   // 3D: the turn and tilt in degrees, and turned views already drawn for this image
+  mipDepth: null,      // the plane of the brightest point at each pixel of the projection (1.18.0)
   next: null,   // the next image's projection and brightfield, decoded ahead: { code, mip, bfVals }
 };
 
@@ -455,10 +456,13 @@ async function openWorm(code) {
   Object.assign(st, {
     code, meta: r.meta, imgV: r.img_v, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
     view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), planeFailed: new Set(),
-    drawing: null, mip: null, bfVals: null, angle: 0, rot: new Map(), planesDone: false, rendering: null, vol: null,
+    drawing: null, mip: null, bfVals: null, angle: 0, tilt: 0, rot: new Map(), mipDepth: null, planesDone: false,
+    rendering: null, vol: null,
     idMip: null, idPlanes: new Array(r.meta.n_z),
   });
   $("#aSlider").value = 0;
+  $("#tSlider").value = 0;
+  showDepth(0);
   // The form shows this image's answers at once, never the last image's under this code.
   $("#loadErr").classList.add("hidden");
   $("#bfToggle").disabled = !st.meta.has_brightfield;
@@ -578,43 +582,51 @@ function why3dOff() {
   return "";
 }
 
-// The turned projection for this angle, or null while it is still being drawn.
-function turned(a) {
-  return a === 0 ? st.mip : st.rot.get(a) || null;
+// A turned view is kept under its turn and tilt (1.18.0: the stack also tilts about the horizontal axis).
+const viewKey = (a, t) => `${a},${t}`;
+const viewAt = k => k.split(",").map(Number);
+
+// The turned projection for this turn and tilt, or null while it is still being drawn.
+function turned(a, t = 0) {
+  return a === 0 && t === 0 ? st.mip : st.rot.get(viewKey(a, t))?.img || null;
 }
 
-// The angles worth keeping for this image: the nearest ones to the current turn, as many as fit
-// in about 80 MB (all of them for a 512 x 512 image, fewer for very large ones).
-function wantedAngles() {
+// The views worth keeping for this image: the nearest ones to the current turn and tilt, as many as
+// fit in about 80 MB (more for a 512 x 512 image, fewer for very large ones).
+function wantedViews() {
   const keep = Math.max(4, Math.floor(40e6 / (st.meta.width * st.meta.height)));
   const all = [];
-  for (let a = -TURN_MAX; a <= TURN_MAX; a += TURN_STEP) if (a !== 0) all.push(a);
-  all.sort((p, q) => Math.abs(p - st.angle) - Math.abs(q - st.angle) || p - q);
-  return all.slice(0, keep);
+  for (let a = -TURN_MAX; a <= TURN_MAX; a += TURN_STEP)
+    for (let t = -TURN_MAX; t <= TURN_MAX; t += TURN_STEP) if (a || t) all.push([a, t]);
+  const d = ([a, t]) => Math.abs(a - st.angle) + Math.abs(t - st.tilt);
+  // the current tilt's row first: turning left and right is still the usual move
+  all.sort((p, q) => d(p) - d(q) || (p[1] !== st.tilt) - (q[1] !== st.tilt) || p[0] - q[0] || p[1] - q[1]);
+  return all.slice(0, keep).map(([a, t]) => viewKey(a, t));
 }
 
-// Draws the current angle first, then the nearby ones while the page is idle.
+// Draws the current view first, then the nearby ones while the page is idle.
 async function pump3d() {
   if (st.rendering || st.view !== "3d" || !st.planesDone || st.planeFailed.size || why3dOff()) return;
-  const want = wantedAngles();
-  for (const a of [...st.rot.keys()]) if (!want.includes(a)) st.rot.delete(a);
-  const a = st.angle !== 0 && !st.rot.has(st.angle) ? st.angle : want.find(x => !st.rot.has(x));
-  if (a === undefined) return;
+  const want = wantedViews();
+  for (const k of [...st.rot.keys()]) if (!want.includes(k)) st.rot.delete(k);
+  const cur = viewKey(st.angle, st.tilt);
+  const k = (st.angle || st.tilt) && !st.rot.has(cur) ? cur : want.find(x => !st.rot.has(x));
+  if (k === undefined) return;
   // The open-image counter, not the code: opening A, then B, then A again starts afresh.
   const seq = st.openSeq;
-  st.rendering = a;
+  st.rendering = k;
   let out = null, failed = false;
   try {
-    out = await render3d(seq, a);
+    out = await render3d(seq, ...viewAt(k));
   } catch (err) {
-    failed = true;          // the nearest drawn angle stays on screen; the page never locks up
+    failed = true;          // the nearest drawn view stays on screen; the page never locks up
     console.warn("3D", err);
   } finally {
     if (st.openSeq === seq) st.rendering = null;
   }
   if (st.openSeq !== seq) return;
-  if (out) st.rot.set(a, out);
-  if (a === st.angle) draw();
+  if (out) st.rot.set(k, out);
+  if (k === cur) draw();
   if (!failed) setTimeout(pump3d, 0);
 }
 
@@ -641,57 +653,91 @@ async function volume3d(seq) {
   return (st.vol = { r: 2, W, H, P });
 }
 
-async function render3d(seq, a) {
+// {img, depth}: each output pixel is the brightest value along a straight line through the stack
+// turned by a degrees about the vertical axis, then tilted by t degrees about the horizontal one;
+// depth is the plane (1 = first) that brightest value came from, 0 where nothing landed.
+async function render3d(seq, a, t = 0) {
   const vol = await volume3d(seq);
   if (!vol) return null;
   const m = st.meta, { W, H, P, r } = vol, nz = m.n_z;
   const zs = m.z_step_um / (m.pixel_um * r);
-  const rad = (a * Math.PI) / 180, c = Math.cos(rad), s = Math.sin(rad);
+  const ra = (a * Math.PI) / 180, c = Math.cos(ra), s = Math.sin(ra);
+  const rt = (t * Math.PI) / 180, ct = Math.cos(rt), sn = Math.sin(rt);
   // Between two planes, extra planes are blended in so a thin process does not break into
   // dots when the stack is turned (at most 6, so very large images stay quick).
-  const sub = Math.max(1, Math.min(6, Math.ceil(zs * Math.abs(s))));
-  const cx = (W - 1) / 2, cz = ((nz - 1) * zs) / 2;
-  const out = new Uint16Array(W * H);
+  const sub = Math.max(1, Math.min(6, Math.ceil(zs * Math.max(Math.abs(s), Math.abs(sn)))));
+  const cx = (W - 1) / 2, cy = (H - 1) / 2, cz = ((nz - 1) * zs) / 2;
+  const out = new Uint16Array(W * H), depth = new Uint16Array(W * H);
+  const dv = -s * sn;          // how far the output row moves for each pixel along x
   let t0 = performance.now();
   for (let y = 0; y < H; y++) {
-    const row = y * W;
+    const row = y * W, yy = y - cy;
     for (let z = 0; z < nz; z++) {
       const p0 = P[z], p1 = P[Math.min(z + 1, nz - 1)];
       const steps = z === nz - 1 ? 1 : sub;
       for (let k = 0; k < steps; k++) {
-        const f = k / steps, g = 1 - f;
-        // output column u = x cos a + b for this (blended) plane
-        const b = cx - cx * c + ((z + f) * zs - cz) * s + 0.5;
-        const x0 = Math.max(0, Math.ceil(-b / c)), x1 = Math.min(W - 1, Math.floor((W - b) / c - 1e-9));
-        for (let x = x0; x <= x1; x++) {
+        const f = k / steps, g = 1 - f, zz = (z + f) * zs - cz, plane = f < 0.5 ? z + 1 : z + 2;
+        // output column u = x cos a + bu; output row v = x dv + bv (v = y when there is no tilt)
+        const bu = cx - cx * c + zz * s + 0.5;
+        const bv = yy * ct + (cx * s + zz * c) * sn + cy + 0.5;
+        for (let x = 0; x < W; x++) {
+          const u = x * c + bu, w = x * dv + bv;
+          if (u < 0 || u >= W || w < 0 || w >= H) continue;
           const i = row + x;
           const v = f ? p0[i] * g + p1[i] * f : p0[i];
-          const o = row + ((x * c + b) | 0);
-          if (v > out[o]) out[o] = v;
+          const o = (w | 0) * W + (u | 0);
+          if (v > out[o]) { out[o] = v; depth[o] = plane; }
         }
       }
     }
     // Hand the page back now and then, so clicks and keys never wait for a large image.
     if (performance.now() - t0 > 25) {
       await new Promise(r => setTimeout(r, 0));
-      if (st.openSeq !== seq || !wantedAngles().includes(a)) return null;
+      if (st.openSeq !== seq || !wantedViews().includes(viewKey(a, t))) return null;
       t0 = performance.now();
     }
   }
-  if (r === 1) return out;
-  const full = new Uint16Array(m.width * m.height);       // back to the image's own size
+  if (r === 1) return { img: out, depth };
+  const full = new Uint16Array(m.width * m.height), fdepth = new Uint16Array(m.width * m.height);  // back to the image's own size
   for (let y = 0; y < m.height; y++) {
     const row = y * m.width, srow = (y >> 1) * W;
-    for (let x = 0; x < m.width; x++) full[row + x] = out[srow + (x >> 1)];
+    for (let x = 0; x < m.width; x++) { full[row + x] = out[srow + (x >> 1)]; fdepth[row + x] = depth[srow + (x >> 1)]; }
   }
-  return full;
+  return { img: full, depth: fdepth };
 }
 
-function setAngle(a) {
+// The plane (1 = first) of the brightest point at each pixel of the projection, worked out once
+// all planes are loaded. Ties go to the first plane, as in the projection itself.
+function mipDepth() {
+  if (st.mipDepth) return st.mipDepth;
+  if (!st.planesDone || st.planeFailed.size) return null;
+  const m = st.meta, n = m.width * m.height, best = new Uint16Array(n), d = new Uint16Array(n);
+  st.planes.forEach((p, z) => { for (let i = 0; i < n; i++) if (!d[i] || p[i] > best[i]) { best[i] = p[i]; d[i] = z + 1; } });
+  return (st.mipDepth = d);
+}
+
+// The plane of the brightest point under the cursor in Projection or 3D, or 0 if not known yet.
+function depthAt(x, y) {
+  const m = st.meta;
+  if (!m || !(st.view === "mip" || st.view === "3d") || m.n_z < 2) return 0;
+  x = Math.floor(x); y = Math.floor(y);
+  if (x < 0 || y < 0 || x >= m.width || y >= m.height) return 0;
+  const flat = st.view === "mip" || (st.angle === 0 && st.tilt === 0);
+  const map = flat ? mipDepth() : st.rot.get(viewKey(st.angle, st.tilt))?.depth;
+  const vals = flat ? st.mip : turned(st.angle, st.tilt);
+  // only where the image is lit: in the black background the brightest plane is just noise
+  const [lo, hi] = st.range === "full" ? m.full_range : m.enhanced_range;
+  const i = y * m.width + x;
+  return map && vals && vals[i] > lo + 0.1 * (hi - lo) ? map[i] : 0;
+}
+
+function setAngle(a, t = st.tilt) {
   if (!st.meta || why3dOff()) return;
-  a = Math.max(-TURN_MAX, Math.min(TURN_MAX, Math.round(a / TURN_STEP) * TURN_STEP));
-  const changed = a !== st.angle || st.view !== "3d";
+  const snap = v => Math.max(-TURN_MAX, Math.min(TURN_MAX, Math.round(v / TURN_STEP) * TURN_STEP));
+  a = snap(a); t = snap(t);
+  const changed = a !== st.angle || t !== st.tilt || st.view !== "3d";
   st.angle = a;
+  st.tilt = t;
   st.view = "3d";
   if (!changed) return;
   syncButtons();
@@ -726,16 +772,19 @@ function draw() {
   if (!st.meta) return;
   const m = st.meta;
   const in3d = st.view === "3d";
-  let vals = st.view === "mip" ? st.mip : in3d ? turned(st.angle) : st.planes[st.z];
-  // In 3D, until this angle is drawn, the nearest angle already drawn stays on screen, labelled.
+  let vals = st.view === "mip" ? st.mip : in3d ? turned(st.angle, st.tilt) : st.planes[st.z];
+  // In 3D, until this view is drawn, the nearest view already drawn stays on screen, labelled.
   let status3d = "";
   if (in3d && !vals && st.mip) {
-    const near = [0, ...st.rot.keys()].sort((p, q) => Math.abs(p - st.angle) - Math.abs(q - st.angle))[0];
-    vals = turned(near);
+    const dist = k => { const [a, t] = viewAt(k); return Math.abs(a - st.angle) + Math.abs(t - st.tilt); };
+    const nearKey = [viewKey(0, 0), ...[...st.rot.keys()].filter(k => st.rot.get(k))].sort((p, q) => dist(p) - dist(q))[0];
+    vals = turned(...viewAt(nearKey));
+    const [na, nt] = viewAt(nearKey), deg = (a, t) => t ? `${a}°, tilt ${t}°` : `${a}°`;
+    const near = deg(na, nt);
     const have = st.planes.filter(Boolean).length;
     status3d = st.planesDone && st.planeFailed.size ? "3D is not available for this image: a plane could not be loaded. Choose 3D again to retry."
       : have < m.n_z ? `Loading planes for 3D... ${have} / ${m.n_z}`
-      : `Turning to ${st.angle}°... (showing ${near}°)`;
+      : `Turning to ${deg(st.angle, st.tilt)}... (showing ${near})`;
   }
   // Identity channel: shown alone or with the reporter (Projection and Planes; 3D turns the
   // reporter only). It waits for its own plane, so the two channels never show different planes.
@@ -896,10 +945,12 @@ function commitRoi(r) {
   draw();
 }
 
-// In 3D, dragging left or right turns the stack (the full width of the view is 120 degrees).
+// In 3D, dragging left or right turns the stack and dragging up or down tilts it (the full width
+// or height of the view is 120 degrees).
 cv.addEventListener("pointerdown", e => {
   if (st.view !== "3d" || e.button !== 0) return;
-  st.turnDrag = { x: e.clientX, a: st.angle, w: cv.getBoundingClientRect().width || 1 };
+  const rect = cv.getBoundingClientRect();
+  st.turnDrag = { x: e.clientX, y: e.clientY, a: st.angle, t: st.tilt, w: rect.width || 1, h: rect.height || 1 };
   cv.setPointerCapture(e.pointerId);
   cv.style.cursor = "grabbing";
   e.preventDefault();
@@ -907,7 +958,31 @@ cv.addEventListener("pointerdown", e => {
 cv.addEventListener("pointermove", e => {
   if (!st.turnDrag) return;
   const d = st.turnDrag;
-  setAngle(d.a + ((e.clientX - d.x) / d.w) * 2 * TURN_MAX);
+  setAngle(d.a + ((e.clientX - d.x) / d.w) * 2 * TURN_MAX, d.t - ((e.clientY - d.y) / d.h) * 2 * TURN_MAX);
+});
+
+// Depth (1.18.0): in Projection and 3D, the plane of the brightest point under the cursor, and a
+// double-click there opens that plane. A plane number only, never a brightness value.
+function showDepth(z) {
+  st.depthShown = z;
+  const el = $("#depthTip");
+  el.hidden = !z;
+  $("#keysText").hidden = !!z;       // shown in the keys line, so nothing covers the image
+  if (z) el.textContent = `Brightest here: plane ${z} of ${st.meta.n_z} · double-click to open it`;
+}
+cv.addEventListener("pointermove", e => {
+  if (st.turnDrag || !st.meta || st.drawing) return showDepth(0);
+  const [x, y] = toRaw(e);
+  showDepth(depthAt(x, y));
+});
+cv.addEventListener("pointerleave", () => showDepth(0));
+cv.addEventListener("dblclick", e => {
+  if (st.drawing || !st.meta) return;
+  const [x, y] = toRaw(e);
+  const z = st.depthShown || depthAt(x, y);       // the plane the keys line shows, so the two agree
+  if (!z) return;
+  showDepth(0);
+  setZ(z - 1);
 });
 const endTurnDrag = () => { if (st.turnDrag) { st.turnDrag = null; syncCursor(); } };
 cv.addEventListener("pointerup", endTurnDrag);
@@ -1175,13 +1250,19 @@ function syncButtons() {
   $("#zText").textContent = st.meta ? (st.view === "plane" ? `${st.z + 1} / ${st.meta.n_z}` : `all ${st.meta.n_z}`) : "-";
   const in3d = st.view === "3d", off3d = st.meta ? why3dOff() : "No image";
   $("#view3d").disabled = !!off3d;
-  $("#view3d").title = off3d || "Turn the stack to see depth (drag the image or use left/right)";
+  $("#view3d").title = off3d || "Turn and tilt the stack to see depth (drag the image, or use the arrow keys)";
   $("#planeCtl").classList.toggle("off", in3d);
   $("#turnCtl").classList.toggle("off", !in3d);
   $("#aSlider").value = st.angle;
   $("#aText").textContent = `${st.angle}°`;
   $("#aSlider").setAttribute("aria-valuetext", `${st.angle} degrees`);
-  if (st.meta) cv.setAttribute("aria-label", `Image ${st.code}, ${in3d ? `3D, turned ${st.angle} degrees` : st.view === "plane" ? `plane ${st.z + 1}` : "projection"}`);
+  $("#aSlider").title = `Turned ${st.angle}° (left and right keys, or drag sideways)`;
+  $("#tSlider").value = st.tilt;
+  $("#tText").textContent = `${st.tilt}°`;
+  $("#tSlider").setAttribute("aria-valuetext", `${st.tilt} degrees`);
+  $("#tSlider").title = `Tilted ${st.tilt}° (up and down keys, or drag up or down)`;
+  if (st.meta) cv.setAttribute("aria-label", `Image ${st.code}, ${in3d ? `3D, turned ${st.angle} degrees, tilted ${st.tilt} degrees`
+    : st.view === "plane" ? `plane ${st.z + 1}` : "projection"}`);
   $$("#toolSeg button").forEach(b => (b.disabled = in3d));
   $("#mark3d").classList.toggle("hidden", !in3d);
   syncChannel(in3d);
@@ -1264,6 +1345,7 @@ $$("#toolSeg button").forEach(b => (b.onclick = () => {
 }));
 $("#zSlider").oninput = e => setZ(+e.target.value);
 $("#aSlider").oninput = e => setAngle(+e.target.value);
+$("#tSlider").oninput = e => setAngle(st.angle, +e.target.value);
 $("#bfToggle").onchange = e => { st.bf = e.target.checked; draw(); };
 $("#sugToggle").onchange = draw;
 
@@ -1291,8 +1373,9 @@ document.addEventListener("keydown", e => {
     return;
   }
   if (st.view === "3d" && k.startsWith("arrow")) {
-    // in 3D left/right turn the stack; up/down do nothing (they would leave 3D for Planes)
+    // in 3D left/right turn the stack and up/down tilt it (1.18.0)
     if (k === "arrowright" || k === "arrowleft") setAngle(st.angle + (k === "arrowright" ? TURN_STEP : -TURN_STEP));
+    else setAngle(st.angle, st.tilt + (k === "arrowup" ? TURN_STEP : -TURN_STEP));
     e.preventDefault();
   } else if (k === "arrowright" || k === "arrowup") { setZ(st.view === "plane" ? st.z + 1 : st.z); e.preventDefault(); }
   else if (k === "arrowleft" || k === "arrowdown") { setZ(st.view === "plane" ? st.z - 1 : st.z); e.preventDefault(); }

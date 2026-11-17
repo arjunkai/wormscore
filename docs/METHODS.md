@@ -161,14 +161,17 @@ with two fixed ranges per microscope, the same for every image from that microsc
   images are in the set; images added later to an existing key keep their microscope's range.
 
 Images are drawn at a common physical scale (`display_um_per_px`) so microscope zoom does not change
-apparent cell size. A **3D** view turns the stack about the vertical axis (-60 to +60 degrees in
-5-degree steps; 0 is the maximum projection): each screen pixel is the brightest value along the
+apparent cell size. A **3D** view turns the stack about the vertical axis and, since 1.18.0, tilts it
+about the horizontal axis (each -60 to +60 degrees in 5-degree steps; 0 and 0 is the maximum
+projection): each screen pixel is the brightest value along the
 turned line of sight, with z stretched by z step / pixel size and up to 6 planes blended in between
 neighbouring planes (the same as Fiji's 3D Project, brightest point, with interpolation). It uses the
 same fixed display ranges, has no depth cueing (which would change apparent brightness), is drawn in
 the browser from the planes already shown, and is for viewing only: nothing is measured or saved from
 it, and regions are drawn on the projection or a plane. Images over 1.5 million pixels are turned at
-half size (each pixel the brightest of 2 x 2) to stay quick. Brightfield (middle plane, contrast-stretched per image) can be overlaid; it is
+half size (each pixel the brightest of 2 x 2) to stay quick. In the projection and in 3D, the keys line
+under the image shows the plane that holds the brightest point under the cursor (only where the image is
+lit), and a double-click there opens that plane; it shows a plane number, never a brightness value. Brightfield (middle plane, contrast-stretched per image) can be overlaid; it is
 never measured.
 
 **Identity channel.** Saved plane by plane and as a projection for display only, as 8-bit images,

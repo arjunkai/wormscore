@@ -129,7 +129,7 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 .dial { display: grid; }
 .dial > * { grid-area: 1 / 1; }
 .dial > .off { visibility: hidden; }
-#aText { min-width: 36px; font-variant-numeric: tabular-nums; color: var(--text); }
+#aText, #tText { min-width: 36px; font-variant-numeric: tabular-nums; color: var(--text); }
 .note3d { color: var(--text); }
 #zText { min-width: 52px; font-variant-numeric: tabular-nums; color: var(--text); }
 .chk { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -350,3 +350,10 @@ legend .tip-btn { margin-block: -3px; }
 .plane input[type="range"] { width: 92px; }
 #rangeHelp { margin-left: -10px; }
 #rangeHelp:empty { display: none; }
+/* 3D turn and tilt (1.18.0): two sliders in one group */
+#turnCtl { gap: 10px; }
+#turnCtl label { display: inline-flex; align-items: center; gap: 5px; }
+/* narrower than the Plane slider, so the two fit in its place and the toolbar keeps one row */
+#turnCtl input[type="range"] { width: 64px; }
+#turnCtl #aText, #turnCtl #tText { display: none; }   /* the angle is in each slider's tooltip */
+#depthTip { color: var(--text); }

@@ -33,7 +33,8 @@
       </div>
       <div class="dial">
         <label class="plane" id="planeCtl">Plane <input id="zSlider" type="range" min="0" max="0" value="0" disabled> <span id="zText">-</span></label>
-        <label class="plane off" id="turnCtl">Turn <input id="aSlider" type="range" min="-60" max="60" step="5" value="0" aria-label="Turn in degrees"> <span id="aText">0°</span></label>
+        <span class="plane off" id="turnCtl"><label>Turn <input id="aSlider" type="range" min="-60" max="60" step="5" value="0" aria-label="Turn in degrees"> <span id="aText">0°</span></label>
+          <label>Tilt <input id="tSlider" type="range" min="-60" max="60" step="5" value="0" aria-label="Tilt in degrees"> <span id="tText">0°</span></label></span>
       </div>
       <div class="seg" role="group" aria-label="Display range">
         <button data-range="full" title="Full detector range, same for every image from this microscope">Standard</button>
@@ -49,7 +50,7 @@
     </div>
     <div id="canvasWrap"><canvas id="cv" role="img" aria-label="Image"></canvas></div>
     <div id="loadErr" class="load-err hidden" role="alert"><span id="loadErrText"></span><button id="loadErrRetry" type="button" class="primary">Try again</button></div>
-    <div class="hint">Keys: ← → plane · P planes · D 3D · E range · B brightfield · <span id="chanKeys" class="hidden">1 2 3 channel · </span>N next<span id="saveKeys"><span id="answerKeys"> · 1–9 answer</span> · <span class="mod">Ctrl</span>+Enter save and next</span></div>
+    <div class="hint"><span id="keysText">Keys: ← → plane · P planes · D 3D · E range · B brightfield · <span id="chanKeys" class="hidden">1 2 3 channel · </span>N next<span id="saveKeys"><span id="answerKeys"> · 1–9 answer</span> · <span class="mod">Ctrl</span>+Enter save and next</span></span><span id="depthTip" hidden></span></div>
   </section>
 
   <aside id="panel">
