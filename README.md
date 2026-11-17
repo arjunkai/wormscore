@@ -206,7 +206,8 @@ channel, which would make them easier to find.
 **Gut autofluorescence check** (optional, after unblinding, for images that also recorded a channel with
 no label, such as blue). Gut granules glow in every channel; the reporter does not. **Check outlines** on
 the card measures each outline in that channel and flags those that are bright there too, by genotype, in
-`outputs/unblinded/autofluorescence.csv`, `log.md` and the Methods draft. Flags never change a call.
+`outputs/unblinded/autofluorescence.csv`, `log.md` and the Methods draft. **Browse images** then marks
+flagged codes and names their outlines. Flags never change a call.
 
 **Flat-field correction** (optional, before scoring). In each imaging session, image a uniform
 fluorescent slide at the project's settings (and, if you can, a few dark images with the light off).

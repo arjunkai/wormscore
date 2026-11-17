@@ -141,10 +141,41 @@ class Browse:
                           "note": f"Left out: {reason}" if reason else ""})
         return {it["id"]: it for it in items}
 
+    def autofluor(self):
+        """After unblinding: the gut autofluorescence check's regions by code (1.22.0, shown here since 1.25.0),
+        or {} if it has not run. Read again whenever the file changes, as the check may run while Browse is open."""
+        from .autofluor import RESULTS
+        f = self.path / "outputs" / "unblinded" / RESULTS
+        if self.state() != "after" or not f.is_file():
+            return {}
+        stamp = f.stat().st_mtime_ns
+        if getattr(self, "_af", (None,))[0] != stamp:
+            by_code = {}
+            for r in read_csv(f):
+                by_code.setdefault(r.get("code", ""), []).append(r)
+            self._af = (stamp, by_code)
+        return self._af[1]
+
     def summary(self, it):
         r = it["row"]
-        return {"code": it["id"], "coded": it["coded"], "genotype": r.get("genotype", ""),
-                "file": r.get("file", ""), "location": r.get("location_in_file", ""), "note": it["note"]}
+        out = {"code": it["id"], "coded": it["coded"], "genotype": r.get("genotype", ""),
+               "file": r.get("file", ""), "location": r.get("location_in_file", ""), "note": it["note"]}
+        flagged = [x for x in self.autofluor().get(it["id"], []) if x.get("possibly_gut_autofluorescence") == "True"]
+        if it["coded"] and flagged:
+            out["autofluor"] = len(flagged)
+        return out
+
+    def autofluor_line(self, item_id):
+        """The info panel's line on the gut autofluorescence check, or None if this code was not checked."""
+        rows = self.autofluor().get(item_id)
+        if not rows:
+            return None
+        flagged = [x for x in rows if x.get("possibly_gut_autofluorescence") == "True"]
+        ch = rows[0].get("channel", "")
+        if not flagged:
+            return f"Not flagged ({ch} channel)"
+        names = ", ".join(x.get("region", "") for x in flagged)
+        return f"Possibly, in {names} ({ch} channel)"
 
     def info(self, it):
         r, s = it["row"], it["img"] or it["row"]
@@ -164,7 +195,8 @@ class Browse:
                 ("Acquired", r.get("acquired", "")),
                 ("Included", it["note"] or ("Yes" if not it["coded"] else
                                             "Yes" if r.get("counted_by_default") == "True" else
-                                            "Yes (another image of this field is counted by default)"))]
+                                            "Yes (another image of this field is counted by default)")),
+                ("Gut autofluorescence", self.autofluor_line(it["id"]) or "") if it["coded"] else None]
         return [{"k": k, "v": str(v)} for k, v in filter(None, rows) if str(v) != ""]
 
     # ------------------------------------------------------------ images

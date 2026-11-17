@@ -32,6 +32,9 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.25.0: **Gut autofluorescence flags in Browse.** After the check has run, Browse images marks each
+  flagged code in the list (searchable as "gut autofluorescence") and names the flagged outlines and the
+  channel in the image's details. Codes checked and not flagged say so; nothing changes in projects without the check.
 - 1.24.0: **Markers in Project settings.** Choose the reporter and the identity channel (none, a
   preset, or NeuroPAL) and where suggested cells come from, without editing `config.json`.
   - A channel with its own settings shows as Custom and is kept unless another choice is made.

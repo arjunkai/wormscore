@@ -295,13 +295,16 @@ function setupBrowse() {
 
 // One line per image: its code (after unblinding) or file, then genotype, and whether it is left out.
 function browseRow(w) {
-  const said = [w.coded ? w.code : null, w.genotype, w.file, w.location, w.note].filter(Boolean).join(", ");
+  // after unblinding: outlines the gut autofluorescence check flagged (1.25.0)
+  const af = w.autofluor ? "Possible gut autofluorescence" : null;
+  const said = [w.coded ? w.code : null, w.genotype, w.file, w.location, w.note, af].filter(Boolean).join(", ");
   return h("button", { class: `brow${w.coded ? " coded" : ""}${w.code === st.code ? " cur" : ""}`, "aria-current": w.code === st.code ? "true" : null,
     title: said, "aria-label": said, onclick: () => openWorm(w.code) },
     h("span", { class: "b-main" }, w.coded ? w.code : w.file || w.code),
     h("span", { class: "b-sub" }, w.genotype || "no genotype"),
     w.coded ? null : h("span", { class: "b-sub" }, w.location),
-    w.note ? h("span", { class: "b-note" }, w.note.startsWith("Left out") ? "Left out" : w.note) : null);
+    w.note ? h("span", { class: "b-note" }, w.note.startsWith("Left out") ? "Left out" : w.note) : null,
+    af ? h("span", { class: "b-note" }, "Gut autofluorescence?") : null);
 }
 
 // The criteria's own words for a saved answer's field (n1_call -> "Neuron 1: call").
@@ -383,7 +386,7 @@ function renderList() {
   const nav = $("#list");
   if (browsing()) {
     const q = (st.listFind.value || "").trim().toLowerCase();
-    const shown = st.worms.filter(w => !q || [w.code, w.file, w.genotype, w.location].some(x => (x || "").toLowerCase().includes(q)));
+    const shown = st.worms.filter(w => !q || [w.code, w.file, w.genotype, w.location, w.autofluor ? "gut autofluorescence" : ""].some(x => (x || "").toLowerCase().includes(q)));
     nav.replaceChildren(st.listFind, ...shown.map(browseRow),
       ...(shown.length ? [] : [h("p", { class: "small" }, "No image matches.")]));
     const coded = st.worms.filter(w => w.coded).length;

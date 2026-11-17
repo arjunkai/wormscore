@@ -218,7 +218,8 @@ planes either side (a small depth shift between colours): signal to noise = (mea
 of the background ring) / robust SD of the ring (1.4826 x median absolute deviation), the ring as in
 section 6, and the highest of the three planes is kept. A region at 3 or more is flagged "possibly gut
 autofluorescence". Flags are reported (`outputs/unblinded/autofluorescence.csv`, `log.md`, the Methods
-draft, by genotype), never used to change a call or leave an image out. The check runs only after
+draft, by genotype; since 1.25.0 also in Browse images, per code), never used to change a call or leave an
+image out. The check runs only after
 unblinding, because autofluorescence differs between strains and ages, so a flag per image could hint
 at a genotype while scoring.
 

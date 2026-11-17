@@ -81,3 +81,22 @@ def test_images_without_an_unlabelled_channel_are_not_offered(tmp_path):
     inventory(p, **QUIET)
     assert AF.available(p) is None
     assert AF.methods_sentence(p) == ""
+
+
+def test_browse_shows_the_flag_after_unblinding(project):
+    from wormscore import browse as B
+    b = B.Browse(project)
+    rows = read_csv(project / "outputs" / "unblinded" / AF.RESULTS)
+    flagged = {r["code"] for r in rows if r["possibly_gut_autofluorescence"] == "True"}
+    checked = {r["code"] for r in rows}
+    worms = {w["code"]: w for w in (b.summary(it) for it in b.items.values())}
+    assert {c for c, w in worms.items() if w.get("autofluor")} == flagged
+    info = lambda c: {x["k"]: x["v"] for x in b.info(b.items[c])}
+    c = sorted(flagged)[0]
+    assert info(c)["Gut autofluorescence"].startswith("Possibly, in ") and "(DAPI channel)" in info(c)["Gut autofluorescence"]
+    calm = sorted(checked - flagged)
+    if calm:
+        assert info(calm[0])["Gut autofluorescence"] == "Not flagged (DAPI channel)"
+    unchecked = sorted(set(worms) - checked)
+    if unchecked:
+        assert "Gut autofluorescence" not in info(unchecked[0])
