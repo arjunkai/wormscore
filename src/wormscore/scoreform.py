@@ -290,7 +290,9 @@ def record_first_score(project, cfg):
     """Called by the scoring page just before the first score is saved: the form it is about to
     lock goes into log.md, even if it was edited by hand after Build."""
     from .files import append_log
-    append_log(project, "first score: score form locked", form_log_lines(cfg, project))
+    from .pipeline import interaction_log_lines
+    # 1.15.0: the analysis settings too, so a change made after Build is the one that counts
+    append_log(project, "first score: score form locked", form_log_lines(cfg, project) + interaction_log_lines(cfg))
 
 
 def _logged_parameters(project, first_score):

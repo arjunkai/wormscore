@@ -1069,13 +1069,17 @@ async function openProjectSettings(section) {
     sources: cur.sources.map((s, i) => ({ ...s, path: example(s.path) ? "" : s.path, from: i })) };
   if (!model.sources.length) model.sources.push(blankSource());
   const locked = cur.locked;
+  // Analysis settings (1.15.0): recorded in log.md and locked at the first score, like the criteria
+  const an = cur.analysis;
+  model.analysis = { reference_genotype: an.reference_genotype, repeat_fraction: an.repeat_fraction };
+  const foldersAtOpen = JSON.stringify([model.project_name, model.sources]);
   // Two pages: the scoring criteria (opened from step 2) and the project's name and image folders.
   const criteria = section === "form";
   const form = criteria ? formSection(cur.form) : null;
   // form_checked: opened from the criteria step, so Save records the criteria even if unchanged
   const payload = () => criteria
     ? (form.payload() ? { form: form.payload(), form_checked: true, ...(form.reason() ? { unlock_reason: form.reason() } : {}) } : {})
-    : { project_name: model.project_name, sources: model.sources };
+    : { project_name: model.project_name, sources: model.sources, analysis: model.analysis };
   const box = h("div", { class: "settings ps" });
   const err = h("div", { class: "m-err", role: "alert", hidden: true });
   let pvTimer = null, previews = [];
@@ -1118,6 +1122,27 @@ async function openProjectSettings(section) {
       off ? null : removeBtn(`Remove rule ${j + 1}`, () => { src[list].splice(j, 1); draw(); preview(); }))),
     off ? null : h("button", { class: "btn subtle add", onclick: () => { src[list].push({ [a]: "", [b]: "" }); draw(`${list}`); } }, labels[2]));
 
+  // The reference genotype and the share of hidden repeats. Locked from the first score.
+  const analysisCard = () => {
+    const a = model.analysis, off = !!an.locked;
+    const pct = f => f ? `${Math.round(f * 100)}% of each genotype's images` : "Off";
+    const built = an.repeats_in_key !== null && an.repeats_in_key !== undefined;
+    return h("div", { class: "s-card src" + (off ? " locked" : "") },
+      h("div", { class: "src-head" },
+        h("label", { class: "f-label", for: "psRef" }, "Compare each genotype with"),
+        off ? h("span", { class: "chip wait" }, an.packages ? "Locked: a second-scorer package exists" : "Locked: scoring has started") : null),
+      h("select", { id: "psRef", class: "f-input sf-select", disabled: off, onchange: e => { a.reference_genotype = e.target.value; } },
+        [["", "Every other genotype (each pair)"], ...an.genotypes.map(g => [g, g])]
+          .map(([v, l]) => h("option", { value: v, selected: a.reference_genotype === v }, l))),
+      h("div", { class: "f-help" }, "Pick the control to test each genotype against it, or test every pair (Fisher's exact test)."
+        + (an.genotypes.length ? "" : " Scan data first to see the genotypes.")),
+      h("label", { class: "f-label", for: "psRepeats" }, "Hidden repeats"),
+      h("select", { id: "psRepeats", class: "f-input sf-select", disabled: off, onchange: e => { a.repeat_fraction = Number(e.target.value); } },
+        an.repeat_choices.map(f => h("option", { value: f, selected: a.repeat_fraction === f }, pct(f)))),
+      h("div", { class: "f-help" }, "Images shown a second time under a new code, to measure how consistently you score. "
+        + "They never count in the results." + (built && !off ? " Changing this rebuilds the blind set with new codes." : "")));
+  };
+
   const draw = focusLast => {
     const cards = model.sources.map((s, i) => {
       const off = i < locked;
@@ -1153,7 +1178,9 @@ async function openProjectSettings(section) {
       h("h4", { id: "psFolders" }, "Image folders"),
       ...cards,
       h("button", { class: "btn add-src", onclick: () => { model.sources.push(blankSource()); draw("src"); } }, "Add image folder"),
-      h("div", { class: "f-help sf-config" }, "The marker, statistics and other settings are in config.json: ",
+      h("h4", { id: "psAnalysis" }, "Analysis"),
+      analysisCard(),
+      h("div", { class: "f-help sf-config" }, "The marker, the other statistics settings and the rest are in config.json: ",
         h("button", { class: "linkish", onclick: () => tryLeave("config") }, "edit config.json"), "."));
     if (focusLast === "src") $$(".ps .src").at(-1)?.querySelector("input")?.focus();
     else if (focusLast) [...document.querySelectorAll(".ps .rules")].find(r => r.contains(document.activeElement))?.querySelector(".rule:last-of-type input")?.focus();
@@ -1173,18 +1200,28 @@ async function openProjectSettings(section) {
   };
   const save = async () => {
     let r;
-    try { r = await api("/api/project-settings", { action: "save", ...payload() }); }
+    // A new share of hidden repeats changes the codes: with a blind set built, it is saved only with a rebuild.
+    const rebuild = !criteria && model.analysis.repeat_fraction !== an.repeat_fraction
+      && an.repeats_in_key !== null && an.repeats_in_key !== undefined;
+    if (rebuild && !(await ask("Rebuild the blind set with new codes?",
+      "The share of hidden repeats decides the codes, so the blind set is built again with new codes. Nothing is scored yet, so nothing is lost.",
+      [{ value: true, label: "Save and rebuild" }]))) return false;
+    try { r = await api("/api/project-settings", { action: "save", ...payload(), ...(rebuild ? { analysis: { ...model.analysis, rebuild: true } } : {}) }); }
     catch (e) {
       err.textContent = e.message;
       err.hidden = false;
       form.showError(e.message);
       return false;
     }
+    const foldersChanged = !criteria && JSON.stringify([model.project_name, model.sources]) !== foldersAtOpen;
     toast(r.after_lock ? "Saved. The change and your reason are in log.md."
       : r.form_changed ? "Saved and recorded in log.md."
-      : scanned ? "Saved. Run Scan data again so the new folders and rules are used." : "Saved. Next: Scan data.", "ok");
+      : rebuild ? "Saved and recorded in log.md. Rebuilding the blind set with new codes."
+      : !foldersChanged ? (r.analysis_changed?.length ? "Saved and recorded in log.md." : "Saved.")
+      : scanned ?"Saved. Run Scan data again so the new folders and rules are used." : "Saved. Next: Scan data.", "ok");
     leave();
     refresh(true);
+    if (rebuild) startStep({ step: "build", mode: "reassign" });
     return true;
   };
   // What the page held when it opened; anything different is an unsaved change.

@@ -289,8 +289,8 @@ whether to save them.
 Unblinding writes `outputs/unblinded/merged.csv` (scores + numbers + key, one row per image), a
 summary, and results tables: `per_neuron.csv` (one row per animal and neuron, for plotting),
 `penetrance.csv` (animals with 0, 1, 2 ... affected neurons) and `fisher_tests.csv` (Fisher's exact
-within each microscope, Bonferroni-corrected). Set `unblinding.reference_genotype` in `config.json` to
-test against a control.
+within each microscope, Bonferroni-corrected). To test against a control, choose it under **Analysis**
+in Project settings (**Compare each genotype with**; `unblinding.reference_genotype` in `config.json`).
 
 `methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
 `blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
@@ -311,8 +311,10 @@ Optional, off unless set in the `unblinding` section of `config.json`:
   one-sided tests, labelled sources, comparisons across microscopes for chosen measures (with
   warnings), and a measured background cutoff (`dim_cutoff_sd`) for checking calls against numbers
   afterwards.
-Hidden repeats measure intra-rater reliability (how consistently one scorer scores the same image) and are set in their own `reliability` section: `"reliability": {"repeat_fraction": 0.1}`,
-set before building the blind set, shows that share of images a second time under new codes;
+Hidden repeats measure intra-rater reliability (how consistently one scorer scores the same image).
+**Hidden repeats** under **Analysis** in Project settings (`"reliability": {"repeat_fraction": 0.1}` in
+`config.json`) shows that share of images a second time under new codes. It decides the codes, so changing
+it once the blind set is built rebuilds the blind set with new codes (only before scoring);
 unblinding then reports how consistently you scored them (`reliability.csv`).
 
 All of these are recorded as an analysis plan before scoring and locked once scoring starts. See

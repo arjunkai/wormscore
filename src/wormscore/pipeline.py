@@ -342,8 +342,10 @@ PLAN_LOG = "Analysis plan set before scoring: "
 def interaction_log_lines(cfg):
     """The analysis plan (tests, definitions, direction, comparisons), recorded so unblinding can
     check that it was chosen before scoring."""
+    from .analysis import ref_log_lines
     plan = C.analysis_plan(cfg)
-    return [PLAN_LOG + json.dumps(plan, sort_keys=True)] if plan else []
+    # 1.15.0: the reference genotype too, which decides which pairs are tested
+    return ([PLAN_LOG + json.dumps(plan, sort_keys=True)] if plan else []) + ref_log_lines(cfg)
 
 
 def identity_log_lines(cfg):

@@ -9,11 +9,24 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ## Planned
 
+### Analysis settings in the app
+
+Set in Project settings instead of `config.json`. Part 1 (the reference genotype and hidden repeats)
+shipped in 1.15.0. They lock the way the scoring criteria do:
+- **Recorded:** each Save, Build blind set and the first score write the settings to `log.md`. The
+  last record before the first score is the one that counts.
+- **Locked:** from the first score (or once a second-scorer package exists) the app shows them
+  read-only.
+- **Edited by hand:** a change in `config.json` after that is caught at unblinding. No planned test
+  runs, and the descriptive tables are still written.
+- **Older projects:** settings that are not in the app stay in `config.json` and are recorded
+  exactly as before, so older projects keep their results.
+
+- **Next (part 2):** the direction of the tests and the planned comparisons, the genetic interaction test,
+  a second definition of affected, the measured check of dim calls, and pooling across microscopes.
+
 ### Other planned features
 
-- **Analysis settings in the app.** The analysis plan, hidden repeats and the reference genotype
-  set in Project settings instead of `config.json`. These are recorded when the blind set is built,
-  so this needs its own plan for how they lock.
 - **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
   several identity channels (for multi-color systems such as NeuroPAL).
 - **More 3D.** Depth of the brightest point under the cursor, and turning about the horizontal axis
@@ -44,6 +57,14 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.15.0: **Analysis settings in the app, part 1.** Project settings has an **Analysis** card:
+  **Compare each genotype with** (the reference genotype, or every pair) and **Hidden repeats** (the
+  share of each genotype's images shown a second time). They are recorded in `log.md` at each save, at
+  Build and at the first score, and locked from the first score, like the scoring criteria. The
+  reference genotype is now recorded too: if it is changed in `config.json` after scoring began,
+  unblinding runs no planned test (projects that scored before 1.15.0 have no record and are checked as
+  before). A new share of hidden repeats once the blind set is built rebuilds it with new codes (only
+  before scoring), so the Methods draft never states a share the blind set does not have.
 - 1.14.1: text from a practice set made elsewhere is also cleaned of the less common line breaks
   (U+0085, U+2028, U+2029) before it goes into `log.md`, so it cannot add a false log entry.
 - 1.14.0: **Questions for each side.** An extra question can be asked for each neuron, **for each side

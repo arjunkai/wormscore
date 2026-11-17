@@ -259,7 +259,10 @@ Results tables use counted, usable images only, with the animal as the unit (one
   (penetrance), and the share affected for each neuron. Animals with a neuron left uncalled are counted
   separately and left out of the percentages.
 - `fisher_tests.csv`: two-sided Fisher's exact test on animals with versus without an affected neuron,
-  comparing each genotype with `reference_genotype` (or every pair of genotypes if none is set). Tests
+  comparing each genotype with `reference_genotype` (or every pair of genotypes if none is set). Since
+  1.15.0 the reference genotype is recorded in `log.md` with the analysis plan (at each save in Project
+  settings, at Build and at the first score); if it differs at unblinding from the one recorded before
+  scoring, no planned test runs. Projects that scored before 1.15.0 have no such record. Tests
   are run only between genotypes imaged on the same microscope, because calls made on different
   microscopes are not interchangeable. p-values are Bonferroni-corrected for the number of tests in the
   file. Other tests (for example per neuron) can be run from `per_neuron.csv`; correct them too.

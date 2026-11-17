@@ -11,7 +11,7 @@ from pathlib import Path
 from statistics import median
 
 from . import config as C
-from . import methods, ranks, scoreform, stats
+from . import analysis, methods, ranks, scoreform, stats
 from .files import append_log, read_csv, recorded, write_csv  # noqa: F401  (recorded re-exported)
 from .pipeline import INTERACTION_LOG, PLAN_LOG
 
@@ -142,14 +142,16 @@ def unblind(project, finished=False, anyway=False, log=print):
     comps = [tuple(c) for c in un["comparisons"]]
     history = opt(project / "scoring" / "score_history.csv")
     status = plan_status(project, cfg, history)
+    if analysis.ref_status(project, cfg, history) == "changed":      # 1.15.0
+        status = "changed"
     fstatus = scoreform.form_status(project, cfg, history)
     run = status != "changed" and fstatus != "changed"
     stop_note = " ".join(
         (["NOT RUN: the scoring criteria (neurons, answers, required or skipped questions, or what counts as a "
           "defect) in config.json differs from the one recorded in log.md when scoring began. Only "
           "descriptive tables are written; restore the criteria to run the planned tests."] if fstatus == "changed" else [])
-        + (["NOT RUN: the analysis plan in config.json differs from the one recorded in log.md before "
-            "scoring began. Restore it to run the planned tests."] if status == "changed" else []))
+        + (["NOT RUN: the analysis plan or reference genotype in config.json differs from the one recorded in "
+            "log.md before scoring began. Restore it to run the planned tests."] if status == "changed" else []))
     primary = un.get("primary_outcome") or ""
     notes = {src.get("name"): src["note"] for src in cfg["sources"] if src.get("note")}
 

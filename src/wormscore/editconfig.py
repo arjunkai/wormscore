@@ -43,8 +43,10 @@ def current(project):
         sources.append({k: s.get(k, [] if k in ("genotypes", "exclude") else "") for k in FIELDS}
                        | {"default_genotype": s.get("default_genotype", "UNKNOWN")})
     from . import scoreform
+    from . import analysis
     return {"project_name": raw.get("project_name", ""), "sources": sources,
-            "locked": len(sources) if scoring_started(project) else 0, "form": scoreform.current(project)}
+            "locked": len(sources) if scoring_started(project) else 0, "form": scoreform.current(project),
+            "analysis": analysis.current(project, scoreform._cfg_from_raw(raw))}
 
 
 def _text(v, what, required=True):
@@ -190,6 +192,8 @@ def save(project, body):
     was_locked = bool(S.locked(project))
     reason = unlock_reason(body) if was_locked else ""
     raw, form_changed = form_change(project, old_raw, raw, body.get("form"), reason)
+    from . import analysis
+    raw, analysis_changed = analysis.change(project, old_raw, raw, body.get("analysis"))
     try:
         cfg = S._cfg_from_raw(raw)
         C.check(cfg)
@@ -218,8 +222,14 @@ def save(project, body):
     elif checked:
         append_log(project, "score form checked in Project settings",
                    ["Checked before the first score and kept as it was."] + S.form_log_lines(cfg, project))
+    if analysis_changed:
+        from .pipeline import interaction_log_lines
+        append_log(project, "analysis settings saved in Project settings",
+                   ["Saved before the first score; the last settings recorded before the first score are the "
+                    "ones unblinding checks.", f"Hidden repeats: {round(100 * C.repeat_fraction(cfg))}% of each "
+                    "genotype's images (used when the blind set is built)."] + interaction_log_lines(cfg))
     return {"ok": True, "changed": raw != old_raw, "form_changed": form_changed or checked,
-            "after_lock": bool(form_changed and was_locked)}
+            "after_lock": bool(form_changed and was_locked), "analysis_changed": sorted(analysis_changed)}
 
 
 def write(project, raw):
