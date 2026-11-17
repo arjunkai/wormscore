@@ -1071,7 +1071,10 @@ async function openProjectSettings(section) {
   const locked = cur.locked;
   // Analysis settings (1.15.0): recorded in log.md and locked at the first score, like the criteria
   const an = cur.analysis;
-  model.analysis = { reference_genotype: an.reference_genotype, repeat_fraction: an.repeat_fraction };
+  const AN_KEYS = ["reference_genotype", "repeat_fraction", "comparisons", "alternative", "interaction", "secondary_defect_calls",
+    "test_secondary", "dim_cutoff_sd", "allow_cross_microscope", "cross_microscope_reason"];
+  model.analysis = structuredClone(Object.fromEntries(AN_KEYS.map(k => [k, an[k]])));
+  let moreOpen = false;      // "More planned tests" stays open across redraws once opened
   const foldersAtOpen = JSON.stringify([model.project_name, model.sources]);
   // Two pages: the scoring criteria (opened from step 2) and the project's name and image folders.
   const criteria = section === "form";
@@ -1122,25 +1125,96 @@ async function openProjectSettings(section) {
       off ? null : removeBtn(`Remove rule ${j + 1}`, () => { src[list].splice(j, 1); draw(); preview(); }))),
     off ? null : h("button", { class: "btn subtle add", onclick: () => { src[list].push({ [a]: "", [b]: "" }); draw(`${list}`); } }, labels[2]));
 
-  // The reference genotype and the share of hidden repeats. Locked from the first score.
+  // The analysis plan: who is compared with whom, hidden repeats, and the other planned tests
+  // (1.15.0, 1.16.0). Recorded in log.md at each save, Build and the first score; locked from the first score.
   const analysisCard = () => {
     const a = model.analysis, off = !!an.locked;
     const pct = f => f ? `${Math.round(f * 100)}% of each genotype's images` : "Off";
     const built = an.repeats_in_key !== null && an.repeats_in_key !== undefined;
+    const PAIRS = "\tpairs";        // the "only these pairs" choice: a genotype name never has a tab
+    const mode = a.comparisons.length ? PAIRS : a.reference_genotype;
+    const select = (attrs, choices, value, set) => h("select", { class: "f-input sf-select", disabled: off, ...attrs,
+      onchange: e => { set(e.target.value); draw(); } },
+      choices.map(([v, l]) => h("option", { value: v, selected: value === v }, l)));
+    const genos = an.genotypes.map(g => [g, g]);
+    const outcomeName = o => o === "calls" ? "Any defect call" : o;
+    const box = (checked, label, set, attrs = {}) => h("label", { class: "sf-check" },
+      h("input", { type: "checkbox", checked: !!checked, disabled: off, ...attrs, onchange: e => { set(e.target.checked); draw(); } }), label);
+
+    const pairRows = () => [
+      ...a.comparisons.map((c, j) => h("div", { class: "f-row an-pair" },
+        select({ "aria-label": `Comparison ${j + 1}: first genotype` }, genos, c[0], v => { c[0] = v; }),
+        h("span", { class: "an-vs" }, "vs"),
+        select({ "aria-label": `Comparison ${j + 1}: second genotype` }, genos, c[1], v => { c[1] = v; }),
+        off || a.comparisons.length < 2 ? null : removeBtn(`Remove comparison ${j + 1}`, () => { a.comparisons.splice(j, 1); draw(); }))),
+      off ? null : h("button", { class: "btn subtle add", onclick: () => { a.comparisons.push([...an.genotypes.slice(0, 2)]); draw(); } }, "Add comparison"),
+      h("label", { class: "f-label", for: "psDir" }, "Direction"),
+      select({ id: "psDir" }, [["two-sided", "Either direction (two-sided)"], ["greater", "First genotype more often affected"],
+        ["less", "First genotype less often affected"]], a.alternative, v => { a.alternative = v; }),
+      h("div", { class: "f-help" }, "Only these pairs are tested, and the Bonferroni correction counts only them."),
+    ];
+
+    const ia = a.interaction;
+    const iaRows = () => [
+      h("div", { class: "an-grid" },
+        ...[["single_a", "Single mutant"], ["single_b", "Other single mutant"], ["double", "Double mutant"]].flatMap(([k, l]) => [
+          h("label", { class: "sf-k", for: `psIa_${k}` }, l),
+          select({ id: `psIa_${k}` }, [["", "choose"], ...genos], ia[k] || "", v => { ia[k] = v; })]),
+        h("label", { class: "sf-k", for: "psIaOut" }, "Affected means"),
+        select({ id: "psIaOut" }, an.outcomes.map(o => [o, outcomeName(o)]), ia.outcome, v => { ia.outcome = v; }),
+        h("label", { class: "sf-k", for: "psIaModel" }, "No interaction means"),
+        select({ id: "psIaModel" }, [["product", "Independent effects (product)"], ["additive", "Effects add up (additive)"],
+          ["min", "Same pathway (like the worse single)"]], ia.model, v => { ia.model = v; }),
+        h("label", { class: "sf-k", for: "psIaTest" }, "Test"),
+        select({ id: "psIaTest" }, [["likelihood_ratio", "Likelihood ratio (recommended)"], ["binomial", "Binomial"]], ia.test, v => { ia.test = v; }),
+        h("label", { class: "sf-k", for: "psIaDir" }, "Expected result"),
+        select({ id: "psIaDir" }, [["", "Not stated"], ["higher", "Double mutant more affected than expected"],
+          ["lower", "Double mutant less affected than expected"]], ia.expected_direction, v => { ia.expected_direction = v; })),
+    ];
+
+    const extras = !!(a.secondary_defect_calls.length || Object.keys(ia).length || a.dim_cutoff_sd || a.allow_cross_microscope.length);
     return h("div", { class: "s-card src" + (off ? " locked" : "") },
       h("div", { class: "src-head" },
         h("label", { class: "f-label", for: "psRef" }, "Compare each genotype with"),
         off ? h("span", { class: "chip wait" }, an.packages ? "Locked: a second-scorer package exists" : "Locked: scoring has started") : null),
-      h("select", { id: "psRef", class: "f-input sf-select", disabled: off, onchange: e => { a.reference_genotype = e.target.value; } },
-        [["", "Every other genotype (each pair)"], ...an.genotypes.map(g => [g, g])]
-          .map(([v, l]) => h("option", { value: v, selected: a.reference_genotype === v }, l))),
-      h("div", { class: "f-help" }, "Pick the control to test each genotype against it, or test every pair (Fisher's exact test)."
+      select({ id: "psRef" }, [["", "Every other genotype (each pair)"], ...genos, ...(an.genotypes.length > 1 ? [[PAIRS, "Only the pairs I list"]] : [])],
+        mode, v => {
+          if (v === PAIRS) { if (!a.comparisons.length) a.comparisons = [[...an.genotypes.slice(0, 2)]]; return; }
+          a.comparisons = []; a.alternative = "two-sided"; a.reference_genotype = v;
+        }),
+      mode === PAIRS ? null : h("div", { class: "f-help" }, "Pick the control to test each genotype against it, or test every pair (Fisher's exact test)."
         + (an.genotypes.length ? "" : " Scan data first to see the genotypes.")),
+      ...(mode === PAIRS ? pairRows() : []),
       h("label", { class: "f-label", for: "psRepeats" }, "Hidden repeats"),
       h("select", { id: "psRepeats", class: "f-input sf-select", disabled: off, onchange: e => { a.repeat_fraction = Number(e.target.value); } },
         an.repeat_choices.map(f => h("option", { value: f, selected: a.repeat_fraction === f }, pct(f)))),
       h("div", { class: "f-help" }, "Images shown a second time under a new code, to measure how consistently you score. "
-        + "They never count in the results." + (built && !off ? " Changing this rebuilds the blind set with new codes." : "")));
+        + "They never count in the results." + (built && !off ? " Changing this rebuilds the blind set with new codes." : "")),
+      h("details", { class: "lo an-more", open: extras || moreOpen ? true : null, ontoggle: e => { moreOpen = e.target.open; } },
+        h("summary", {}, "More planned tests"),
+        h("div", { class: "f-label" }, "Second definition of affected"),
+        h("div", { class: "f-help" }, "Also report animals with a neuron called one of these, for example dim or missing."),
+        h("div", { class: "sf-opts" }, an.calls.map(c => box(a.secondary_defect_calls.includes(c), c,
+          v => { a.secondary_defect_calls = an.calls.filter(x => x === c ? v : a.secondary_defect_calls.includes(x)); }))),
+        a.secondary_defect_calls.length ? box(a.test_secondary, "Test it too (Fisher's exact; otherwise reported only)", v => { a.test_secondary = v; }) : null,
+        h("div", { class: "f-label" }, "Genetic interaction"),
+        box(Object.keys(ia).length, "Test whether the double mutant differs from what the single mutants predict", v => {
+          a.interaction = v ? { single_a: "", single_b: "", double: "", model: "product", outcome: "calls", test: "likelihood_ratio",
+            expected_direction: "" } : {};
+        }),
+        ...(Object.keys(ia).length ? iaRows() : []),
+        h("label", { class: "f-label", for: "psDim" }, "Check of dim calls"),
+        h("div", { class: "f-row" }, h("input", { id: "psDim", type: "number", class: "f-input sf-number", min: 0, max: 100, step: 0.5,
+          value: a.dim_cutoff_sd, disabled: off, onchange: e => { a.dim_cutoff_sd = e.target.value === "" ? 0 : Number(e.target.value); } }),
+          h("span", { class: "f-help an-unit" }, "times the background noise (0 = off)")),
+        h("div", { class: "f-help" }, "At unblinding, counts the outlined neurons below this signal for each call. Calls are never changed."),
+        h("div", { class: "f-label" }, "Compare across microscopes"),
+        h("div", { class: "f-help" }, "Usually genotypes are compared only within one microscope. Tick a result to pool each genotype's animals over microscopes."),
+        h("div", { class: "sf-opts" }, an.outcomes.map(o => box(a.allow_cross_microscope.includes(o), outcomeName(o),
+          v => { a.allow_cross_microscope = an.outcomes.filter(x => x === o ? v : a.allow_cross_microscope.includes(x)); }))),
+        a.allow_cross_microscope.length ? h("div", {},
+          h("label", { class: "f-label", for: "psCrossWhy" }, "Why pooling is justified (for the Methods)"),
+          field(a, "cross_microscope_reason", { id: "psCrossWhy", disabled: off, maxlength: 500 })) : null));
   };
 
   const draw = focusLast => {

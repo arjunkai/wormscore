@@ -295,7 +295,8 @@ in Project settings (**Compare each genotype with**; `unblinding.reference_genot
 `methods_text.md` is a draft Methods paragraph on blinding, measurement and statistics; fill in the
 `blinding` section of `config.json` (who coded, who scored) or edit the [brackets] it leaves.
 
-Optional, off unless set in the `unblinding` section of `config.json`:
+Optional, off unless set. The outcomes come from the scoring criteria; the rest is under **Analysis**
+in Project settings (or the `unblinding` section of `config.json`):
 
 - `question_outcomes` turns the per-neuron questions into the same penetrance and Fisher tables (for
   example "process defect" when a dendrite question is answered "no").
@@ -303,14 +304,18 @@ Optional, off unless set in the `unblinding` section of `config.json`:
   genotype: animals, animals left out and why, median and quartiles, % at each level or the mean, the
   share at the cutoff) and `rank_outcome_tests.csv` (Mann-Whitney with the effect size: the chance a
   genotype_a animal scores worse than a genotype_b animal, and Cliff's delta).
-- `interaction` tests a double mutant against the value two single mutants predict (Product model by
-  default; also additive or min). The default test is binomial, which treats the single mutants'
-  rates as exact and so finds an interaction too often with small groups; `"test": "likelihood_ratio"`
-  allows for that and is recommended for new projects.
-- Also: a secondary definition of "affected" (descriptive, within one microscope), planned comparisons,
-  one-sided tests, labelled sources, comparisons across microscopes for chosen measures (with
-  warnings), and a measured background cutoff (`dim_cutoff_sd`) for checking calls against numbers
-  afterwards.
+- **Genetic interaction** (`interaction`) tests a double mutant against the value two single mutants
+  predict (independent effects, the product model, by default; also additive, or same pathway). The
+  card starts a new test with the likelihood-ratio test, which allows for the single mutants' own
+  sampling error. The binomial test (the default in `config.json`, kept for older projects) treats
+  their rates as exact and so finds an interaction too often with small groups.
+- **Only the pairs I list** (`comparisons`) tests only those pairs, with an optional **direction**
+  (`alternative`: one-sided tests need listed pairs); Bonferroni counts only them.
+- **Second definition of affected** (`secondary_defect_calls`, descriptive within one microscope unless
+  **Test it too** is ticked), **Check of dim calls** (`dim_cutoff_sd`, a measured background cutoff for
+  checking calls against numbers afterwards) and **Compare across microscopes** for chosen results
+  (`allow_cross_microscope`, with warnings and the reason in the Methods). Labelled sources stay in
+  `config.json`.
 Hidden repeats measure intra-rater reliability (how consistently one scorer scores the same image).
 **Hidden repeats** under **Analysis** in Project settings (`"reliability": {"repeat_fraction": 0.1}` in
 `config.json`) shows that share of images a second time under new codes. It decides the codes, so changing

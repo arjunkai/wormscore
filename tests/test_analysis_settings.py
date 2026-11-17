@@ -50,7 +50,7 @@ def test_saving_unchanged_settings_leaves_config_and_log_alone(fresh_project):
 
 def test_a_new_reference_genotype_is_saved_and_recorded(fresh_project):
     r = E.save(fresh_project, body_of(fresh_project, ref="control"))
-    assert r["analysis_changed"] == ["reference"]
+    assert r["analysis_changed"] == ["reference_genotype"]
     assert json.loads((fresh_project / "config.json").read_text())["unblinding"]["reference_genotype"] == "control"
     assert A.REF_LOG + '"control"' in log(fresh_project).splitlines()[-1]
     assert "analysis settings saved in Project settings" in log(fresh_project)
@@ -106,5 +106,80 @@ def test_projects_without_a_recorded_reference_are_checked_as_before(fresh_proje
     (fresh_project / "log.md").write_text(text + "\n", encoding="utf-8")
     score_all(fresh_project)
     edit_config(fresh_project, lambda c: c.setdefault("unblinding", {}).update(reference_genotype="control"))
+    out = unblind(fresh_project, finished=True, anyway=True, log=lambda *a: None)
+    assert "NOT RUN" not in (out / "fisher_tests.csv").read_text(encoding="utf-8")
+
+
+# ------------------------------------------------------------------ part 2 (1.16.0)
+
+def full(project, **changes):
+    cur = E.current(project)["analysis"]
+    body = body_of(project)
+    body["analysis"].update({k: cur[k] for k in A.PLAN_FIELDS}, **changes)
+    return body
+
+
+def test_the_card_shows_the_rest_of_the_plan(fresh_project):
+    an = E.current(fresh_project)["analysis"]
+    assert an["comparisons"] == [] and an["alternative"] == "two-sided" and an["interaction"] == {}
+    assert an["outcomes"][0] == "calls" and an["calls"] == ["normal", "dim", "missing"]
+
+
+def test_sending_every_unchanged_setting_changes_nothing(fresh_project):
+    edit_config(fresh_project, lambda c: c.setdefault("unblinding", {}).update(
+        dim_cutoff_sd=3, interaction={"single_a": "control", "single_b": "mutant", "double": "dm"}))
+    before = (fresh_project / "config.json").read_text()
+    r = E.save(fresh_project, full(fresh_project))
+    assert r["analysis_changed"] == []
+    assert json.loads((fresh_project / "config.json").read_text())["unblinding"] == json.loads(before)["unblinding"]
+
+
+def test_planned_pairs_and_direction_are_saved_and_recorded(fresh_project):
+    E.save(fresh_project, full(fresh_project, comparisons=[["mutant", "control"]], alternative="greater"))
+    un = json.loads((fresh_project / "config.json").read_text())["unblinding"]
+    assert un["comparisons"] == [["mutant", "control"]] and un["alternative"] == "greater"
+    plan = [l for l in log(fresh_project).splitlines() if PLAN_LOG in l][-1]
+    assert '"alternative": "greater"' in plan and '"comparisons": [["mutant", "control"]]' in plan
+
+
+def test_an_interaction_is_written_without_its_defaults(fresh_project):
+    ia = {"single_a": "a", "single_b": "b", "double": "ab", "model": "product", "outcome": "calls",
+          "test": "likelihood_ratio", "expected_direction": ""}
+    E.save(fresh_project, full(fresh_project, interaction=ia))
+    saved = json.loads((fresh_project / "config.json").read_text())["unblinding"]["interaction"]
+    assert saved == {"single_a": "a", "single_b": "b", "double": "ab", "test": "likelihood_ratio"}
+    assert A._old("interaction", C.load(fresh_project)) == ia
+    E.save(fresh_project, full(fresh_project, interaction={}))
+    assert json.loads((fresh_project / "config.json").read_text())["unblinding"]["interaction"] == {}
+
+
+@pytest.mark.parametrize("changes, message", [
+    ({"comparisons": [["a", "a"]]}, "two different"),
+    ({"comparisons": [["a", "b"], ["a", "b"]]}, "listed twice"),
+    ({"alternative": "greater"}, "comparisons"),                       # one-sided needs listed pairs (config.check)
+    ({"interaction": {"single_a": "a", "single_b": "a", "double": "b"}}, "three different"),
+    ({"interaction": {"single_a": "a", "single_b": "b", "double": ""}}, "double mutant is empty"),
+    ({"secondary_defect_calls": ["broken"]}, "calls from the scoring criteria"),
+    ({"dim_cutoff_sd": -1}, "from 0"),
+    ({"allow_cross_microscope": ["nope"]}, "Pooling across microscopes"),
+])
+def test_bad_plan_settings_are_refused(fresh_project, changes, message):
+    before = (fresh_project / "config.json").read_text()
+    with pytest.raises(ValueError, match=message):
+        E.save(fresh_project, full(fresh_project, **changes))
+    assert (fresh_project / "config.json").read_text() == before
+
+
+def test_the_rest_of_the_plan_locks_at_the_first_score(fresh_project):
+    (fresh_project / "scoring").mkdir(exist_ok=True)
+    (fresh_project / "scoring" / "scores.json").write_text("{}")
+    with pytest.raises(ValueError, match="analysis settings are locked"):
+        E.save(fresh_project, full(fresh_project, dim_cutoff_sd=2))
+    E.save(fresh_project, full(fresh_project))
+
+
+def test_a_plan_set_on_the_card_is_the_one_unblinding_checks(fresh_project):
+    E.save(fresh_project, full(fresh_project, secondary_defect_calls=["dim", "missing"], test_secondary=True))
+    score_all(fresh_project)
     out = unblind(fresh_project, finished=True, anyway=True, log=lambda *a: None)
     assert "NOT RUN" not in (out / "fisher_tests.csv").read_text(encoding="utf-8")

@@ -691,3 +691,17 @@ select.f-input, .sf-form select { font: inherit; appearance: none; -webkit-appea
   transform: rotate(-45deg); transition: transform .15s; flex: none; margin-right: 2px;
 }
 .sf-more[open] summary::before { transform: rotate(45deg); }
+
+/* Analysis card (1.15.0, 1.16.0) */
+.an-pair { margin-top: var(--space-sm); }
+.an-pair .sf-select { flex: 1; min-width: 0; }
+.an-vs { color: var(--muted); font-size: var(--text-sm); }
+.an-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--space-sm) var(--space-md); align-items: center; margin-top: var(--space-sm); }
+.an-grid .sf-select { width: 100%; }
+.an-unit { margin: 0; }
+.an-more > .f-label { margin-top: var(--space-md); }
+.an-more .f-label + .f-help { margin-top: 4px; }
+.an-more .f-label + .f-row, .an-more .f-label + .sf-check, .an-more .f-label + .f-input { margin-top: 6px; }
+.an-more div > .f-label + .f-input { margin-top: 6px; }
+.f-row .f-input.sf-number { flex: none; width: 6em; }
+.an-more .f-row + .f-help { margin-top: 6px; }

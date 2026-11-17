@@ -9,23 +9,7 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ## Planned
 
-### Analysis settings in the app
-
-Set in Project settings instead of `config.json`. Part 1 (the reference genotype and hidden repeats)
-shipped in 1.15.0. They lock the way the scoring criteria do:
-- **Recorded:** each Save, Build blind set and the first score write the settings to `log.md`. The
-  last record before the first score is the one that counts.
-- **Locked:** from the first score (or once a second-scorer package exists) the app shows them
-  read-only.
-- **Edited by hand:** a change in `config.json` after that is caught at unblinding. No planned test
-  runs, and the descriptive tables are still written.
-- **Older projects:** settings that are not in the app stay in `config.json` and are recorded
-  exactly as before, so older projects keep their results.
-
-- **Next (part 2):** the direction of the tests and the planned comparisons, the genetic interaction test,
-  a second definition of affected, the measured check of dim calls, and pooling across microscopes.
-
-### Other planned features
+### Features
 
 - **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
   several identity channels (for multi-color systems such as NeuroPAL).
@@ -57,6 +41,14 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.16.0: **Analysis settings in the app, part 2.** The Analysis card in Project settings now sets the
+  whole analysis plan: **Only the pairs I list** with a test **direction**, and under **More planned
+  tests** a **second definition of affected** (reported, or also tested), a **genetic interaction**
+  test (three genotypes, what counts as affected, the model in plain words, the likelihood-ratio
+  test by default for a new test, and the expected result), the **check of dim calls** and
+  **comparing across microscopes** with the reason for the Methods. Like part 1 they are recorded in
+  `log.md` at each save, at Build and at the first score, and locked from the first score. A setting
+  is written to `config.json` only when it changes, so a recorded plan stays exactly as it was.
 - 1.15.0: **Analysis settings in the app, part 1.** Project settings has an **Analysis** card:
   **Compare each genotype with** (the reference genotype, or every pair) and **Hidden repeats** (the
   share of each genotype's images shown a second time). They are recorded in `log.md` at each save, at
