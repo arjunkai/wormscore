@@ -130,7 +130,8 @@ def main(project, out, engine="webkit"):
             score.wait_for_function("st.planesDone", timeout=60000)
             for _ in range(6):
                 score.keyboard.press("ArrowRight")
-            score.wait_for_function("st.angle === 30 && st.rot.has(30)", timeout=60000)
+            # turned views are kept under turn and tilt since 1.18.0
+            score.wait_for_function("st.angle === 30 && st.rot.has(viewKey(30, 0))", timeout=60000)
             score.wait_for_timeout(300)
             lit3d = score.evaluate(LIT)
             if lit3d < 100:
@@ -141,9 +142,16 @@ def main(project, out, engine="webkit"):
             score.mouse.down()
             score.mouse.move(box["x"] + box["width"] * 0.1, box["y"] + box["height"] / 2, steps=8)
             score.mouse.up()
-            score.wait_for_function("st.angle < 0 && st.rot.has(st.angle)", timeout=60000)
+            score.wait_for_function("st.angle < 0 && st.rot.has(viewKey(st.angle, st.tilt))", timeout=60000)
             score.wait_for_timeout(300)
             shot(score, "scoring-3d-dragged")
+            for _ in range(2):
+                score.keyboard.press("ArrowUp")          # tilt about the horizontal axis (1.18.0)
+            score.wait_for_function("st.tilt === 10 && st.rot.has(viewKey(st.angle, 10))", timeout=60000)
+            score.wait_for_timeout(300)
+            if score.evaluate(LIT) < 100:
+                problems.append("scoring 3D: the tilted image looks empty")
+            shot(score, "scoring-3d-tilted")
             score.click("[data-view='mip']")
 
         # Save with nothing answered: nothing is saved, the questions to answer are outlined
