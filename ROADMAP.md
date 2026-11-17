@@ -32,6 +32,12 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.0: **Bleed-through of each NeuroPAL channel.** With several identity channels, identity-only controls
+  also fit the reporter channel to all of them together (multiple least squares), giving each channel's share,
+  such as CyOFP1's at 488 nm. Images where the channels are too alike to separate (variance inflation factor
+  over 10) are left out and counted. Shown on the card, in `log.md` and the Methods draft.
+  - Fix: a channel named "BFP" was read as brightfield (it begins like "BF"). In a project that uses BFP it
+    is now that channel; other projects read as before.
 - 1.25.0: **Gut autofluorescence flags in Browse.** After the check has run, Browse images marks each
   flagged code in the list (searchable as "gut autofluorescence") and names the flagged outlines and the
   channel in the image's details. Codes checked and not flagged say so; nothing changes in projects without the check.

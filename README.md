@@ -201,7 +201,9 @@ only, at the project's settings, and choose their folder on the **Bleed-through 
 measures how much of that marker's light lands in the other channel, as a percentage, and records it in
 `log.md` and the Methods draft. Identity-only controls matter most, since that light would add to the
 measured reporter; reporter-only controls show whether bright cells look brighter in the identity
-channel, which would make them easier to find.
+channel, which would make them easier to find. With several identity channels (NeuroPAL), the
+identity-only controls also fit the reporter channel to all of them together, so each one's share is
+separate from the others' (for example CyOFP1, excited at 488 nm like GFP).
 
 **Gut autofluorescence check** (optional, after unblinding, for images that also recorded a channel with
 no label, such as blue). Gut granules glow in every channel; the reporter does not. **Check outlines** on

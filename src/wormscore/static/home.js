@@ -505,11 +505,21 @@ async function interimReport() {
 // measured reporter.
 function bleedCard(p, busy) {
   const kinds = [["identity-only", `${p.identity_label}-only`], ["reporter-only", `${p.marker_label}-only`]];
-  const rows = kinds.filter(([k]) => p.bleed[k]).map(([k]) => {
-    const r = p.bleed[k];
-    return h("li", { class: "pk" }, h("div", { class: "pk-text" },
+  const rows = kinds.filter(([k]) => p.bleed[k]).flatMap(([k]) => {
+    const r = p.bleed[k], j = r.joint;
+    const one = h("li", { class: "pk" }, h("div", { class: "pk-text" },
       h("b", {}, `${r.from} into ${r.into}: ${r.median_pct}%`),
       h("span", { class: "pk-meta" }, `median of ${plural(r.images, "control image")}, range ${r.min_pct} to ${r.max_pct}% · ${r.measured.slice(0, 10)}`)));
+    if (!j) return [one];
+    // several identity channels (1.26.0): all fitted together, since they label the same cells
+    const left = (j.not_separable || 0) + (j.missing || 0) + (j.too_little || 0);
+    return [one, h("li", { class: "pk" }, h("div", { class: "pk-text" },
+      h("b", {}, `All identity channels into ${r.into}: ` + (j.channels.length
+        ? j.channels.map(c => `${c.from} ${c.median_pct}%`).join(", ") : "not measured")),
+      h("span", { class: "pk-meta" }, j.channels.length
+        ? `fitted together, medians of ${plural(j.images, "control image")}` + (left ? `; ${plural(left, "image")} left out` : "")
+        : j.not_separable ? "The channels were too alike to separate in these images."
+        : j.missing ? "Not every identity channel was found in these images." : "Too little signal in these images.")))];
   });
   return h("section", { class: "extra" },
     h("div", { class: "x-head" },

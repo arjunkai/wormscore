@@ -120,3 +120,14 @@ def test_two_dye_named_channels_stay_unresolved():
     roles = ["MARKER", "MARKER", "BF"]
     assert readers.prefer_named_dye(roles, ["EGFP", "GFP", None], cfg) == roles
     assert readers.prefer_named_dye(roles, [None, None, None], cfg) == roles
+
+
+def test_a_bfp_channel_is_not_brightfield_when_the_project_uses_bfp():
+    from wormscore import config as C
+    from wormscore.readers import marker_from_named
+    base = C.merge(C.DEFAULTS, {})
+    assert marker_from_named("BFP", None, None, False, base) == "BF"          # as before without BFP
+    with_bfp = C.apply_identity(dict(base), [{"preset": "mCherry"}, {"preset": "BFP"}])
+    assert marker_from_named("BFP", None, None, False, with_bfp) == "OTHER"   # then claimed as IDENTITY2
+    assert marker_from_named("Brightfield", None, None, False, with_bfp) == "BF"
+    assert marker_from_named("BF", None, None, False, with_bfp) == "BF"

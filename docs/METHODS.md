@@ -208,6 +208,17 @@ its background, as a percentage. The project's value is the median over control 
 share of identity light added to the measured reporter; reporter-only controls give the share of
 reporter light in the identity channel. Values are reported, never subtracted.
 
+With several identity channels (1.26.0, for NeuroPAL), identity-only controls are also fitted jointly: all the
+identity channels label the same cells, so a slope against one alone also picks up the others' light. Over
+pixels with signal in any identity channel (saturated pixels in any channel left out), the reporter channel
+above its background is fitted to every identity channel above its background together, by multiple least
+squares through the origin; each coefficient is that channel's bleed-through. The channels can only be told
+apart where their patterns differ (NeuroPAL's color code differs between neurons): an image whose largest
+variance inflation factor is above 10 (the usual limit for collinear predictors; Kutner et al. 2005, Applied
+Linear Statistical Models) is left out of the joint fit and counted. The project's values are the medians over
+the remaining images (columns `joint_<channel>_pct` and `joint_max_vif` in the same file). The single slope
+above is still reported as before.
+
 **Gut autofluorescence check** (1.22.0, optional, after unblinding). C. elegans gut granules fluoresce
 across the spectrum, brightest with a DAPI-type filter set and also in green, where they overlap GFP
 (Pincus et al. 2016, Aging 8:889; Coburn et al. 2013, PLoS Biol 11:e1001613). For images that recorded a

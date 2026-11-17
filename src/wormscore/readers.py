@@ -94,9 +94,17 @@ def _named_match(name, fluor, excitation, emission, m):
                 or (emission and em and em[0] <= float(emission) <= em[1]))
 
 
+def _fluor_name(name, cfg):
+    """True if the channel name starts with a name of one of the project's own fluorophores (1.26.0): "BFP"
+    begins like the brightfield name "BF", so in a project with a BFP channel it is that channel, not brightfield."""
+    ms = [cfg["marker"], cfg.get("identity")] + list(cfg.get("identity_extra") or [])
+    return any(name.upper().startswith(p.upper()) for m in ms if m for p in m.get("channel_name_prefixes", []))
+
+
 def marker_from_named(name, fluor, excitation, transmitted, cfg, emission=None):
     """emission (nm) is used only if the marker settings give an emission_nm range."""
-    if transmitted or any(name.upper().startswith(p.upper()) for p in cfg["brightfield_channel_names"]):
+    if transmitted or (any(name.upper().startswith(p.upper()) for p in cfg["brightfield_channel_names"])
+                       and not _fluor_name(name, cfg)):
         return "BF"
     if _named_match(name, fluor, excitation, emission, cfg["marker"]):
         return "MARKER"
