@@ -11,8 +11,8 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Features
 
-- **More identity-channel tools.** The identity channel in the 3D view, a bleed-through check, and
-  several identity channels (for multi-color systems such as NeuroPAL).
+- **More identity-channel tools.** A bleed-through check, and several identity channels (for
+  multi-color systems such as NeuroPAL).
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
 - **Imaging-session tools.** Optional flat-field or reference-slide correction per imaging session,
   and a check for gut autofluorescence.
@@ -37,6 +37,10 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.19.0: **The identity channel in 3D.** In projects with an identity channel, 3D turns and tilts it with
+  the reporter, and the reporter, identity and both buttons (keys 1, 2 and 3) now work in 3D too. Each
+  channel keeps its own brightest point along the line of sight. Projects without an identity channel
+  draw 3D exactly as before.
 - 1.18.0: **More 3D.** The 3D view also tilts the stack about the horizontal axis: up and down keys,
   dragging up or down, or the new Tilt slider (each -60 to +60 degrees). At no tilt it is drawn exactly
   as before. In Projection and 3D, the keys line under the image shows which plane holds the brightest

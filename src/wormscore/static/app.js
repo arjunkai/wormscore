@@ -590,6 +590,10 @@ const viewAt = k => k.split(",").map(Number);
 function turned(a, t = 0) {
   return a === 0 && t === 0 ? st.mip : st.rot.get(viewKey(a, t))?.img || null;
 }
+// The identity channel turned the same way (1.19.0), or null.
+function turnedId(a, t = 0) {
+  return a === 0 && t === 0 ? st.idMip : st.rot.get(viewKey(a, t))?.id || null;
+}
 
 // The views worth keeping for this image: the nearest ones to the current turn and tilt, as many as
 // fit in about 80 MB (more for a 512 x 512 image, fewer for very large ones).
@@ -635,9 +639,11 @@ async function pump3d() {
 async function volume3d(seq) {
   if (st.vol) return st.vol;
   const m = st.meta;
-  if (m.width * m.height <= 1.5e6) return (st.vol = { r: 1, W: m.width, H: m.height, P: st.planes });
-  const W = Math.ceil(m.width / 2), H = Math.ceil(m.height / 2), P = [];
-  for (const p of st.planes) {
+  // the identity channel turns too (1.19.0), when this image has one and all its planes loaded
+  const ids = m.has_identity && st.idPlanes.every(Boolean) ? st.idPlanes : null;
+  if (m.width * m.height <= 1.5e6) return (st.vol = { r: 1, W: m.width, H: m.height, P: st.planes, IP: ids });
+  const W = Math.ceil(m.width / 2), H = Math.ceil(m.height / 2), P = [], IP = ids ? [] : null;
+  for (const p of [...st.planes, ...(ids || [])]) {
     const q = new Uint16Array(W * H);
     for (let y = 0; y < m.height; y++) {
       const row = y * m.width, qrow = (y >> 1) * W;
@@ -646,11 +652,11 @@ async function volume3d(seq) {
         if (v > q[j]) q[j] = v;
       }
     }
-    P.push(q);
+    (P.length < st.planes.length ? P : IP).push(q);
     await new Promise(r => setTimeout(r, 0));
     if (st.openSeq !== seq) return null;
   }
-  return (st.vol = { r: 2, W, H, P });
+  return (st.vol = { r: 2, W, H, P, IP });
 }
 
 // {img, depth}: each output pixel is the brightest value along a straight line through the stack
@@ -659,7 +665,7 @@ async function volume3d(seq) {
 async function render3d(seq, a, t = 0) {
   const vol = await volume3d(seq);
   if (!vol) return null;
-  const m = st.meta, { W, H, P, r } = vol, nz = m.n_z;
+  const m = st.meta, { W, H, P, IP, r } = vol, nz = m.n_z;
   const zs = m.z_step_um / (m.pixel_um * r);
   const ra = (a * Math.PI) / 180, c = Math.cos(ra), s = Math.sin(ra);
   const rt = (t * Math.PI) / 180, ct = Math.cos(rt), sn = Math.sin(rt);
@@ -667,13 +673,13 @@ async function render3d(seq, a, t = 0) {
   // dots when the stack is turned (at most 6, so very large images stay quick).
   const sub = Math.max(1, Math.min(6, Math.ceil(zs * Math.max(Math.abs(s), Math.abs(sn)))));
   const cx = (W - 1) / 2, cy = (H - 1) / 2, cz = ((nz - 1) * zs) / 2;
-  const out = new Uint16Array(W * H), depth = new Uint16Array(W * H);
+  const out = new Uint16Array(W * H), depth = new Uint16Array(W * H), idOut = IP ? new Uint16Array(W * H) : null;
   const dv = -s * sn;          // how far the output row moves for each pixel along x
   let t0 = performance.now();
   for (let y = 0; y < H; y++) {
     const row = y * W, yy = y - cy;
     for (let z = 0; z < nz; z++) {
-      const p0 = P[z], p1 = P[Math.min(z + 1, nz - 1)];
+      const p0 = P[z], p1 = P[Math.min(z + 1, nz - 1)], q0 = IP?.[z], q1 = IP?.[Math.min(z + 1, nz - 1)];
       const steps = z === nz - 1 ? 1 : sub;
       for (let k = 0; k < steps; k++) {
         const f = k / steps, g = 1 - f, zz = (z + f) * zs - cz, plane = f < 0.5 ? z + 1 : z + 2;
@@ -687,6 +693,10 @@ async function render3d(seq, a, t = 0) {
           const v = f ? p0[i] * g + p1[i] * f : p0[i];
           const o = (w | 0) * W + (u | 0);
           if (v > out[o]) { out[o] = v; depth[o] = plane; }
+          if (idOut) {      // each channel keeps its own brightest point along the line
+            const iv = f ? q0[i] * g + q1[i] * f : q0[i];
+            if (iv > idOut[o]) idOut[o] = iv;
+          }
         }
       }
     }
@@ -697,13 +707,18 @@ async function render3d(seq, a, t = 0) {
       t0 = performance.now();
     }
   }
-  if (r === 1) return { img: out, depth };
-  const full = new Uint16Array(m.width * m.height), fdepth = new Uint16Array(m.width * m.height);  // back to the image's own size
+  if (r === 1) return { img: out, depth, id: idOut };
+  const n = m.width * m.height;      // back to the image's own size
+  const full = new Uint16Array(n), fdepth = new Uint16Array(n), fid = idOut ? new Uint16Array(n) : null;
   for (let y = 0; y < m.height; y++) {
     const row = y * m.width, srow = (y >> 1) * W;
-    for (let x = 0; x < m.width; x++) { full[row + x] = out[srow + (x >> 1)]; fdepth[row + x] = depth[srow + (x >> 1)]; }
+    for (let x = 0; x < m.width; x++) {
+      const j = srow + (x >> 1);
+      full[row + x] = out[j]; fdepth[row + x] = depth[j];
+      if (fid) fid[row + x] = idOut[j];
+    }
   }
-  return { img: full, depth: fdepth };
+  return { img: full, depth: fdepth, id: fid };
 }
 
 // The plane (1 = first) of the brightest point at each pixel of the projection, worked out once
@@ -779,6 +794,7 @@ function draw() {
     const dist = k => { const [a, t] = viewAt(k); return Math.abs(a - st.angle) + Math.abs(t - st.tilt); };
     const nearKey = [viewKey(0, 0), ...[...st.rot.keys()].filter(k => st.rot.get(k))].sort((p, q) => dist(p) - dist(q))[0];
     vals = turned(...viewAt(nearKey));
+    st.nearKey = nearKey;
     const [na, nt] = viewAt(nearKey), deg = (a, t) => t ? `${a}°, tilt ${t}°` : `${a}°`;
     const near = deg(na, nt);
     const have = st.planes.filter(Boolean).length;
@@ -786,10 +802,11 @@ function draw() {
       : have < m.n_z ? `Loading planes for 3D... ${have} / ${m.n_z}`
       : `Turning to ${deg(st.angle, st.tilt)}... (showing ${near})`;
   }
-  // Identity channel: shown alone or with the reporter (Projection and Planes; 3D turns the
-  // reporter only). It waits for its own plane, so the two channels never show different planes.
-  const chan = m.has_identity && !in3d ? st.chan : "reporter";
-  const idVals = chan === "reporter" ? null : st.view === "mip" ? st.idMip : st.idPlanes[st.z];
+  // Identity channel: shown alone or with the reporter, in every view (3D since 1.19.0). It waits
+  // for its own plane or view, so the two channels never show different planes or angles.
+  const chan = m.has_identity && !(in3d && !st.vol?.IP && (st.angle || st.tilt)) ? st.chan : "reporter";
+  const idVals = chan === "reporter" ? null : st.view === "mip" ? st.idMip
+    : in3d ? (status3d ? turnedId(...viewAt(st.nearKey)) : turnedId(st.angle, st.tilt)) : st.idPlanes[st.z];
   if (chan !== "reporter" && !idVals) vals = null;
   const g = (st.geom = geometry());
   cv.width = g.fw;
@@ -1280,14 +1297,13 @@ function syncChannel(in3d) {
   if (!idc) return;
   const has = !!st.meta && !!st.meta.has_identity;
   $$("[data-chan]").forEach(b => {
-    setOn(b, has && !in3d ? b.dataset.chan === st.chan : b.dataset.chan === "reporter");
-    b.disabled = !has || in3d;
+    setOn(b, has ? b.dataset.chan === st.chan : b.dataset.chan === "reporter");
+    b.disabled = !has;
   });
-  $("#chanSeg").title = !st.meta ? "" : !has ? `No ${idc.label} channel was recorded for this image`
-    : in3d ? `3D turns the ${st.cfg.marker} channel only` : "";
+  $("#chanSeg").title = !st.meta ? "" : !has ? `No ${idc.label} channel was recorded for this image` : "";
 }
 function setChan(c) {
-  if (!st.meta || !st.meta.has_identity || st.view === "3d") return;
+  if (!st.meta || !st.meta.has_identity) return;
   st.chan = c;
   syncButtons();
   draw();

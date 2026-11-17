@@ -181,7 +181,8 @@ the cell, and if its brightness differed between genotypes a fixed range could h
 the scoring page receives no identity brightness numbers. The scorer can show the reporter, the identity
 channel or both (keys 1, 2 and 3), each in its own color, added together: the reporter in its preset's
 color (green for GFP) and the identity channel in magenta (or green when the reporter is magenta), so a
-cell with both looks white. The 3D view turns the reporter only.
+cell with both looks white. Since 1.19.0 the 3D view turns and tilts the identity channel with the
+reporter, each channel keeping its own brightest point along the line of sight.
 
 ## 6. Measurements
 
