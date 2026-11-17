@@ -264,14 +264,33 @@ def spaced_order(images, repeats, rng):
         gap -= 1
 
 
+def _has_files(folder):
+    return folder.is_dir() and any(folder.iterdir())
+
+
+def missing_files(images):
+    """The image files of these records that cannot be found (a drive not connected, a folder moved)."""
+    return sorted({s["local_path"] for s in images if not Path(s["local_path"]).is_file()})
+
+
 def assign_codes(project, images, reassign, add=False, cfg=None):
     """Random codes. An existing key is reused so codes never change while scoring.
     add: images not yet in the key get new codes after the highest existing one, shuffled
     among themselves with a new seed; existing codes are kept. Returns the images to render,
     with hidden repeats (records with "_orig", the image they repeat) after the images."""
     key_dir = project / "key"
-    key_dir.mkdir(exist_ok=True)
     key_path = key_dir / "key.csv"
+    if not key_path.exists():
+        # 1.26.3: the key is the only link between codes and images. Without it a build would assign new
+        # codes, and the saved scores (or a second scorer's package) would then belong to other images.
+        if _has_files(project / "scoring"):
+            raise SystemExit("Scores are saved for this blind set, but its key is not in the key folder. Put "
+                             "key.csv back in the project's key folder, then build again. Building without it "
+                             "would give the images new codes, and the saved scores would belong to other images.")
+        if _has_files(project / "scorers"):
+            raise SystemExit("A second-scorer package was made from this blind set, but its key is not in the key "
+                             "folder. Put key.csv back in the project's key folder, then build again.")
+    key_dir.mkdir(exist_ok=True)
     ident = lambda s: (s["local_path"], s["location_in_file"])
     if add:
         if not key_path.exists():
@@ -455,13 +474,20 @@ def prepare(project, reassign=False, add=False, log=print):
     write_csv(project / "outputs" / "excluded.csv", excluded or [{"reason": "none excluded"}])
     if not images:
         raise SystemExit("No images passed the inclusion rules. See outputs/excluded.csv.")
+    # only the images this run renders: when adding, coded images keep the planes they were scored on
+    coded = {(r["local_path"], r["location_in_file"]) for r in read_csv(project / "key" / "key.csv")} \
+        if add and (project / "key" / "key.csv").is_file() else set()
+    render = [s for s in images if (s["local_path"], s["location_in_file"]) not in coded]
+    # 1.26.3: checked before anything is written. A rebuild deletes blind/ first, so with the image drive
+    # not connected it used to leave a project that was being scored without its coded images.
+    gone = missing_files(render)
+    if gone:
+        raise SystemExit(f"{len(gone)} image file{'s' if len(gone) != 1 else ''} cannot be found, for example "
+                         f"{gone[0]}. The blind set was not changed. Connect the drive, or correct the folder in Project "
+                         "settings, then build again.")
     from . import flatfield as FF
     corr = FF.load(project, cfg)          # None unless the project turned the correction on (1.21.0)
     if corr is not None:
-        # only the images this run renders: when adding, coded images keep the planes they were scored on
-        coded = {(r["local_path"], r["location_in_file"]) for r in read_csv(project / "key" / "key.csv")} \
-            if add and (project / "key" / "key.csv").is_file() else set()
-        render = [s for s in images if (s["local_path"], s["location_in_file"]) not in coded]
         # never stops the build: images without their own session's slide images use another's, or are
         # used as recorded, each with a warning here, in log.md and in key.csv (column flat_field)
         ff_lines = corr.warnings(render)
@@ -488,6 +514,20 @@ def prepare(project, reassign=False, add=False, log=print):
         if c not in letters:
             i = len(letters)
             letters[c] = chr(ord("A") + i) if i < 26 else f"G{i}"
+    # 1.26.3: a rebuild that keeps the codes of a key with added batches keeps what Add new images
+    # promised: the batch each image came in (added_on), the settings-group letters and each microscope's
+    # display ranges. It used to work them out again over all images, so images already scored could look
+    # different and the Methods draft no longer reported the batches.
+    kept = {}
+    if not add and not reassign and (project / "key" / "key.csv").is_file():
+        kept = {r["code"]: r["added_on"] for r in read_csv(project / "key" / "key.csv") if r.get("added_on")}
+    if kept and (project / "key" / "settings_groups.csv").exists():
+        letters = {(r["system"], r["settings"]): r["settings_group"]
+                   for r in read_csv(project / "key" / "settings_groups.csv")}
+        for c in combos:
+            if c not in letters:
+                i = len(letters)
+                letters[c] = chr(ord("A") + i) if i < 26 else f"G{i}"
     todo = assign_codes(project, images, reassign, add, cfg)
     repeats = [s for s in todo if "_orig" in s]
     todo = [s for s in todo if "_orig" not in s]
@@ -599,7 +639,7 @@ def prepare(project, reassign=False, add=False, log=print):
             "same_field_group": s["field_group"], "counted_by_default": s["counted_by_default"],
             **({"identity_channel_used": has_identity} if ident else {}),
             **(corr.key_columns(s) if corr is not None else {}),
-            **({"added_on": s["added_on"]} if add else {}), **extra,
+            **({"added_on": s["added_on"]} if add else {"added_on": kept.get(code, "")} if kept else {}), **extra,
         })
         log(f"{code} ({n}/{len(todo)})")
         # Free this image's stacks before the next one is read, so two never sit in memory at once.
@@ -609,7 +649,7 @@ def prepare(project, reassign=False, add=False, log=print):
     # When adding, microscopes already in the project keep their ranges, so images that
     # were already scored look exactly the same.
     ranges = {}
-    if add:
+    if add or (kept and (project / "outputs" / "display_ranges.csv").is_file()):
         for r in read_csv(project / "outputs" / "display_ranges.csv"):
             ranges[r["system"]] = {"full": [int(float(r["standard_low"])), int(float(r["standard_high"]))],
                                    "enhanced": [int(float(r["enhanced_low"])), int(float(r["enhanced_high"]))]}

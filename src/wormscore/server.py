@@ -68,6 +68,13 @@ def safe_cell(v):
     return v
 
 
+def unsafe_cell(v):
+    """The text safe_cell wrote, as it was typed."""
+    if isinstance(v, str) and v[:1] == "'" and v[1:2] in ("=", "+", "-", "@", "\t", "\r"):
+        return v[1:]
+    return v
+
+
 class FileBusy(Exception):
     """A results file another program holds open (Excel locks a CSV it shows)."""
 
@@ -165,7 +172,30 @@ class Project:
 
     def load(self, name, default):
         p = self.scoring / name
+        if name == "scores.json" and not p.exists():
+            return self.scores_from_csv()
         return json.loads(p.read_text(encoding="utf-8")) if p.exists() else default
+
+    def scores_from_csv(self):
+        """1.26.3: scores.json is gone (deleted, or lost by a file-sync program) but scores.csv is still
+        there. The scores are read from it, so the next save does not write scores.csv again with that one
+        score only, and the list still shows what is scored."""
+        f = self.scoring / "scores.csv"
+        if not f.is_file():
+            return {}
+        out = {}
+        with open(f, newline="", encoding="utf-8") as fh:
+            for r in csv.DictReader(fh):
+                code = r.pop("code", None) or ""
+                if not CODE.match(code):
+                    continue
+                s = {k: unsafe_cell(v) for k, v in r.items() if k and v is not None}
+                try:
+                    s["flag_answers"] = json.loads(s.get("flag_answers") or "{}")
+                except ValueError:
+                    s["flag_answers"] = {}
+                out[code] = s
+        return out
 
     def save(self, name, obj):
         self.scoring.mkdir(exist_ok=True)

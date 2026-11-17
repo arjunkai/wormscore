@@ -95,6 +95,9 @@ Included images are shuffled with a random seed and numbered W0001, W0002, ... T
 code-to-file key are written to `key/`, which the scoring app never reads. The scoring page receives
 images, plane counts, pixel size, z step and quality questions, but no genotype, file name, path or brightness
 number. Re-running `prepare` keeps the same codes; new codes are refused once any score is saved.
+Since 1.26.3 a build also stops, before anything is changed, if scores or a second-scorer package exist
+but `key.csv` is not in the key folder (without the key it would assign new codes, and the saved scores
+would belong to other images), or if an image file it has to read cannot be found.
 Unsaved answers are kept per code in `scoring_drafts/` (the same fields as a score, no genotype or
 file name) and deleted when the score is saved; drafts are never read as scores and do not lock the
 codes. New codes set any drafts aside (`scoring_drafts/superseded_<time>.json`), so answers typed for an
@@ -106,7 +109,8 @@ Images imaged later can be added with `prepare --add-new-images` (or **Add new i
 build step once scoring has started). Only images not yet in the key are coded: their codes continue after the
 highest existing code, shuffled among themselves with a new seed (kept in `key/`). Existing codes,
 blind images, settings-group letters and display ranges are not changed, so images already scored look
-exactly the same; a new microscope gets its own ranges. Adding refuses to run if any coded image would be
+exactly the same; a new microscope gets its own ranges. A later rebuild that keeps the codes keeps those
+ranges, the settings-group letters and `added_on` too (1.26.3). Adding refuses to run if any coded image would be
 dropped. Which codes were added, and when, is recorded only in the key (`added_on`), and the draft Methods
 text reports each added batch. Limit: the scorer can tell which images arrived later. If a later batch is
 all one genotype, blinding is weaker for it, so mix genotypes in each batch where possible, or add all

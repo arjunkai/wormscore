@@ -32,6 +32,17 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.3: **Fixes from an independent audit: a build never changes what was scored.**
+  - With the key folder moved away (some labs keep it elsewhere while scoring), Build blind set gave every
+    image a new code, so saved scores then belonged to other images. It now stops and asks for the key
+    when scores or a second-scorer package exist.
+  - A rebuild checks that every image file can be found before it deletes the coded images. With the
+    image drive not connected, it used to leave a project that was being scored without them.
+  - "Rebuild, keeping the current codes" after Add new images keeps each microscope's display ranges,
+    the settings-group letters and which images were added when. It used to work the ranges out again
+    over all images, so images already scored could look different, and the Methods draft lost the batches.
+  - If `scores.json` is lost while `scores.csv` is still there, the scores are read from `scores.csv`;
+    the next save used to write `scores.csv` again with that one score only.
 - 1.26.2: **Fixes from an independent review of 1.24 to 1.26.**
   - Markers lock while a second-scorer package exists (no Change anyway...), as the criteria and analysis do:
     the package keeps the images it was made with.

@@ -185,7 +185,8 @@ click it or press Enter, and Escape closes it.
    next unscored image. **Next image** (or the N key) moves on without saving, and **Save score** stays
    in view at the bottom of the panel on small screens. Notes is one line until you type more. Answers you have
    not saved yet are kept as a draft (`scoring_drafts/`, never counted as scores), so a crash or restart
-   loses nothing: open the image again and click Save. If the connection to wormscore is lost, the
+   loses nothing: open the image again and click Save. If `scores.json` is lost while `scores.csv` is
+   still there, the scores are read from `scores.csv`. If the connection to wormscore is lost, the
    window shows "Reconnecting..." and reconnects by itself; if wormscore is not running it says so, with
    a Start wormscore button (Windows app).
    **Interim totals...** on the Score step shows totals of your answers so far: images scored and not
@@ -235,7 +236,8 @@ brightness between images with Standard. Each image you open before the build is
 and `outputs/browsed_images.csv`, and the Build log and the Methods draft say how many images were seen
 (ARRIVE 2.0 item 5 asks who knew the groups at each stage). Browse is off from Build blind set until
 Unblind (the button shows a lock and says why), and in a second scorer's package. It also stays off if
-the key folder is moved away during scoring (some labs keep the key elsewhere to keep it sealed). After
+the key folder is moved away during scoring (some labs keep the key elsewhere to keep it sealed); put
+the key back before you build again or unblind, since a build without it is refused once scores are saved. After
 unblinding it opens again, to look up a code (for example W0010) with its genotype, file and saved score.
 
 **Optional: a second scorer** (inter-rater reliability). After building the blind set, use **Make a package...** in the
