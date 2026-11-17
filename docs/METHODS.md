@@ -52,6 +52,9 @@ for files that record one (Nikon, Olympus), the dye and channel names microscope
 display color, from FPbase peaks (for example mCherry 587/610 nm: lasers 561, 587 or 594 nm, band
 starting 575 to 625 nm, emission 595 to 645 nm). Any field given next to the preset overrides it. Without
 a preset the GFP settings above are used exactly as before, so GFP projects build the same blind set.
+Since 1.24.0 the reporter and identity channel can be chosen from these presets in Project settings,
+which writes the same `preset` entries; a channel with its own settings is kept as it is. A change is
+written to `log.md`. Once scoring has started, a change needs a reason, which is written with it.
 
 **Identity channel** (optional, since 1.0.0). `"identity": {"preset": "mCherry"}` names a second
 marker that labels the cells independently of the reporter being scored, such as a pan-neuronal or

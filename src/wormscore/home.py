@@ -176,6 +176,9 @@ def project_status(path):
         "on": FF.settings_of(bcfg), "summary": FF.summary(p), "locked": FF.lock_reason(p), "build": FF.build_note(p)}
     if st["flat_field"] and st["flat_field"]["on"]:
         st["flat_field"]["on"] = {k: v for k, v in st["flat_field"]["on"].items() if k != "checksum"}
+    # markers changed in Project settings after Scan data or Build (1.24.0): those steps need a new run
+    from .markers import stale
+    st["markers_stale"] = None if info else stale(p)
     inv = p / "outputs" / "inventory.csv"
     st["scanned"] = _rows(inv) if inv.is_file() else None
     blind = p / "blind"

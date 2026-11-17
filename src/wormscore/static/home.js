@@ -310,10 +310,12 @@ function renderMain(d) {
   const f = p.form;
   // checked = recorded in log.md (saved or checked on the form page, or at Build), or locked
   const formDone = !!f && (f.recorded || !!f.locked);
-  const s1 = stepRunning("scan") ? "running" : scanned ? "done" : "next";
+  // markers changed in Project settings after the last Scan data or Build (1.24.0)
+  const ms = p.markers_stale, msScan = !!ms?.scan, msBuild = !!ms && !ms.scan && !!ms.build;
+  const s1 = stepRunning("scan") ? "running" : msScan ? "next" : scanned ? "done" : "next";
   const sF = f?.changed_after_lock ? "changed" : formDone ? "done" : scanned ? "next" : "wait";
-  const s2 = building ? "running" : built ? "done" : scanned && formDone ? "next" : "wait";
-  const s3 = building ? "wait" : built ? (allScored ? "done" : "next") : "wait";
+  const s2 = building ? "running" : msBuild ? "next" : built ? "done" : scanned && formDone && !msScan ? "next" : "wait";
+  const s3 = building ? "wait" : built ? (allScored ? "done" : ms ? "wait" : "next") : "wait";
   const s4 = stepRunning("unblind") ? "running" : p.unblinded ? "done" : allScored ? "next" : "wait";
 
   const steps = h("ol", { class: "steps" },
@@ -322,7 +324,8 @@ function renderMain(d) {
         : scanned ? `${plural(p.scanned, "image")} found.` : null,
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
-        scanned ? "Scan again" : "Scan data")]),
+        scanned ? "Scan again" : "Scan data")],
+      msScan && scanned && s1 !== "running" ? warnNote("The markers changed. Scan again to find their channels.") : null),
     stepCard(2, sF, ["Set scoring criteria", wsHelp(h, "criteria", "scoring criteria")], "Choose the calls and questions, and what counts as a defect.",
       f ? formFact(f) : null,
       [h("button", { class: sF === "next" ? "primary" : "btn", "data-k": "form", disabled: busy || !ok, onclick: () => openProjectSettings("form") },
@@ -330,7 +333,8 @@ function renderMain(d) {
     stepCard(3, s2, ["Build blind set", wsHelp(h, "blind_set", "a blind set")], "Give every image a random code.",
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
       [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
-        !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")]),
+        !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")],
+      msBuild && built && !building ? warnNote("The markers changed. Rebuild, keeping the current codes, to use them.") : null),
     stepCard(4, s3, ["Score", wsHelp(h, "score", "Score")], "Score each coded image. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
       [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },
@@ -1262,6 +1266,10 @@ async function openProjectSettings(section) {
   let moreOpen = false;      // "More planned tests" stays open across redraws once opened
   let srcReason = "";        // 1.21.2: why coded image folders are changed after scoring began (to log.md)
   let anReason = "";         // 1.21.2: why the analysis settings are changed after scoring began (to log.md)
+  // Markers (1.24.0): the reporter and identity channel, from presets; a custom one is kept unless changed
+  const mk = cur.markers;
+  model.markers = { reporter: mk.reporter, identity: mk.identity, spots_from: mk.spots_from };
+  let mkReason = "";         // why the markers are changed after scoring began (to log.md)
   const foldersAtOpen = JSON.stringify([model.project_name, model.sources]);
   // Two pages: the scoring criteria (opened from step 2) and the project's name and image folders.
   const criteria = section === "form";
@@ -1270,7 +1278,8 @@ async function openProjectSettings(section) {
   const payload = () => criteria
     ? (form.payload() ? { form: form.payload(), form_checked: true, ...(form.reason() ? { unlock_reason: form.reason() } : {}) } : {})
     : { project_name: model.project_name, sources: model.sources, ...(srcReason ? { folders_reason: srcReason } : {}),
-        analysis: anReason ? { ...model.analysis, unlock_reason: anReason } : model.analysis };
+        analysis: anReason ? { ...model.analysis, unlock_reason: anReason } : model.analysis,
+        markers: mkReason ? { ...model.markers, unlock_reason: mkReason } : model.markers };
   const box = h("div", { class: "settings ps" });
   const err = h("div", { class: "m-err", role: "alert", hidden: true });
   let pvTimer = null, previews = [];
@@ -1347,6 +1356,45 @@ async function openProjectSettings(section) {
     if (!go) return;
     anReason = box.value.trim().replace(/\s+/g, " ");
     draw();
+  };
+  const unlockMarkers = async () => {
+    const box = h("textarea", { id: "mkReason", class: "f-input", rows: 3, maxlength: 500,
+      placeholder: "For example: the identity channel was set up wrongly." });
+    const go = await ask("Change the markers after scoring began?", h("div", { class: "sf-unlock" },
+      h("p", {}, "The change takes effect after Scan data and a rebuild that keeps the codes. "
+        + "Images already scored may then look different. Scores do not change."),
+      h("label", { class: "f-label", for: "mkReason" }, "Reason (written to log.md with the change)"), box),
+      [{ value: true, label: "Unlock the markers", danger: true }], "Cancel",
+      { wide: true, check: () => box.value.trim() ? null : "Write a reason first. It goes into log.md with the change." });
+    if (!go) return;
+    mkReason = box.value.trim().replace(/\s+/g, " ");
+    draw();
+  };
+  const markersCard = () => {
+    const m = model.markers, off = !!mk.locked && !mkReason;
+    const CUSTOM = "custom";
+    const opts = (list, value) => list.map(([v, l]) => h("option", { value: v, selected: value === v }, l));
+    const presets = mk.presets.map(n => [n, n]);
+    const custom = v => v === CUSTOM ? [[CUSTOM, "Custom (set in config.json)"]] : [];
+    const select = (id, choices, value, set) => h("select", { id, class: "f-input sf-select", disabled: off,
+      onchange: e => { set(e.target.value); draw(); } }, opts(choices, value));
+    return h("div", { class: "s-card src" + (off ? " locked" : "") },
+      mk.locked && !off ? warnNote(`Unlocked for this save (reason: “${mkReason}”). `
+        + "Run Scan data, then rebuild keeping the codes, to use the change.", { class: "warn-note top" }) : null,
+      h("div", { class: "src-head" },
+        h("label", { class: "f-label", for: "psReporter" }, "Reporter"),
+        off ? h("span", { class: "chip wait" }, "Locked: scoring has started") : null,
+        off ? h("button", { class: "linkish", "data-k": "mkUnlock", onclick: unlockMarkers }, "Change anyway...") : null),
+      select("psReporter", [...custom(mk.reporter), ...presets], m.reporter, v => { m.reporter = v; }),
+      h("div", { class: "f-help" }, "The fluorescent protein you score and measure."),
+      h("label", { class: "f-label", for: "psIdentity" }, "Identity channel"),
+      select("psIdentity", [["", "None"], ...custom(mk.identity), ...presets, ["NeuroPAL", "NeuroPAL (4 channels)"]], m.identity,
+        v => { m.identity = v; }),
+      h("div", { class: "f-help" }, "A second marker that shows which cells to score, such as a pan-neuronal marker. "
+        + "It is shown with the reporter and never measured."),
+      m.identity && m.identity !== CUSTOM ? [
+        h("label", { class: "f-label", for: "psSpots" }, "Suggest cells from"),
+        select("psSpots", [["identity", "The identity channel"], ["reporter", "The reporter"]], m.spots_from, v => { m.spots_from = v; })] : null);
   };
   const analysisCard = () => {
     const a = model.analysis, off = !!an.locked && !anReason;
@@ -1479,9 +1527,11 @@ async function openProjectSettings(section) {
       h("h4", { id: "psFolders" }, "Image folders"),
       ...cards,
       h("button", { class: "btn add-src", onclick: () => { model.sources.push(blankSource()); draw("src"); } }, "Add image folder"),
+      h("h4", { id: "psMarkers" }, "Markers"),
+      markersCard(),
       h("h4", { id: "psAnalysis" }, "Analysis"),
       analysisCard(),
-      h("div", { class: "f-help sf-config" }, "The marker, the other statistics settings and the rest are in config.json: ",
+      h("div", { class: "f-help sf-config" }, "The other statistics settings and the rest are in config.json: ",
         h("button", { class: "linkish", onclick: () => tryLeave("config") }, "edit config.json"), "."));
     if (focusLast === "src") $$(".ps .src").at(-1)?.querySelector("input")?.focus();
     else if (focusLast) [...document.querySelectorAll(".ps .rules")].find(r => r.contains(document.activeElement))?.querySelector(".rule:last-of-type input")?.focus();
@@ -1515,7 +1565,10 @@ async function openProjectSettings(section) {
       return false;
     }
     const foldersChanged = !criteria && JSON.stringify([model.project_name, model.sources]) !== foldersAtOpen;
-    toast(r.after_lock ? "Saved. The change and your reason are in log.md."
+    const builtNow = st.data.project?.coded !== null && st.data.project?.coded !== undefined;
+    toast(r.markers_changed && scanned ? (builtNow ? "Saved. Next: Scan data again, then rebuild keeping the codes."
+        : "Saved. Next: Scan data again, so the new markers are used.")
+      : r.after_lock ? "Saved. The change and your reason are in log.md."
       : r.form_changed ? "Saved and recorded in log.md."
       : rebuild ? "Saved and recorded in log.md. Rebuilding the blind set with new codes."
       : !foldersChanged ? (r.analysis_changed?.length ? "Saved and recorded in log.md." : "Saved.")

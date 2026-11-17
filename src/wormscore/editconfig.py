@@ -44,9 +44,10 @@ def current(project):
                        | {"default_genotype": s.get("default_genotype", "UNKNOWN")})
     from . import scoreform
     from . import analysis
+    from . import markers
     return {"project_name": raw.get("project_name", ""), "sources": sources,
             "locked": len(sources) if scoring_started(project) else 0, "form": scoreform.current(project),
-            "analysis": analysis.current(project, scoreform._cfg_from_raw(raw))}
+            "analysis": analysis.current(project, scoreform._cfg_from_raw(raw)), "markers": markers.current(project, raw)}
 
 
 def _text(v, what, required=True):
@@ -282,6 +283,8 @@ def save(project, body):
     raw, form_changed = form_change(project, old_raw, raw, body.get("form"), reason)
     from . import analysis
     raw, analysis_changed = analysis.change(project, old_raw, raw, body.get("analysis"))
+    from . import markers
+    raw, marker_lines = markers.change(project, old_raw, raw, body.get("markers"))
     try:
         cfg = S._cfg_from_raw(raw)
         C.check(cfg)
@@ -314,6 +317,9 @@ def save(project, body):
         lines = folder_changes(project, old_raw, raw, folders_reason(body))
         if lines:
             append_log(project, FOLDERS_TITLE, lines)
+    if marker_lines:
+        markers.record_change(project, marker_lines,
+                              markers.unlock_reason(body["markers"]) if scoring_started(project) else "")
     if analysis_changed and S.locked(project):
         from .pipeline import interaction_log_lines
         append_log(project, analysis.CHANGE_TITLE,
@@ -328,7 +334,8 @@ def save(project, body):
                     "ones unblinding checks.", f"Hidden repeats: {round(100 * C.repeat_fraction(cfg))}% of each "
                     "genotype's images (used when the blind set is built)."] + interaction_log_lines(cfg))
     return {"ok": True, "changed": raw != old_raw, "form_changed": form_changed or checked,
-            "after_lock": bool(form_changed and was_locked), "analysis_changed": sorted(analysis_changed)}
+            "after_lock": bool(form_changed and was_locked), "analysis_changed": sorted(analysis_changed),
+            "markers_changed": bool(marker_lines)}
 
 
 def write(project, raw):

@@ -430,7 +430,7 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 /* placeholders in the faint grey, not the browser's half-transparent text */
 .f-input::placeholder { color: var(--faint); opacity: 1; }
 .f-input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
-.f-input:disabled { color: var(--muted); background: var(--raised); }
+.f-input:disabled { color: var(--muted); background-color: var(--raised); }   /* not the shorthand: a select keeps its one arrow */
 .f-range { display: flex; align-items: center; gap: 12px; }
 .f-range input { flex: 1; accent-color: var(--accent); }
 .f-out { flex: none; min-width: 150px; color: var(--muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }

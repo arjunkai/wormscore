@@ -41,15 +41,18 @@ a `.companion.ome`), Nikon `.nd2`, Olympus FluoView `.oib` and `.oif`, and Image
 where you turn it on, because ImageJ files do not record which channel is which). Channel identity
 (marker vs brightfield) is read from metadata, never guessed.
 
-**Not GFP?** Set `"marker": {"preset": "mCherry"}` (or mNeonGreen, YFP, TagRFP, mScarlet, mKate2,
-BFP). **Have a second marker that labels the cell,** such as a pan-neuronal mCherry? Add
-`"identity": {"preset": "mCherry"}`: the scoring page can then show the reporter, the identity
+**Not GFP?** Choose the reporter under **Markers** in **Project settings** (or set
+`"marker": {"preset": "mCherry"}`; also mNeonGreen, YFP, TagRFP, mScarlet, mKate2, BFP). **Have a second
+marker that labels the cell,** such as a pan-neuronal mCherry? Choose it as the identity channel there (or
+add `"identity": {"preset": "mCherry"}`): the scoring page can then show the reporter, the identity
 marker or both (keys 1, 2, 3), and suggested cells are found on the identity marker and the reporter is
-measured there, so a dim or missing reporter cell is still found. **NeuroPAL?** Use
-`"identity": {"preset": "NeuroPAL"}`: its four colours (TagRFP-T white, mNeptune2.5 red, CyOFP1 green,
+measured there, so a dim or missing reporter cell is still found. **NeuroPAL?** Choose NeuroPAL as the
+identity channel (`"identity": {"preset": "NeuroPAL"}`): its four colours (TagRFP-T white, mNeptune2.5 red, CyOFP1 green,
 mTagBFP2 blue) are shown together in 2D and 3D, each scaled per image and never measured; or list up to four
 identity channels yourself, `"identity": [{"preset": "mCherry"}, {"preset": "BFP"}]`, the first one finding
-the cells. GFP and CyOFP1 are both green, so use keys 1 and 2 to see each on its own. See
+the cells. GFP and CyOFP1 are both green, so use keys 1 and 2 to see each on its own. Markers are found
+at Scan data, so after a change run Scan data again and rebuild; once scoring has started they are locked,
+and **Change anyway...** records the change and your reason in `log.md`. See
 [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md) sections 2 and 6.
 
 ## Install
@@ -141,8 +144,8 @@ click it or press Enter, and Escape closes it.
   write the genotype rules (a pattern such as `*ctrl*` and the genotype it means). The page counts how
   the rules sort the scanned images, so a typo shows before you build anything. Images can be left out
   by pattern there too. Images do not need converting: wormscore reads the microscope files as they are.
-  (`wormscore init C:\projects\my_project`, then edit `config.json`.) The marker and statistics
-  settings are in `config.json`; see
+  (`wormscore init C:\projects\my_project`, then edit `config.json`.) The markers and the main analysis
+  settings are in Project settings too; the rest are in `config.json`; see
   [`examples/config_example.json`](https://github.com/arjunkai/wormscore/blob/main/examples/config_example.json).
 
 **The five steps**

@@ -32,6 +32,13 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.24.0: **Markers in Project settings.** Choose the reporter and the identity channel (none, a
+  preset, or NeuroPAL) and where suggested cells come from, without editing `config.json`.
+  - A channel with its own settings shows as Custom and is kept unless another choice is made.
+  - A change goes to `log.md`. Scan data and Build then show a warning until they have run again.
+  - Locked once scoring has started; **Change anyway...** with a reason, written to `log.md`.
+  - Disabled lists in Project settings show one arrow again, not a repeated pattern.
+
 - 1.23.1: **A wording pass and an audit of 1.21 to 1.23.**
   - Wording:
     - Warnings say what happened and what to do next, in at most two lines, with correct plurals ("3 images", not "image(s)").
