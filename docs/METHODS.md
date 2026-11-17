@@ -196,6 +196,20 @@ its background, as a percentage. The project's value is the median over control 
 share of identity light added to the measured reporter; reporter-only controls give the share of
 reporter light in the identity channel. Values are reported, never subtracted.
 
+**Gut autofluorescence check** (1.22.0, optional, after unblinding). C. elegans gut granules fluoresce
+across the spectrum, brightest with a DAPI-type filter set and also in green, where they overlap GFP
+(Pincus et al. 2016, Aging 8:889; Coburn et al. 2013, PLoS Biol 11:e1001613). For images that recorded a
+channel with no label (a channel named DAPI, Hoechst, blue, BFP, CFP, 405 or UV is preferred), each
+counted image's saved outlines (or, without outlines, its first suggested cell) are measured in that
+channel, median-filtered like the reporter, in the reporter's sharpest plane for the region and the
+planes either side (a small depth shift between colours): signal to noise = (mean in the region - median
+of the background ring) / robust SD of the ring (1.4826 x median absolute deviation), the ring as in
+section 6, and the highest of the three planes is kept. A region at 3 or more is flagged "possibly gut
+autofluorescence". Flags are reported (`outputs/unblinded/autofluorescence.csv`, `log.md`, the Methods
+draft, by genotype), never used to change a call or leave an image out. The check runs only after
+unblinding, because autofluorescence differs between strains and ages, so a flag per image could hint
+at a genotype while scoring.
+
 **Flat-field correction** (1.21.0, optional, set before scoring). Most microscopes light the middle of
 the field more than the edges, and lamp or laser power changes from day to day. With the correction on,
 Build blind set corrects the reporter channel of every image before anything is shown, suggested or

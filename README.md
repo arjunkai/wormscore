@@ -194,6 +194,11 @@ measures how much of that marker's light lands in the other channel, as a percen
 measured reporter; reporter-only controls show whether bright cells look brighter in the identity
 channel, which would make them easier to find.
 
+**Gut autofluorescence check** (optional, after unblinding, for images that also recorded a channel with
+no label, such as blue). Gut granules glow in every channel; the reporter does not. **Check outlines** on
+the card measures each outline in that channel and flags those that are bright there too, by genotype, in
+`outputs/unblinded/autofluorescence.csv`, `log.md` and the Methods draft. Flags never change a call.
+
 **Flat-field correction** (optional, before scoring). In each imaging session, image a uniform
 fluorescent slide at the project's settings (and, if you can, a few dark images with the light off).
 Choose the folder on the **Flat-field correction** card. Build then evens out the reporter's light

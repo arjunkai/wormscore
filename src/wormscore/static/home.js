@@ -369,6 +369,7 @@ function renderMain(d) {
     steps,
     built && !building ? secondScorerCard(p, busy) : null,
     built && !building && p.practice ? practiceCard(p, busy) : null,
+    p.autofluor ? autofluorCard(p, busy) : null,
     p.flat_field && p.scanned !== null && (p.flat_field.on || !p.flat_field.locked) ? flatFieldCard(p, busy) : null,
     p.bleed && p.scanned !== null ? bleedCard(p, busy) : null));
   const log = $("#log");
@@ -604,6 +605,31 @@ async function flatFieldOff() {
   if (!go) return;
   st.log = []; st.since = 0; st.showLog = false;
   act("/api/flat-field", { action: "off" });
+}
+
+// ---------------------------------------------------------------- gut autofluorescence check (1.22.0)
+
+// After unblinding, in projects whose images also recorded a channel with no label: outlines that are bright
+// there too may be gut granules, which glow in every channel. Flags are reported, never used to change a call.
+function autofluorCard(p, busy) {
+  const af = p.autofluor, r = af.result;
+  const row = r ? h("ul", { class: "pk-list" }, h("li", { class: "pk" }, h("div", { class: "pk-text" },
+    h("b", {}, `${r.flagged} of ${plural(r.regions, "region")} also bright in ${r.channel}`),
+    h("span", { class: "pk-meta" }, [Object.entries(r.by_genotype).map(([g, v]) => `${g} ${v.flagged} of ${v.regions}`).join(", "),
+      r.checked.slice(0, 10)].join(" \u00b7 "))))) : null;
+  return h("section", { class: "extra" },
+    h("div", { class: "x-head" },
+      h("div", {},
+        h("div", { class: "s-title" }, "Gut autofluorescence check", wsHelp(h, "autofluor", "the gut autofluorescence check"),
+          h("span", { class: "chip wait" }, "Optional")),
+        h("div", { class: "s-desc" }, `Gut granules glow in every channel; the reporter does not. Each outline is also measured `
+          + `in the ${af.channel} channel, which has no label.`)),
+      h("div", { class: "x-act" },
+        h("button", { class: "btn", "data-k": "af-check", disabled: busy,
+          onclick: () => { st.log = []; st.since = 0; st.showLog = false; act("/api/autofluor", {}); } }, r ? "Check again" : "Check outlines"))),
+    row,
+    r && r.flagged ? warnNote(`${plural(r.flagged, "region")} may be gut autofluorescence rather than the cell. `
+      + `Look at ${r.flagged === 1 ? "it" : "them"} again before you report; the list is in outputs\\unblinded\\autofluorescence.csv.`) : null);
 }
 
 // ---------------------------------------------------------------- practice sets (1.13.0)

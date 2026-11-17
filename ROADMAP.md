@@ -13,9 +13,6 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 - **Several identity channels,** for multi-color systems such as NeuroPAL.
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
-- **Gut autofluorescence check.** For projects that record a channel with no label (for example
-  blue): flag outlines that are also bright there, since gut granules glow in every channel and GFP
-  does not. Reported in the outputs and at unblinding, never on the scoring page.
 - **Example data.** An optional NeuroPAL example download, if its license allows.
 - **Open (non-blind) scoring, under consideration.** An optional project type for pilots or
   phenotypes that cannot be hidden, chosen when the project is created. Every output and the
@@ -37,6 +34,14 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.22.0: **Gut autofluorescence check.** After unblinding, in projects whose images also recorded a
+  channel with no label (for example blue), an optional card measures each outline (or the first
+  suggested cell) in that channel, in the reporter's sharpest plane for the region and the planes either
+  side. Gut granules glow in every channel, brightest in blue, while the reporter does not (Pincus et al.
+  2016; Coburn et al. 2013), so a region at least 3 times the background noise there is flagged as
+  possibly gut autofluorescence. Flags are reported by genotype in `outputs/unblinded/autofluorescence.csv`,
+  `log.md` and a paragraph of the Methods draft, and never change a call or leave an image out. It runs
+  only after unblinding, since a flag per image could hint at a genotype while scoring.
 - 1.21.2: **Warnings instead of blocks.** Steps that were refused only to prevent a mistake the researcher
   can knowingly accept are now allowed with a warning, recorded in `log.md` and, where it matters, the
   Methods draft. **Change anyway...** unlocks the analysis settings after scoring began (the tests then run

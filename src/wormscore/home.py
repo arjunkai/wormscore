@@ -192,6 +192,15 @@ def project_status(path):
     from .browse import browse_state
     st["browse"] = browse_state(p)[0]       # the wording is in home.js, so this state never names genotypes
     st["results"] = results_summary(p, st["scored"], st["coded"]) if st["unblinded"] else None
+    # gut autofluorescence check (1.22.0): after unblinding, when the images have a channel without a label
+    st["autofluor"] = None
+    if st["unblinded"] and not info:
+        from . import autofluor as AF
+        try:
+            ch = AF.available(p)
+        except (Exception, SystemExit):
+            ch = None
+        st["autofluor"] = {"channel": ch, "result": AF.summary(p)} if ch else None
     return st
 
 
@@ -1121,6 +1130,11 @@ class HomeApp:
             return self.bleed(body)
         elif route == "flat-field":
             return self.flat_field(body)
+        elif route == "autofluor":
+            from . import autofluor as AF
+            p = self.need_project()
+            if not self.job.start("Gut autofluorescence check", p, lambda: AF.check(p, log=self.job.say)):
+                raise ValueError("Another step is still running.")
         elif route == "run":
             return self.run_step(body)
         elif route == "score":

@@ -21,6 +21,7 @@ const WS_TERMS = {
   second_scorer: "Agreement between two people scoring the same coded images (inter-rater reliability), reported at unblinding as percent agreement and Cohen's kappa.",
   bleed: "Light from one marker recorded in the other's channel. It is measured on control animals that carry one marker only, imaged at this project's settings.",
   flat_field: "Most microscopes light the middle of the field more than the edges, and the light changes from day to day. Images of an evenly fluorescent slide, taken in each session, measure both so they can be evened out.",
+  autofluor: "Gut granules in C. elegans fluoresce in every channel, brightest in blue. A region that is bright in a channel with no label may be a gut granule rather than the cell (Pincus et al. 2016).",
   practice: "A few coded images from a finished project, with an experienced scorer's answers as the key. Scoring them first shows how your calls compare before you score for real.",
   browse: "See images with their file names and genotypes, without scoring. It is off from Build blind set until Unblind, so it can never break blinding.",
   log: "log.md is the project's record: every step, setting and software version, with the time. Reviewers can check the Methods against it.",

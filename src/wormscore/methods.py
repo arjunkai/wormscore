@@ -240,6 +240,12 @@ def flat_field_sentence(project, cfg):
     return methods_sentence(project, cfg)
 
 
+def autofluor_paragraph(project):
+    """The gut autofluorescence check (1.22.0), or "" if it was not run (the Methods then read as before)."""
+    from .autofluor import methods_sentence
+    return methods_sentence(project)
+
+
 def interim_sentence(project):
     """The interim looks taken during scoring (1.17.0), or "" (the Methods then read as before)."""
     from .interim import methods_sentence
@@ -379,6 +385,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         + "".join(" " + x for x in form_sentences(cfg, form_status, form_changes))
         + late_plan_sentence(project, cfg, list(tests) + list(interaction_tests)),
         "",
+        *([autofluor_paragraph(project), ""] if autofluor_paragraph(project) else []),     # 1.22.0, if it was run
         *([f"**Limitations.** {' '.join(cfg['unblinding']['methods_notes'])}", ""]
           if cfg["unblinding"].get("methods_notes") else []),
         "## Images per genotype and microscope",
