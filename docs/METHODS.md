@@ -210,7 +210,7 @@ across the spectrum, brightest with a DAPI-type filter set and also in green, wh
 (Pincus et al. 2016, Aging 8:889; Coburn et al. 2013, PLoS Biol 11:e1001613). For images that recorded a
 channel with no label (a channel named DAPI, Hoechst, blue, BFP, CFP, 405 or UV is preferred), each
 counted image's saved outlines (or, without outlines, its first suggested cell) are measured in that
-channel, median-filtered like the reporter, in the reporter's sharpest plane for the region and the
+channel, without filtering (so the noise is not shrunk), in the reporter's sharpest plane for the region and the
 planes either side (a small depth shift between colours): signal to noise = (mean in the region - median
 of the background ring) / robust SD of the ring (1.4826 x median absolute deviation), the ring as in
 section 6, and the highest of the three planes is kept. A region at 3 or more is flagged "possibly gut
@@ -223,13 +223,13 @@ at a genotype while scoring.
 the field more than the edges, and lamp or laser power changes from day to day. With the correction on,
 Build blind set corrects the reporter channel of every image before anything is shown, suggested or
 measured, using images of a uniform fluorescent reference slide taken at the project's settings in each
-imaging session (one microscope, one settings group, one acquisition day from the metadata):
+imaging session (one microscope, settings, objective and zoom, and one acquisition day from the metadata; Nikon and Olympus dates, written in the computer's locale, are read in the common forms, US month/day first):
 
     corrected = (raw - dark) / flat x factor + mean(dark)
 
 - flat: the session's slide images, each averaged over its planes, then averaged together, less the
   dark image, smoothed with a Gaussian (sigma 2% of the shorter side) and divided by its mean. Slide
-  images with more than 0.01% of pixels at the detector maximum are not used; a flat below 20% of its
+  images with more than 0.1% of pixels at the detector maximum are not used; a flat below 20% of its
   mean anywhere is refused (the slide did not fill the field).
 - factor (only with "between sessions"): the median slide brightness over that microscope's sessions
   with the same settings, divided by this session's.

@@ -538,6 +538,19 @@ def check(cfg):
             raise SystemExit(f"identity: unknown setting(s) {sorted(unknown)}.")
         if ident.get("label", "").lower() == cfg["marker"]["label"].lower():
             raise SystemExit("identity and marker have the same label; give the identity channel its own \"label\".")
+    labels = [cfg["marker"]["label"].lower()] + ([ident["label"].lower()] if ident else [])
+    for k, x in enumerate(cfg.get("identity_extra") or [], start=2):     # 1.23.0
+        unknown = set(x) - set(IDENTITY_KEYS)
+        if unknown:
+            raise SystemExit(f"identity channel {k}: unknown setting(s) {sorted(unknown)}.")
+        col = x.get("color")
+        if not (isinstance(col, list) and len(col) == 3 and all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                                                                and 0 <= v <= 1 for v in col)):
+            raise SystemExit(f"identity channel {k} ({x.get('label')}): color must be three numbers from 0 to 1, "
+                             "for example [1, 0, 0] for red.")
+        if str(x.get("label", "")).lower() in labels:
+            raise SystemExit(f"identity channel {k}: the label {x.get('label')!r} is already used; give each channel its own.")
+        labels.append(str(x.get("label", "")).lower())
     rel = cfg["reliability"]
     unknown = set(rel) - {"repeat_fraction", "extra_statistics", "call_weights"}
     if unknown:

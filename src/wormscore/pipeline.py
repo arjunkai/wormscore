@@ -686,15 +686,19 @@ def prepare(project, reassign=False, add=False, log=print):
     n_counted = sum(s["counted_by_default"] for s in images)
     per_system = dict(Counter(s["system"] for s in images))
     target = max(2, round(REPEAT_GAP * (len(images) + len(repeats))))
-    gap_done = repeats[0].get("_gap", target) if repeats else target     # a kept key: as it was placed
+    gap_done = repeats[0].get("_gap") if repeats else target
+    if repeats and gap_done is None:    # a kept key: the distance it has (keys built before 1.21.2 always met target)
+        num = lambda c: int("".join(ch for ch in c if ch.isdigit()) or 0)
+        have = min(abs(num(r["code"]) - num(r["_orig"]["code"])) for r in repeats)
+        gap_done = target if have >= target else have
     hidden = [f"Hidden repeats for scorer consistency: {len(repeats)} images shown a second time under new "
               f"codes (repeat_fraction {C.repeat_fraction(cfg)} of each genotype, at least one; each at least "
               f"{gap_done} codes from its original). Which codes "
               "are repeats is recorded only in the key; repeats are never counted in results."] if repeats else []
     if repeats and gap_done < target:     # 1.21.2: placed as far apart as they fit
-        warn = (f"Warning: the hidden repeats are at least {gap_done} codes from their originals, not the "
-                f"planned {target}: the set is small for this share of repeats. A scorer may remember an image "
-                "seen that recently; a smaller share of repeats spaces them further apart.")
+        warn = (f"Warning: hidden repeats are at least {gap_done} codes from their originals (planned: {target}), "
+                "because the set is small for this share of repeats. A scorer may remember an image seen that "
+                "recently. To space them further apart, choose a smaller share of hidden repeats.")
         hidden.append(warn[len("Warning: "):])
         log(warn)
     append_log(project, "prepare", [

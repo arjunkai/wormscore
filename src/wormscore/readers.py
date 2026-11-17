@@ -135,10 +135,23 @@ def with_extras(roles, cfg, match):
 
 
 def named_extras(roles, cfg, names, fluors, excitations, emissions):
-    n = len(roles)
     get = lambda xs, i: xs[i] if xs and i < len(xs) else None
+    if roles.count("MARKER") > 1 and cfg.get("identity_extra"):
+        roles = list(roles)
+        for i, r in enumerate(roles):
+            if r == "MARKER" and any(_strong_match(get(names, i) or "", get(fluors, i), get(emissions, i), m)
+                                     for m in cfg["identity_extra"]):
+                roles[i] = "OTHER"
     return with_extras(roles, cfg, lambda i, m: _named_match(get(names, i) or "", get(fluors, i), get(excitations, i),
                                                              get(emissions, i), m))
+
+
+def _strong_match(name, fluor, emission, m):
+    """A match on more than the laser line: the dye name, the channel name, or the emission wavelength."""
+    em = m.get("emission_nm")
+    return bool((fluor and fluor in m["dye_names"])
+                or any(name.upper().startswith(p.upper()) for p in m["channel_name_prefixes"])
+                or (emission and em and em[0] <= float(emission) <= em[1]))
 
 
 def pick(roles, role):

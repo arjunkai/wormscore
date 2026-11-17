@@ -98,3 +98,22 @@ def test_the_scoring_page_gets_each_channel_and_its_colour(project):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_without_dye_names_the_emission_settles_the_488_tie():
+    # Nikon writes no dye names: both 488 nm channels match the reporter; CyOFP1's emission gives it away
+    cfg = C.apply_identity(C.merge(C.DEFAULTS, {}), {"preset": "NeuroPAL"})
+    names, ex, em = ["488 a", "488 b"], [488, 488], [510, 590]
+    roles = [R.marker_from_named(n, None, e, False, cfg, m) for n, e, m in zip(names, ex, em)]
+    roles = R.prefer_named_dye(roles, [None, None], cfg)
+    assert roles == ["MARKER", "MARKER"]
+    assert R.named_extras(roles, cfg, names, None, ex, em) == ["MARKER", "IDENTITY3"]
+
+
+def test_extra_identity_channels_are_checked():
+    cfg = C.apply_identity(C.merge(C.DEFAULTS, {}), [{"preset": "mCherry"}, {"preset": "BFP", "color": "blue"}])
+    with pytest.raises(SystemExit, match="color must be three numbers"):
+        C.check(cfg)
+    cfg = C.apply_identity(C.merge(C.DEFAULTS, {}), [{"preset": "mCherry"}, {"preset": "BFP", "label": "mCherry"}])
+    with pytest.raises(SystemExit, match="already used"):
+        C.check(cfg)

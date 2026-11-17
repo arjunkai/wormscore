@@ -16,7 +16,7 @@ measured, so a cell at the edge of the field is shown and measured as bright as 
   offset is taken as 0, and the Methods draft says so. mean(dark) is added back, so the background
   stays at its usual level and the display ranges keep their meaning.
 
-An imaging session is one microscope, one settings group and one acquisition day (from metadata).
+An imaging session is one microscope, settings, objective and zoom, and one acquisition day (from metadata).
 Nothing that can be worked around stops the build (1.21.1); each fallback is a warning in the Build log,
 a column of key.csv, log.md and the Methods draft. The pattern of light across the field changes little
 unless the microscope is realigned, so for an image without slide images from its own session:
@@ -42,7 +42,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 from . import config as C
-from .files import append_log, write_csv
+from .files import append_log, plural, write_csv
 
 KEY = "flat_field"                    # config.json key; absent unless the correction is on
 FOLDER = "flat_field"                 # outputs/flat_field/
@@ -65,9 +65,32 @@ def lock_reason(project):
     return ""
 
 
+DATE_FORMATS = ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M:%S", "%m/%d/%Y", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y",
+                "%Y/%m/%d %H:%M:%S", "%Y/%m/%d", "%d/%m/%Y %H:%M:%S")
+
+
+def acquired_day(acquired):
+    """The acquisition day as YYYY-MM-DD, or "" if unknown. ISO dates (OME, Zeiss, Leica) are read directly;
+    Nikon and Olympus write the date as the acquiring computer's locale shows it, for example
+    "9/24/2020 4:01:38 PM", so a few common forms are tried (US month/day first)."""
+    import re
+    a = " ".join(str(acquired or "").split())
+    if re.match(r"\d{4}-\d{2}-\d{2}", a):
+        return a[:10]
+    for fmt in DATE_FORMATS:
+        try:
+            return dt.datetime.strptime(a, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return ""
+
+
 def session_key(img):
-    """(microscope, settings, day) of an image or a slide image."""
-    return (img.get("system", ""), img.get("settings", "") or "", (img.get("acquired", "") or "")[:10])
+    """(microscope, settings, day) of an image or a slide image. "settings" includes the objective and the
+    zoom, which change the light across the field but are not in every format's settings string."""
+    settings = " | ".join(x for x in (str(img.get("settings", "") or ""), str(img.get("objective", "") or ""),
+                                      str(img.get("zoom", "") or "")) if x)
+    return (img.get("system", ""), settings, acquired_day(img.get("acquired", "")))
 
 
 def _label(key):
@@ -119,7 +142,11 @@ def _images(folder, cfg, log, skipped):
             if ci is None:
                 skipped.append(f"{where}: the {cfg['marker']['label']} channel could not be identified from metadata")
                 continue
-            stack = R.read(img, ci)
+            try:
+                stack = R.read(img, ci)
+            except Exception as exc:          # one unreadable image is reported, not fatal
+                skipped.append(f"{where}: could not be read ({type(exc).__name__})")
+                continue
             out.append({"where": where, "path": path, "key": session_key(img),
                         "plane": stack.astype(np.float64).mean(0),
                         "saturated": float((stack >= saturation_for(img, cfg)).mean())})
@@ -282,7 +309,7 @@ def add_sessions(project, folder, log=print):
     summary_ = {**sm, "sessions": old + new, "reference_images": sm["reference_images"] + sum(s["images"] for s in new),
                 "added": sm.get("added", []) + [{"folder": folder.name, "sha256": sha, "sessions": len(new), "when": stamp}]}
     _save(project, summary_, {**corr.arrays, **arrays}, {k: v for k, v in ff.items() if k != "checksum"})
-    lines = [f"Slide images added for {len(new)} new imaging session(s) (folder {folder.name}, sha256 {sha[:16]})"
+    lines = [f"Slide images added for {plural(len(new), 'new imaging session')} (folder {folder.name}, sha256 {sha[:16]})"
              + ("; scoring had begun" if started else "") + ". Sessions already in use were not changed."]
     lines += [session_line(s, ff) for s in new]
     append_log(project, LOG_TITLE, lines + [f"Not used: {s}" for s in skipped[:20]])
@@ -411,7 +438,7 @@ class Correction:
         key = f"avg:{system}:{settings if group else '*'}"
         if f"flat_{key}" not in self.arrays:
             self.arrays[f"flat_{key}"] = np.mean([self.arrays[f"flat_{s['index']}"] for s in pool], axis=0)
-        return {**pool[0], "index": key, "how": f"average of {len(pool)} sessions{where}"}
+        return {**pool[0], "index": key, "dark_from": pool[0]["index"], "how": f"average of {len(pool)} sessions{where}"}
 
     def not_corrected(self, img):
         system = session_key(img)[0]
@@ -434,11 +461,7 @@ class Correction:
 
     def _dark(self, ses):
         """The dark image of a session (an average stands in with its first session's)."""
-        i = ses["index"]
-        if isinstance(i, str):
-            first = next(s for s in self.sessions if s["system"] == ses["system"] and s["settings"] == ses["settings"])
-            i = first["index"]
-        return self.arrays[f"dark_{i}"]
+        return self.arrays[f"dark_{ses.get('dark_from', ses['index'])}"]
 
     def key_columns(self, img):
         ses = self.resolve(img)
@@ -459,13 +482,25 @@ class Correction:
                 none[(_label(session_key(s)), self.not_corrected(s))] += 1
             elif ses["how"] != SAME:
                 other[(_label(session_key(s)), ses["how"])] += 1
-        tail = "; their brightness between sessions is not corrected" if self.ff.get("between_sessions") else ""
-        out = [f"Warning: no slide images from {k}: {n} image(s) corrected with the {how}{tail}."
-               for (k, how), n in sorted(other.items())]
-        out += [f"Warning: {k}: {n} image(s) used as recorded, not corrected ({why}). Add slide images for that "
-                "session, or keep in mind that their brightness is not comparable with the corrected images."
-                for (k, why), n in sorted(none.items())]
+        tail = "; brightness between sessions is not corrected for them" if self.ff.get("between_sessions") else ""
+        out = [f"Warning: {plural(n, 'image')} from {k} used {_how_words(how)}{tail}. Add that session's slide "
+               "images to correct them fully." for (k, how), n in sorted(other.items())]
+        out += [f"Warning: {plural(n, 'image')} from {k} could not be corrected ({why}) and {'is' if n == 1 else 'are'} "
+                "used as recorded, not comparable in brightness with the others. Add that session's slide images "
+                "to correct them." for (k, why), n in sorted(none.items())]
         return out
+
+
+def _how_words(how):
+    """A key.csv flat_field value as words for a sentence: 'nearest day, 2026-03-01' -> 'the slide images of
+    the nearest day (2026-03-01)'."""
+    where = " taken at other settings" if how.endswith(" (other settings)") else ""
+    how = how.replace(" (other settings)", "")
+    if how.startswith("nearest day, "):
+        return f"the slide images of the nearest day ({how[len('nearest day, '):]}){where}"
+    if how.startswith("average of "):
+        return f"the average of the slide images of {how[len('average of '):]}{where}"
+    return f"the {how}{where}"
 
 
 def _date(day):
@@ -502,8 +537,8 @@ def log_lines(project, cfg):
     if not ff or not sm:
         return []
     ses = sm["sessions"]
-    lines = [f"Flat-field correction: {_what(ff)}, from {sm['reference_images']} slide image(s) in "
-             f"{len(ses)} imaging session(s) (folder {sm['reference_folder']}, sha256 {sm['reference_sha256'][:16]}"
+    lines = [f"Flat-field correction: {_what(ff)}, from {plural(sm['reference_images'], 'slide image')} in "
+             f"{plural(len(ses), 'imaging session')} (folder {sm['reference_folder']}, sha256 {sm['reference_sha256'][:16]}"
              + (f"; dark images from folder {sm['dark_folder']}, sha256 {sm.get('dark_sha256', '')[:16]}"
                 if sm["dark_folder"] else "; no dark images, camera offset taken as 0")
              + f"; checksum {ff['checksum'][:16]})."]
@@ -511,7 +546,7 @@ def log_lines(project, cfg):
 
 
 def session_line(s, ff):
-    return (f"Session {_label((s['system'], s['settings'], s['day']))}: {s['images']} image(s), light across "
+    return (f"Session {_label((s['system'], s['settings'], s['day']))}: {plural(s['images'], 'image')}, light across "
             f"the field {s['light_min_pct']} to {s['light_max_pct']}% of its mean"
             + (f", brightness factor {s['factor']}" if ff.get("between_sessions") else "")
             + (" (added after scoring began)" if s.get("added_after_scoring_began") else "") + ".")

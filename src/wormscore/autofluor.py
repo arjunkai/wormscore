@@ -8,7 +8,7 @@ that is bright there too may be a gut granule rather than the cell.
 
 For each counted image: each outline the scorer saved (or, without outlines, the first suggested cell) is
 measured in that channel, in the reporter's sharpest plane for the region and the planes either side of
-it (to allow for a small depth shift between colours). Signal to noise = (median-filtered mean in the
+it (to allow for a small depth shift between colours). Signal to noise = (unfiltered mean in the
 region - median of the background ring) / robust SD of the ring (1.4826 x median absolute deviation),
 the ring as for every measurement. A region at or above CUTOFF_SD is flagged "possibly gut
 autofluorescence". Flags are reported, never used to change a call or leave an image out.
@@ -24,7 +24,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from . import config as C
-from .files import append_log, read_csv, write_csv
+from .files import append_log, plural, read_csv, write_csv
 
 CUTOFF_SD = 3.0
 BLUE = re.compile(r"dapi|hoechst|blue|bfp|cfp|405|uv|auto", re.I)
@@ -49,12 +49,24 @@ def unlabelled_channel(img):
     return i, names[i] or f"channel {i + 1}"
 
 
+_available = {}
+
+
 def available(project):
-    """The name of the unlabelled channel most images have, or None (then the check is not offered)."""
+    """The name of the unlabelled channel most images have, or None (then the check is not offered).
+    Kept until inventory.csv changes, since the home page asks every few seconds."""
     from .pipeline import load_images
     p = Path(project) / "outputs" / "inventory.csv"
     if not p.is_file():
         return None
+    stamp = (str(p.resolve()), p.stat().st_mtime_ns)
+    if stamp in _available:
+        return _available[stamp]
+    _available[stamp] = _available_now(project, load_images)
+    return _available[stamp]
+
+
+def _available_now(project, load_images):
     names = defaultdict(int)
     for img in load_images(project):
         ch = unlabelled_channel(img)
@@ -91,7 +103,8 @@ def check(project, log=print):
     key = [r for r in read_csv(project / "key" / "key.csv") if not r.get("repeat_of")]
     merged = {r["code"]: r for r in read_csv(out / "merged.csv")} if (out / "merged.csv").is_file() else {}
     counted = {c for c, r in merged.items()
-               if r.get("score_count_this_image") == "yes" and r.get("score_usable") == "yes"}
+               if r.get("score_count_this_image") == "yes" and r.get("score_usable") == "yes"
+               and not r.get("left_out_after_scoring")}
     images = {(i["local_path"], i["location_in_file"]): i for i in load_images(project)}
     rois = json.loads((project / "scoring" / "rois.json").read_text(encoding="utf-8")) \
         if (project / "scoring" / "rois.json").is_file() else {}
@@ -106,7 +119,7 @@ def check(project, log=print):
         d = project / "blind" / k["code"]
         meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
         try:
-            other = M.median_filter_stack(R.read(img, ch[0]), cfg["measurement"]["median_filter_px"]).astype(float)
+            other = R.read(img, ch[0]).astype(float)      # unfiltered: filtering would shrink the noise SD
         except Exception as exc:                     # a file moved or unreadable: reported, not fatal
             skipped[f"could not be read ({type(exc).__name__})"] += 1
             continue
@@ -141,7 +154,7 @@ def check(project, log=print):
             channel_names[ch[1]] += 1
         log(f"{k['code']} ({n}/{len(todo)})")
     if not rows:
-        raise SystemExit("No region could be checked: " + ("; ".join(f"{v} image(s): {k}" for k, v in skipped.items())
+        raise SystemExit("No region could be checked: " + ("; ".join(f"{plural(v, 'image')}: {k}" for k, v in skipped.items())
                                                            or "no counted image has outlines or suggested cells."))
     write_csv(out / RESULTS, rows)
     by_geno = defaultdict(lambda: [0, 0])
@@ -153,7 +166,8 @@ def check(project, log=print):
             "by_genotype": {g: {"regions": v[0], "flagged": v[1]} for g, v in sorted(by_geno.items())},
             "skipped": dict(skipped), "checked": f"{dt.datetime.now():%Y-%m-%d %H:%M}"}
     (out / SUMMARY).write_text(json.dumps(summ, indent=1), encoding="utf-8")
-    lines = [line(summ)] + [f"Warning: {v} image(s) not checked: {k}." for k, v in skipped.items()]
+    lines = [line(summ)] + [f"Warning: {v} {'image was' if v == 1 else 'images were'} not checked: {k}."
+                            for k, v in skipped.items()]
     append_log(project, LOG_TITLE, lines)
     _methods_paragraph(project, summ)
     for x in lines:
@@ -163,7 +177,7 @@ def check(project, log=print):
 
 def line(s):
     per = "; ".join(f"{g} {v['flagged']} of {v['regions']}" for g, v in s["by_genotype"].items())
-    return (f"{s['flagged']} of {s['regions']} region(s) also bright in the {s['channel']} channel (signal at least "
+    return (f"{s['flagged']} of {plural(s['regions'], 'region')} also bright in the {s['channel']} channel (signal at least "
             f"{s['cutoff_sd']} times the background noise): possibly gut autofluorescence. By genotype: {per}. "
             f"Details: outputs/unblinded/{RESULTS}.")
 
@@ -184,8 +198,8 @@ def methods_sentence(project):
     per = "; ".join(f"{g}, {v['flagged']} of {v['regions']}" for g, v in s["by_genotype"].items())
     return (f"{METHODS_HEAD} Gut granules fluoresce in every channel, while the reporter does not. Each scored "
             f"region was therefore also measured in the {s['channel']} channel, which carries no label, in the "
-            "reporter's sharpest plane for the region and the planes either side of it: the background-subtracted "
-            "mean divided by the robust SD of the background ring. Regions at or above "
+            "reporter's sharpest plane for the region and the planes either side of it, without filtering: the "
+            "background-subtracted mean divided by the robust SD of the background ring. Regions at or above "
             f"{s['cutoff_sd']} were flagged as possibly gut autofluorescence ({s['flagged']} of {s['regions']} "
             f"regions; {per}). Flags were reported, not used to change calls or leave images out.")
 

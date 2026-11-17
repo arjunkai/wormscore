@@ -101,11 +101,12 @@ def make_practice_set(project, destination, n=20, sure_only=True, log=print):
     if not candidates:
         raise SystemExit("No scored image" + (" marked sure" if sure_only else "") + " can be used for a practice set.")
     if len(candidates) < n:
-        log(f"Warning: only {len(candidates)} scored image(s)" + (" marked sure" if sure_only else "")
-            + f" can be used, so the set has {len(candidates)} instead of {n}.")
+        log(f"Warning: only {len(candidates)} scored " + ("image" if len(candidates) == 1 else "images")
+            + (" marked sure" if sure_only else "") + f" can be used, so the set has {len(candidates)}, not {n}.")
         n = len(candidates)
     if n < MIN_IMAGES:
-        log(f"Warning: agreement from {n} image(s) is very imprecise; {MIN_IMAGES} or more give a usable estimate.")
+        log(f"Warning: agreement from {n} {'image' if n == 1 else 'images'} is very imprecise. "
+            f"Use {MIN_IMAGES} or more for a usable estimate.")
     rng = random.Random(secrets.randbits(32))
     codes = _pick(candidates, n, rng)
     order = rng.sample(codes, len(codes))
@@ -266,8 +267,8 @@ def add_result(project, folder, log=print):
     if not r["scored"]:
         raise SystemExit("Nothing in the practice set is scored yet.")
     if not r["done"]:      # 1.21.2: recorded as a partial result, with a warning
-        log(f"Warning: the practice set is not finished ({r['scored']} of {r['total']} images scored); the agreement "
-            "is recorded for the scored images, and log.md and the Methods draft say so.")
+        log(f"Warning: the practice set is not finished ({r['scored']} of {r['total']} images scored). The agreement "
+            "is recorded for the scored images only, and log.md and the Methods draft say so.")
     cfg = C.load(project)
     same = form_hash(cfg) == r["form"]
     rec = {k: r[k] for k in ("id", "source", "made", "total", "practised", "key_sha256", "measures")}

@@ -95,6 +95,8 @@ def test_an_exclusion_added_after_scoring_is_applied_at_unblinding(fresh_project
     out = unblind(fresh_project, finished=True, anyway=True, **QUIET)
     assert "left out by exclusion rules changed after scoring began" in (out / "summary.txt").read_text(encoding="utf-8")
     assert "left out because the animal was damaged" in (out / "methods_text.md").read_text(encoding="utf-8")
+    merged = read_csv(out / "merged.csv")
+    assert any(r["left_out_after_scoring"] == "the animal was damaged" for r in merged)
 
 
 def test_hidden_repeats_that_do_not_fit_are_placed_as_far_apart_as_they_can_be():

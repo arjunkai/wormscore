@@ -288,3 +288,17 @@ def test_other_settings_of_the_same_size_stand_in_and_other_sizes_do_not():
     assert corr.resolve({**img, "system": "B"}) is None
     raw = np.full((1, 4, 4), 7, np.uint16)
     assert corr.apply(raw, {**img, "system": "B", "height": 4, "width": 4}) is raw
+
+
+def test_dates_in_locale_forms_give_the_same_day():
+    assert FF.acquired_day("2020-09-24 16:01:38") == "2020-09-24"
+    assert FF.acquired_day("9/24/2020 4:01:38 PM") == "2020-09-24"       # Nikon, US locale
+    assert FF.acquired_day("9/4/2020 4:01:38 PM") == FF.acquired_day("9/4/2020 11:59:00 PM") == "2020-09-04"
+    assert FF.acquired_day("24.09.2020 16:01:38") == "2020-09-24"
+    assert FF.acquired_day("") == FF.acquired_day("sometime") == ""
+
+
+def test_the_objective_and_zoom_are_part_of_the_session():
+    a = FF.session_key({"system": "A", "settings": "gain 2", "objective": "63x/1.4", "zoom": "2", "acquired": ""})
+    b = FF.session_key({"system": "A", "settings": "gain 2", "objective": "10x/0.3", "zoom": "2", "acquired": ""})
+    assert a != b and a[1] == "gain 2 | 63x/1.4 | 2"

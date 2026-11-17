@@ -40,6 +40,11 @@ def refuse_app_folder(project, destination, what):
                          f"({', '.join(APP_FOLDERS[:4])}, ...).")
 
 
+def plural(n, word, many=None):
+    """'1 image', '3 images' (for messages people read; 1.23.1)."""
+    return f"{n} {word if n == 1 else many or word + 's'}"
+
+
 def append_log(project, title, lines, cfg=None):
     with open(Path(project) / "log.md", "a", encoding="utf-8") as fh:
         fh.write(f"\n## {now()} {title}\n")

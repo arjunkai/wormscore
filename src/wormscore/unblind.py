@@ -116,12 +116,15 @@ def unblind(project, finished=False, anyway=False, log=print):
             row[f"auto1_{f}"] = auto[code].get("1", {}).get(f, "")
         rows.append(row)
     out = project / "outputs" / "unblinded"
+    late_excl = excluded_after_scoring(project, cfg, [r for r in rows if not r.get("repeat_of")])        # 1.21.2
+    if late_excl:          # the column only when there are any, so other projects' merged.csv stays as before
+        for r in rows:
+            r["left_out_after_scoring"] = late_excl.get(r["code"]) or late_excl.get(r.get("repeat_of"), "")
     write_csv(out / "merged.csv", rows)
 
     # Hidden repeats are only for the consistency check; they never count as animals.
     originals = [r for r in rows if not r.get("repeat_of")]
     counted = [r for r in originals if r.get("score_count_this_image") == "yes" and r.get("score_usable") == "yes"]
-    late_excl = excluded_after_scoring(project, cfg, originals)        # 1.21.2
     counted = [r for r in counted if r["code"] not in late_excl]
     lines = [f"Scored {len(scores)} of {len(rows)} images."]
     if late_excl:

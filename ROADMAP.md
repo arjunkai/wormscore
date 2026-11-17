@@ -32,6 +32,21 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.23.1: **A wording pass and an audit of 1.21 to 1.23.**
+  - Wording:
+    - Warnings say what happened and what to do next, in at most two lines, with correct plurals ("3 images", not "image(s)").
+    - Dialogs that unlock a setting have a plain Cancel button, as in the Apple and Microsoft guidelines.
+    - A typed reason is quoted in the unlocked note.
+  - Fixes:
+    - Flat-field sessions now read Nikon and Olympus dates written in the computer's locale.
+    - The objective and zoom are now part of an imaging session.
+    - A stand-in dark image now always comes from a session of the right size.
+    - One unreadable slide image is skipped, not fatal.
+    - A rebuild that keeps codes logs the spacing its hidden repeats really have.
+    - Images left out by exclusion rules changed after scoring are marked in `merged.csv` (`left_out_after_scoring`), and the gut autofluorescence check leaves them out.
+    - Its noise is measured without filtering, as the dim-call check measures it.
+    - On Nikon files, which name no dyes, CyOFP1's emission settles its 488 nm tie with the GFP reporter.
+    - Extra identity channels are checked like the first one (colour, label, settings).
 - 1.23.0: **Several identity channels, for NeuroPAL.** `"identity"` may list up to four channels, and
   `{"preset": "NeuroPAL"}` shows its four colours together (TagRFP-T white, mNeptune2.5 red, CyOFP1 green,
   mTagBFP2 blue) in Projection, Planes and 3D, each scaled per image and never measured. The first channel

@@ -535,7 +535,7 @@ function flatFieldCard(p, busy) {
     h("b", {}, `Corrected ${what}`),
     h("span", { class: "pk-meta" }, [
       `${plural(sm.sessions.length, "session")}, ${plural(sm.reference_images, "slide image")}`,
-      on.across_field ? `light ${range(sm.sessions.map(s => Math.round(s.light_min_pct)))}% at the dimmest point` : null,
+      on.across_field ? `dimmest point ${range(sm.sessions.map(s => Math.round(s.light_min_pct)))}% of the average` : null,
       on.between_sessions && sm.sessions.length > 1 ? `factors ${range(sm.sessions.map(s => s.factor))}` : null,
       sm.dark_folder ? "dark images subtracted" : "no dark images",
     ].filter(Boolean).join(" · "))))) : null;
@@ -1182,7 +1182,7 @@ function formSection(info) {
         ": unblinding then writes only descriptive tables and runs no planned test, and the summary and Methods say why. "
         + "Images already scored keep their old answers. Changing the criteria back runs the tests again."),
       h("label", { class: "f-label", for: "sfReason" }, "Reason (written to log.md with the change)"), box),
-      [{ value: true, label: "Unlock the criteria", danger: true }], "Keep it locked",
+      [{ value: true, label: "Unlock the criteria", danger: true }], "Cancel",
       { wide: true, check: () => box.value.trim() ? null : "Write a reason first. It goes into log.md with the change." });
     if (!go) return;
     reason = box.value.trim();
@@ -1326,7 +1326,7 @@ async function openProjectSettings(section) {
       h("p", {}, h("b", {}, "Exclusion rules"), ": matching images keep their scores but are left out at unblinding, "
         + "and the summary and Methods draft say so."),
       h("label", { class: "f-label", for: "srcReason" }, "Reason (written to log.md with the change)"), box),
-      [{ value: true, label: "Unlock the image folders", danger: true }], "Keep them locked",
+      [{ value: true, label: "Unlock the image folders", danger: true }], "Cancel",
       { wide: true, check: () => box.value.trim() ? null : "Write a reason first. It goes into log.md with the change." });
     if (!go) return;
     srcReason = box.value.trim().replace(/\s+/g, " ");
@@ -1342,7 +1342,7 @@ async function openProjectSettings(section) {
       h("p", {}, "If you change them, the tests run on the new settings and are reported as exploratory, "
         + "with your reason, in the summary and the Methods draft. Scores do not change. Hidden repeats stay as they are."),
       h("label", { class: "f-label", for: "anReason" }, "Reason (written to log.md with the change)"), box),
-      [{ value: true, label: "Unlock the analysis settings", danger: true }], "Keep them locked",
+      [{ value: true, label: "Unlock the analysis settings", danger: true }], "Cancel",
       { wide: true, check: () => box.value.trim() ? null : "Write a reason first. It goes into log.md with the change." });
     if (!go) return;
     anReason = box.value.trim().replace(/\s+/g, " ");
@@ -1395,7 +1395,7 @@ async function openProjectSettings(section) {
 
     const extras = !!(a.secondary_defect_calls.length || Object.keys(ia).length || a.dim_cutoff_sd || a.allow_cross_microscope.length);
     return h("div", { class: "s-card src" + (off ? " locked" : "") },
-      an.locked && !off ? warnNote(`Unlocked for this save. Reason: ${anReason} The tests then run on the new plan and are reported as exploratory.`,
+      an.locked && !off ? warnNote(`Unlocked for this save (reason: \u201c${anReason}\u201d). The tests will run on the new settings and be reported as exploratory.`,
         { class: "warn-note top" }) : null,
       h("div", { class: "src-head" },
         h("label", { class: "f-label", for: "psRef" }, "Compare each genotype with"),
@@ -1446,7 +1446,7 @@ async function openProjectSettings(section) {
       const off = i < locked && !srcReason;
       const [cls, text] = previewText(previews[i], scanned, s) || ["", ""];
       return h("div", { class: "s-card src" + (off ? " locked" : "") },
-        i === 0 && locked && srcReason ? warnNote(`Unlocked for this save. Reason: ${srcReason} Coded images follow a moved folder; `
+        i === 0 && locked && srcReason ? warnNote(`Unlocked for this save (reason: \u201c${srcReason}\u201d). Coded images follow a moved folder; `
           + "changed genotypes and exclusions are recorded and used at unblinding.", { class: "warn-note top" }) : null,
         h("div", { class: "src-head" },
           h("label", { class: "f-label", for: `srcName${i}` }, "Folder name"),
