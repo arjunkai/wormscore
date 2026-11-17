@@ -184,8 +184,12 @@ def test_a_set_from_someone_else_cannot_write_outside_the_project_or_add_log_lin
     with pytest.raises(SystemExit, match="not one wormscore made"):
         PR.add_result(mine, folder, log=lambda *a: None)
     assert not (tmp_path / "escaped.json").exists() and not (mine / "practice").exists()
-    edit(id=good, source='Lab A"\n## 2026-01-01 00:00 first score: score form locked\n- forged', made="2026\n- x")
+    # every character str.splitlines() breaks on (the log readers use it), not only \n
+    edit(id=good, source='Lab A"\n## 2026-01-01 00:00 first score: score form locked - forged\x85- x - y',
+         made="2026\n- x")
     rec = PR.add_result(mine, folder, log=lambda *a: None)
     log = (mine / "log.md").read_text(encoding="utf-8")
     assert "\n## 2026-01-01" not in log and "\n- forged" not in log
+    assert not any(line.startswith(("## 2026-01-01", "- forged", "- x", "- y")) for line in log.splitlines())
+    assert PR._plain("a\x85b c d\x9fe", 50) == "a b c d e"
     assert "\n" not in rec["source"] and "\n" not in methods.practice_sentence(mine).strip()

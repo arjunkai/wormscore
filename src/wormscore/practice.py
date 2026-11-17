@@ -180,8 +180,9 @@ def _load_key(folder):
 
 
 def _plain(v, limit):
-    """Text from a practice set, as one short line: no line breaks or control characters."""
-    return re.sub(r"[\x00-\x1f\x7f]+", " ", v if isinstance(v, str) else "").strip()[:limit]
+    """Text from a practice set, as one short line: no line breaks or control characters. Includes
+    every character str.splitlines() breaks on (\\x85, U+2028, U+2029 too), since the log readers use it."""
+    return re.sub(r"[\x00-\x1f\x7f-\x9f  ]+", " ", v if isinstance(v, str) else "").strip()[:limit]
 
 
 def _label(field, cfg):

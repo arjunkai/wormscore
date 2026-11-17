@@ -44,6 +44,8 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.14.1: text from a practice set made elsewhere is also cleaned of the less common line breaks
+  (U+0085, U+2028, U+2029) before it goes into `log.md`, so it cannot add a false log entry.
 - 1.14.0: **Questions for each side.** An extra question can be asked for each neuron, **for each side
   (left and right)** or once per animal. The scoring page shows it once, with a Left and a Right row
   of answers (saved as `left_<id>` and `right_<id>`). For a Yes / No or Choice outcome each side is
