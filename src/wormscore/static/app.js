@@ -44,6 +44,7 @@ const st = {
   // Identity channel (projects that set one): which channel is shown, and its display-only images
   // (8-bit, scaled per image when the blind set was built, so they hold no brightness numbers).
   chan: "both", idMip: null, idPlanes: [],
+  xMip: [], xPlanes: [],      // extra identity channels (1.23.0, NeuroPAL): one entry each, or null without it
   angle: 0, tilt: 0, rot: new Map(),   // 3D: the turn and tilt in degrees, and turned views already drawn for this image
   mipDepth: null,      // the plane of the brightest point at each pixel of the projection (1.18.0)
   next: null,   // the next image's projection and brightfield, decoded ahead: { code, mip, bfVals }
@@ -204,6 +205,13 @@ function applyDraft(draft) {
 
 // Decode a PNG into its values. Image planes hold exact 16-bit values packed as
 // red = high byte, green = low byte; brightfield is plain 8-bit gray (packed = false).
+// Same arrays in the same places (the extra identity channels' list is rebuilt on each draw).
+function sameList(a, b) {
+  if (a === b || (!a && !b)) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((x, i) => x === b[i]);
+}
+
 function loadValues(url, w, h, packed = true) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -459,6 +467,7 @@ async function openWorm(code) {
     drawing: null, mip: null, bfVals: null, angle: 0, tilt: 0, rot: new Map(), mipDepth: null, planesDone: false,
     rendering: null, vol: null,
     idMip: null, idPlanes: new Array(r.meta.n_z),
+    xMip: [], xPlanes: (r.meta.identity_extra || []).map(on => on ? new Array(r.meta.n_z) : null),
   });
   $("#aSlider").value = 0;
   $("#tSlider").value = 0;
@@ -495,7 +504,7 @@ async function openWorm(code) {
     return;
   }
   if (seq !== st.openSeq) return;
-  [st.mip, st.bfVals, st.idMip] = pixels;
+  [st.mip, st.bfVals, st.idMip, ...st.xMip] = pixels;
   st.loading = false;
   draw();
   loadNext(code);
@@ -521,6 +530,7 @@ function loadImages(code, meta, v) {
     loadValues(imgUrl(code, "mip.png", v), w, hgt),
     meta.has_brightfield ? loadValues(imgUrl(code, "brightfield.png", v), w, hgt, false) : null,
     meta.has_identity ? loadValues(imgUrl(code, "identity_mip.png", v), w, hgt, false) : null,
+    ...(meta.identity_extra || []).map((on, k) => on ? loadValues(imgUrl(code, `identity${k + 2}_mip.png`, v), w, hgt, false) : null),
   ]);
 }
 
@@ -541,13 +551,15 @@ async function loadPlane(code, z) {
   const { width: w, height: hgt } = st.meta;
   try {
     const name = `z${String(z).padStart(2, "0")}.png`;
-    const [vals, ivals] = await Promise.all([
+    const [vals, ivals, ...xvals] = await Promise.all([
       loadValues(imgUrl(code, `planes/${name}`, st.imgV), w, hgt),
       st.meta.has_identity ? loadValues(imgUrl(code, `identity/${name}`, st.imgV), w, hgt, false) : null,
+      ...st.xPlanes.map((ps, k) => ps ? loadValues(imgUrl(code, `identity${k + 2}/${name}`, st.imgV), w, hgt, false) : null),
     ]);
     if (st.code !== code) return;
     st.planes[z] = vals;
     st.idPlanes[z] = ivals;
+    xvals.forEach((x, k) => { if (st.xPlanes[k]) st.xPlanes[k][z] = x; });
     st.planeFailed.delete(z);
   } catch {
     if (st.code === code) st.planeFailed.add(z);
@@ -593,6 +605,10 @@ function turned(a, t = 0) {
 // The identity channel turned the same way (1.19.0), or null.
 function turnedId(a, t = 0) {
   return a === 0 && t === 0 ? st.idMip : st.rot.get(viewKey(a, t))?.id || null;
+}
+// The extra identity channels turned the same way (1.23.0): one entry each, null where there is none.
+function turnedX(a, t = 0) {
+  return a === 0 && t === 0 ? st.xMip : st.rot.get(viewKey(a, t))?.x || null;
 }
 
 // The views worth keeping for this image: the nearest ones to the current turn and tilt, as many as
@@ -641,22 +657,36 @@ async function volume3d(seq) {
   const m = st.meta;
   // the identity channel turns too (1.19.0), when this image has one and all its planes loaded
   const ids = m.has_identity && st.idPlanes.every(Boolean) ? st.idPlanes : null;
-  if (m.width * m.height <= 1.5e6) return (st.vol = { r: 1, W: m.width, H: m.height, P: st.planes, IP: ids });
-  const W = Math.ceil(m.width / 2), H = Math.ceil(m.height / 2), P = [], IP = ids ? [] : null;
-  for (const p of [...st.planes, ...(ids || [])]) {
-    const q = new Uint16Array(W * H);
-    for (let y = 0; y < m.height; y++) {
-      const row = y * m.width, qrow = (y >> 1) * W;
-      for (let x = 0; x < m.width; x++) {
-        const v = p[row + x], j = qrow + (x >> 1);
-        if (v > q[j]) q[j] = v;
+  // extra identity channels (1.23.0) turn with it, each only when all its planes loaded
+  const xs = ids ? st.xPlanes.map(ps => ps && ps.every(Boolean) ? ps : null) : [];
+  if (m.width * m.height <= 1.5e6) return (st.vol = { r: 1, W: m.width, H: m.height, P: st.planes, IP: ids, XP: xs });
+  const W = Math.ceil(m.width / 2), H = Math.ceil(m.height / 2);
+  const half = async stack => {
+    const out = [];
+    for (const p of stack) {
+      const q = new Uint16Array(W * H);
+      for (let y = 0; y < m.height; y++) {
+        const row = y * m.width, qrow = (y >> 1) * W;
+        for (let x = 0; x < m.width; x++) {
+          const v = p[row + x], j = qrow + (x >> 1);
+          if (v > q[j]) q[j] = v;
+        }
       }
+      out.push(q);
+      await new Promise(r => setTimeout(r, 0));
+      if (st.openSeq !== seq) return null;
     }
-    (P.length < st.planes.length ? P : IP).push(q);
-    await new Promise(r => setTimeout(r, 0));
-    if (st.openSeq !== seq) return null;
+    return out;
+  };
+  const P = await half(st.planes), IP = ids ? await half(ids) : null;
+  if (!P || (ids && !IP)) return null;
+  const XP = [];
+  for (const x of xs) {
+    const q = x ? await half(x) : null;
+    if (x && !q) return null;
+    XP.push(q);
   }
-  return (st.vol = { r: 2, W, H, P, IP });
+  return (st.vol = { r: 2, W, H, P, IP, XP });
 }
 
 // {img, depth}: each output pixel is the brightest value along a straight line through the stack
@@ -665,7 +695,7 @@ async function volume3d(seq) {
 async function render3d(seq, a, t = 0) {
   const vol = await volume3d(seq);
   if (!vol) return null;
-  const m = st.meta, { W, H, P, IP, r } = vol, nz = m.n_z;
+  const m = st.meta, { W, H, P, IP, r } = vol, XP = vol.XP || [], nz = m.n_z;
   const zs = m.z_step_um / (m.pixel_um * r);
   const ra = (a * Math.PI) / 180, c = Math.cos(ra), s = Math.sin(ra);
   const rt = (t * Math.PI) / 180, ct = Math.cos(rt), sn = Math.sin(rt);
@@ -674,6 +704,7 @@ async function render3d(seq, a, t = 0) {
   const sub = Math.max(1, Math.min(6, Math.ceil(zs * Math.max(Math.abs(s), Math.abs(sn)))));
   const cx = (W - 1) / 2, cy = (H - 1) / 2, cz = ((nz - 1) * zs) / 2;
   const out = new Uint16Array(W * H), depth = new Uint16Array(W * H), idOut = IP ? new Uint16Array(W * H) : null;
+  const xOut = XP.map(x => x ? new Uint16Array(W * H) : null), xk = XP.map((x, k) => k).filter(k => XP[k]);
   const dv = -s * sn;          // how far the output row moves for each pixel along x
   let t0 = performance.now();
   for (let y = 0; y < H; y++) {
@@ -696,6 +727,11 @@ async function render3d(seq, a, t = 0) {
           if (idOut) {      // each channel keeps its own brightest point along the line
             const iv = f ? q0[i] * g + q1[i] * f : q0[i];
             if (iv > idOut[o]) idOut[o] = iv;
+            for (const k of xk) {
+              const a0 = XP[k][z], a1 = XP[k][Math.min(z + 1, nz - 1)];
+              const xv = f ? a0[i] * g + a1[i] * f : a0[i];
+              if (xv > xOut[k][o]) xOut[k][o] = xv;
+            }
           }
         }
       }
@@ -707,18 +743,20 @@ async function render3d(seq, a, t = 0) {
       t0 = performance.now();
     }
   }
-  if (r === 1) return { img: out, depth, id: idOut };
+  if (r === 1) return { img: out, depth, id: idOut, x: xOut };
   const n = m.width * m.height;      // back to the image's own size
   const full = new Uint16Array(n), fdepth = new Uint16Array(n), fid = idOut ? new Uint16Array(n) : null;
+  const fx = xOut.map(x => x ? new Uint16Array(n) : null);
   for (let y = 0; y < m.height; y++) {
     const row = y * m.width, srow = (y >> 1) * W;
     for (let x = 0; x < m.width; x++) {
       const j = srow + (x >> 1);
       full[row + x] = out[j]; fdepth[row + x] = depth[j];
       if (fid) fid[row + x] = idOut[j];
+      for (const k of xk) fx[k][row + x] = xOut[k][j];
     }
   }
-  return { img: full, depth: fdepth, id: fid };
+  return { img: full, depth: fdepth, id: fid, x: fx };
 }
 
 // The plane (1 = first) of the brightest point at each pixel of the projection, worked out once
@@ -808,6 +846,12 @@ function draw() {
   const idVals = chan === "reporter" ? null : st.view === "mip" ? st.idMip
     : in3d ? (status3d ? turnedId(...viewAt(st.nearKey)) : turnedId(st.angle, st.tilt)) : st.idPlanes[st.z];
   if (chan !== "reporter" && !idVals) vals = null;
+  // extra identity channels (1.23.0), each in its own colour; the image waits for all of them, so the
+  // channels never show different planes or angles
+  const xOn = m.identity_extra || [];
+  const xVals = chan === "reporter" || !xOn.some(Boolean) ? null : st.view === "mip" ? st.xMip
+    : in3d ? (status3d ? turnedX(...viewAt(st.nearKey)) : turnedX(st.angle, st.tilt)) : st.xPlanes.map(ps => ps ? ps[st.z] : null);
+  if (xVals !== null && xOn.some((on, k) => on && !xVals?.[k])) vals = null;
   const g = (st.geom = geometry());
   cv.width = g.fw;
   cv.height = g.fh;
@@ -834,7 +878,7 @@ function draw() {
   // being drawn (a large image has over a million pixels).
   const drawn = st.drawn;
   if (!drawn || drawn.vals !== vals || drawn.bf !== showBf || drawn.lo !== lo || drawn.hi !== hi
-      || drawn.idVals !== idVals || drawn.chan !== chan) {
+      || drawn.idVals !== idVals || drawn.chan !== chan || !sameList(drawn.xVals, xVals)) {
     off.width = m.width; off.height = m.height;
     const im = offCtx.createImageData(m.width, m.height);
     const d = im.data;
@@ -842,17 +886,20 @@ function draw() {
     const rc = st.cfg.marker_color || [0, 1, 0];
     const ic = (st.cfg.identity && st.cfg.identity.color) || [1, 0, 1];
     const showRep = chan !== "identity";
+    const xs = (xVals || []).map((x, k) => x ? [x, st.cfg.identity_extra?.[k]?.color || [1, 1, 1]] : null).filter(Boolean);
     for (let i = 0; i < vals.length; i++) {
       const gv = showRep ? Math.min(255, Math.max(0, ((vals[i] - lo) / (hi - lo)) * 255)) : 0;
       const iv = idVals ? idVals[i] : 0;
       const base = showBf ? st.bfVals[i] * 0.5 : 0;
-      d[i * 4] = Math.min(255, base + gv * rc[0] + iv * ic[0]);
-      d[i * 4 + 1] = Math.min(255, base + gv * rc[1] + iv * ic[1]);
-      d[i * 4 + 2] = Math.min(255, base + gv * rc[2] + iv * ic[2]);
+      let r0 = base + gv * rc[0] + iv * ic[0], g0 = base + gv * rc[1] + iv * ic[1], b0 = base + gv * rc[2] + iv * ic[2];
+      for (const [x, c] of xs) { const xv = x[i]; r0 += xv * c[0]; g0 += xv * c[1]; b0 += xv * c[2]; }
+      d[i * 4] = Math.min(255, r0);
+      d[i * 4 + 1] = Math.min(255, g0);
+      d[i * 4 + 2] = Math.min(255, b0);
       d[i * 4 + 3] = 255;
     }
     offCtx.putImageData(im, 0, 0);
-    st.drawn = { vals, bf: showBf, lo, hi, idVals, chan };
+    st.drawn = { vals, bf: showBf, lo, hi, idVals, chan, xVals };
   }
   ctx.imageSmoothingEnabled = st.zoom === 1;
   ctx.drawImage(off, g.ox, g.oy, m.width * g.s, m.height * g.s);

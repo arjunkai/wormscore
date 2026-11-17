@@ -212,6 +212,11 @@ class Browse:
             for z in range(v["id_planes"].shape[0]):
                 files[f"identity/z{z:02d}.png"] = png(v["id_planes"][z])
             files["identity_mip.png"] = png(v["id_mip"])
+        for k, x in enumerate(v["extra"], start=2):
+            if x is not None:
+                for z in range(x[0].shape[0]):
+                    files[f"identity{k}/z{z:02d}.png"] = png(x[0][z])
+                files[f"identity{k}_mip.png"] = png(x[1])
         # Build sets one Enhanced range per microscope from every included image. Before the build
         # there is none yet, so Enhanced uses the same formula on this image alone (and says so).
         lo = round(float(np.median(mip)))
@@ -229,6 +234,8 @@ class Browse:
                 "same_field_as": [], "counted_by_default": True}
         if cfg.get("identity"):
             meta["has_identity"] = v["has_identity"]
+        if cfg.get("identity_extra"):
+            meta["identity_extra"] = [x is not None for x in v["extra"]]
         masks = {f"arr_{i}": c["mask"] for i, c in enumerate(v["cands"])}
         return {"meta": meta, "files": files, "masks": masks, "v": hashlib.sha256(f"{self.id}:{self.session}".encode()).hexdigest()[:12]}
 

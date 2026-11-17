@@ -57,8 +57,17 @@ a preset the GFP settings above are used exactly as before, so GFP projects buil
 marker that labels the cells independently of the reporter being scored, such as a pan-neuronal or
 cell-identity marker. It is found by the same rules, among the channels that are not the marker (the
 reporter is tested first, so a channel is never both); if two channels match, the one naming a
-configured dye is used, otherwise it is UNRESOLVED. One identity channel is supported; a multi-color
-identity system such as NeuroPAL is not.
+configured dye is used, otherwise it is UNRESOLVED.
+
+**Several identity channels** (1.23.0, for multi-colour systems such as NeuroPAL; Yemini et al. 2021, Cell
+184:272). `"identity"` may list up to four channels; the first is the identity channel above (it may find
+the suggested cells), the others are shown with it only. `{"preset": "NeuroPAL"}` stands for TagRFP-T
+(pan-neuronal, shown white, the first), mNeptune2.5 (red), CyOFP1 (green) and mTagBFP2 (blue). The other
+channels are found by the same rules among channels still unassigned after the reporter and the identity
+channel, in the order listed, so CyOFP1, excited at 488 nm like GFP, takes the 488 nm channel that does
+not name the reporter's dye. Each is saved for display only (`identity2/` to `identity4/`), scaled per image
+like the identity channel, and is never measured. Projects with one identity channel are built and shown
+exactly as before.
 
 ## 3. Inclusion rules
 

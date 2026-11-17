@@ -213,6 +213,14 @@ PRESETS = {
     "mKate2": {"label": "mKate2", "excitation_nm": [561, 588, 594], "emission_band_start_nm": [590, 650],
                "emission_nm": [615, 675], "dye_names": ["mKate2", "Leica/mKate2"],
                "channel_name_prefixes": ["mKate"], "leica_lut": None, "color": [1, 0, 1]},
+    # 1.23.0, for NeuroPAL: CyOFP1 is excited at 488 nm like GFP; as an extra identity channel it only
+    # claims a channel the reporter did not (the reporter wins by its dye name, as before).
+    "CyOFP1": {"label": "CyOFP1", "excitation_nm": [488], "emission_band_start_nm": [560, 600],
+               "emission_nm": [570, 610], "dye_names": ["CyOFP1", "CyOFP"], "channel_name_prefixes": ["CyOFP"],
+               "leica_lut": None, "color": [1, 0.6, 0]},
+    "mNeptune2.5": {"label": "mNeptune2.5", "excitation_nm": [594, 600, 633, 640], "emission_band_start_nm": [640, 690],
+                    "emission_nm": [640, 700], "dye_names": ["mNeptune2.5", "mNeptune2", "mNeptune"],
+                    "channel_name_prefixes": ["mNeptune"], "leica_lut": None, "color": [1, 0, 0]},
     "BFP": {"label": "BFP", "excitation_nm": [402, 405], "emission_band_start_nm": [410, 460],
             "emission_nm": [430, 485], "dye_names": ["TagBFP", "mTagBFP2", "EBFP2", "BFP", "Leica/TagBFP"],
             "channel_name_prefixes": ["BFP", "TagBFP"], "leica_lut": None, "color": [0, 0.6, 1]},
@@ -248,6 +256,40 @@ def resolve_marker(raw, where="marker"):
         if k != "preset":
             out[k] = v
     return out
+
+
+# NeuroPAL (Yemini et al. 2021): four landmark fluorophores shown together. TagRFP-T (pan-neuronal) is the
+# primary identity channel, where suggested cells are found; the other three are shown with it, never measured.
+NEUROPAL = [{"preset": "TagRFP", "label": "NeuroPAL", "color": [1, 1, 1]},
+            {"preset": "mNeptune2.5", "color": [1, 0, 0]},
+            {"preset": "CyOFP1", "color": [0, 1, 0]},
+            {"preset": "BFP", "label": "mTagBFP2", "color": [0, 0, 1]}]
+MAX_IDENTITY = 4
+
+
+def identity_entries(raw):
+    """The identity channels config.json asks for, as a list (first = primary), or [] for none.
+    identity may be one entry (as before), a list of entries, or {"preset": "NeuroPAL"}."""
+    if not raw:
+        return []
+    if isinstance(raw, dict) and str(raw.get("preset", "")).lower() == "neuropal":
+        return [dict(NEUROPAL[0], **{k: v for k, v in raw.items() if k != "preset"})] + [dict(x) for x in NEUROPAL[1:]]
+    if isinstance(raw, list):
+        if not raw or len(raw) > MAX_IDENTITY or not all(isinstance(x, dict) for x in raw):
+            raise SystemExit(f"identity: give 1 to {MAX_IDENTITY} channels, each like {{\"preset\": \"mCherry\"}}.")
+        return raw
+    return [raw]
+
+
+def apply_identity(cfg, raw):
+    """cfg["identity"] = the primary channel (or None); cfg["identity_extra"] = the others, set only when
+    there are any, so the merged settings of every other project stay exactly as before."""
+    items = identity_entries(raw)
+    cfg["identity"] = resolve_identity(items[0]) if items else None
+    cfg.pop("identity_extra", None)
+    if len(items) > 1:
+        cfg["identity_extra"] = [resolve_identity(x) for x in items[1:]]
+    return cfg
 
 
 def resolve_identity(raw):
@@ -309,8 +351,7 @@ def load(project):
     # whole, so an mCherry marker never keeps GFP's laser line or dye names.
     if isinstance(raw.get("marker"), dict) and raw["marker"].get("preset"):
         cfg["marker"] = resolve_marker(raw["marker"])
-    cfg["identity"] = resolve_identity(raw.get("identity"))
-    return cfg
+    return apply_identity(cfg, raw.get("identity"))
 
 
 def matches(pattern, rel_path):

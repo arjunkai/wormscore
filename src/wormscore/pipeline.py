@@ -145,6 +145,9 @@ def load_images(project):
             img[k] = int(r[k]) if r[k] != "" else None
         img["identity_channel"] = int(r["identity_channel"]) if r.get("identity_channel", "") != "" else None
         img["channel_roles"] = r["channel_roles"].split("/")
+        # extra identity channels (1.23.0): IDENTITY2, IDENTITY3, IDENTITY4 in the roles, set only by projects with them
+        if any(x.startswith("IDENTITY") and x[8:].isdigit() for x in img["channel_roles"]):
+            img["identity_extra_channels"] = [R.pick(img["channel_roles"], f"IDENTITY{k}") for k in range(2, 2 + 3)]
         img["_reader"] = (r["reader_kind"], r["local_path"], int(r["reader_index"]), r["reader_axes"])
         out.append(img)
     return out
@@ -362,6 +365,9 @@ def identity_log_lines(cfg):
     ident = cfg.get("identity")
     if not ident:
         return []
+    extra = cfg.get("identity_extra") or []
+    more = ([f"Other identity channels, shown with it and never measured: {', '.join(x['label'] for x in extra)}, "
+             "each scaled per image like the identity channel."] if extra else [])
     lo, hi = cfg["display"]["identity_contrast_percentiles"]
     where = (f"found on the {ident['label']} identity channel (median-filtered maximum projection) and the "
              f"{cfg['marker']['label']} reporter measured in those regions" if ident["spots_from"] == "identity"
@@ -369,7 +375,7 @@ def identity_log_lines(cfg):
     return [f"Identity channel: {ident['label']}, shown during scoring for finding cells, never measured; displayed "
             f"per image from the {lo}th to the {hi}th percentile of its maximum projection, so its brightness "
             f"cannot hint at the genotype. Suggested cells {where}. Images without it: "
-            f"{'left out (identity.required)' if ident['required'] else 'kept, scored on the reporter alone'}."]
+            f"{'left out (identity.required)' if ident['required'] else 'kept, scored on the reporter alone'}."] + more
 
 
 def saturation_for(img, cfg):
@@ -407,9 +413,23 @@ def read_for_viewer(s, cfg, corr=None):
         if ident["spots_from"] == "identity":
             spot_mip = M.median_filter_stack(iraw, mc["median_filter_px"]).max(0)
         del iraw
+    # Extra identity channels (1.23.0, for example NeuroPAL): shown only, each scaled per image like the
+    # identity channel, never measured and never used to find cells. None where an image lacks one.
+    extra = []
+    for k, _ in enumerate(cfg.get("identity_extra") or []):
+        ci = (s.get("identity_extra_channels") or [None] * 3)[k]
+        if ci is None:
+            extra.append(None)
+            continue
+        xraw = R.read(s, ci)
+        if xraw.shape != raw.shape:
+            raise SystemExit(f"{s['relative_path']} {s['location_in_file']}: the {cfg['identity_extra'][k]['label']} "
+                             f"channel has shape {xraw.shape}, the marker {raw.shape}.")
+        extra.append(M.identity_display(xraw, cfg))
+        del xraw
     cands = M.candidate_spots(spot_mip, s["pixel_um"], cfg)
     return {"raw": raw, "filt": filt, "mip": mip, "bf": bf, "has_identity": has_identity,
-            "id_planes": id_planes, "id_mip": id_mip, "cands": cands, "sat_mask": sat_mask}
+            "id_planes": id_planes, "id_mip": id_mip, "cands": cands, "sat_mask": sat_mask, "extra": extra}
 
 
 def prepare(project, reassign=False, add=False, log=print):
@@ -510,6 +530,13 @@ def prepare(project, reassign=False, add=False, log=print):
             for z in range(v["id_planes"].shape[0]):
                 Image.fromarray(v["id_planes"][z]).save(d / "identity" / f"z{z:02d}.png")
             Image.fromarray(v["id_mip"]).save(d / "identity_mip.png")
+        for k, x in enumerate(v["extra"], start=2):     # only in projects with extra identity channels
+            if x is not None:
+                (d / f"identity{k}").mkdir()
+                for z in range(x[0].shape[0]):
+                    Image.fromarray(x[0][z]).save(d / f"identity{k}" / f"z{z:02d}.png")
+                Image.fromarray(x[1]).save(d / f"identity{k}_mip.png")
+        s["_extra"] = [x is not None for x in v["extra"]]
         del v
 
         exclude = np.zeros(mip.shape, bool)
@@ -611,6 +638,8 @@ def prepare(project, reassign=False, add=False, log=print):
                 "counted_by_default": s["counted_by_default"]}
         if ident:      # only in projects with an identity channel, so other blind sets stay byte-identical
             meta["has_identity"] = s["_has_identity"]
+        if cfg.get("identity_extra"):
+            meta["identity_extra"] = s["_extra"]
         (d / "meta.json").write_text(json.dumps(meta, indent=1))
 
     # Hidden repeats: the original's files under the repeat's code. Originals were picked so

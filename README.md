@@ -45,7 +45,11 @@ where you turn it on, because ImageJ files do not record which channel is which)
 BFP). **Have a second marker that labels the cell,** such as a pan-neuronal mCherry? Add
 `"identity": {"preset": "mCherry"}`: the scoring page can then show the reporter, the identity
 marker or both (keys 1, 2, 3), and suggested cells are found on the identity marker and the reporter is
-measured there, so a dim or missing reporter cell is still found. See
+measured there, so a dim or missing reporter cell is still found. **NeuroPAL?** Use
+`"identity": {"preset": "NeuroPAL"}`: its four colours (TagRFP-T white, mNeptune2.5 red, CyOFP1 green,
+mTagBFP2 blue) are shown together in 2D and 3D, each scaled per image and never measured; or list up to four
+identity channels yourself, `"identity": [{"preset": "mCherry"}, {"preset": "BFP"}]`, the first one finding
+the cells. GFP and CyOFP1 are both green, so use keys 1 and 2 to see each on its own. See
 [docs/METHODS.md](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md) sections 2 and 6.
 
 ## Install
@@ -117,7 +121,9 @@ L1 heads with an endogenous GFP reporter, about 150 MB, from
 [Sun and Hobert 2021](https://doi.org/10.1038/s41586-021-04071-4)
 ([Zenodo 5602160](https://doi.org/10.5281/zenodo.5602160), CC BY 4.0). Each file is checked against its
 MD5 from the Zenodo record and cached in `%LOCALAPPDATA%\wormscore\demo_cache` (`~/.cache` elsewhere).
-The two reporters stand in for two genotypes; both are normal animals, so this is for practice.
+The two reporters stand in for two genotypes; both are normal animals, so this is for practice. The
+animals carry NeuroPAL, so since 1.23.0 the demo also shows its four colours (keys 1, 2, 3 switch between
+GFP, NeuroPAL and both).
 The images are not part of this repository.
 
 ## Using it on your own images

@@ -11,9 +11,7 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Features
 
-- **Several identity channels,** for multi-color systems such as NeuroPAL.
 - **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
-- **Example data.** An optional NeuroPAL example download, if its license allows.
 - **Open (non-blind) scoring, under consideration.** An optional project type for pilots or
   phenotypes that cannot be hidden, chosen when the project is created. Every output and the
   Methods draft would state that scoring was not blind to genotype. Blind scoring stays the default.
@@ -34,6 +32,13 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.23.0: **Several identity channels, for NeuroPAL.** `"identity"` may list up to four channels, and
+  `{"preset": "NeuroPAL"}` shows its four colours together (TagRFP-T white, mNeptune2.5 red, CyOFP1 green,
+  mTagBFP2 blue) in Projection, Planes and 3D, each scaled per image and never measured. The first channel
+  is the identity channel as before. New presets: CyOFP1 and mNeptune2.5. The real-worm demo (Sun and Hobert
+  2021, CC BY 4.0) is NeuroPAL with a GFP reporter, so it now shows the NeuroPAL colours too, which serves as
+  the NeuroPAL example. (The Yemini et al. 2021 NeuroPAL datasets, MIT License, hold no reporter to score.)
+  Projects with one identity channel build and show exactly as before.
 - 1.22.0: **Gut autofluorescence check.** After unblinding, in projects whose images also recorded a
   channel with no label (for example blue), an optional card measures each outline (or the first
   suggested cell) in that channel, in the reporter's sharpest plane for the region and the planes either

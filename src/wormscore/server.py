@@ -358,6 +358,9 @@ def make_handler(project):
                                        "identity": ({"label": project.cfg["identity"]["label"],
                                                      "color": C.identity_color(project.cfg)}
                                                     if project.cfg.get("identity") else None),
+                                       **({"identity_extra": [{"label": x["label"], "color": list(x.get("color") or [1, 1, 1])}
+                                                              for x in project.cfg["identity_extra"]]}
+                                          if project.cfg.get("identity_extra") else {}),
                                        "scoring": sc,
                                        "min_scored": project.cfg["unblinding"]["min_scored_worms"]})
             if parts == ["api", "worms"]:

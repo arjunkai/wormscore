@@ -482,7 +482,7 @@ def _raw(project):
 
 def _cfg_from_raw(raw):
     cfg = C.merge(C.DEFAULTS, raw)
-    cfg["identity"] = C.resolve_identity(raw.get("identity"))
+    C.apply_identity(cfg, raw.get("identity"))
     if isinstance(raw.get("marker"), dict) and raw["marker"].get("preset"):
         cfg["marker"] = C.resolve_marker(raw["marker"])
     return cfg

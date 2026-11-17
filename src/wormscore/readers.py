@@ -119,6 +119,28 @@ def prefer_named_dye(roles, fluors, cfg):
     return roles
 
 
+def with_extras(roles, cfg, match):
+    """Channels left as OTHER that match an extra identity channel (1.23.0, for example NeuroPAL's) get
+    the role IDENTITY2, IDENTITY3, ... in the order config.json lists them. match(i, settings) -> bool.
+    Without extra identity channels the roles are returned unchanged."""
+    extras = cfg.get("identity_extra") or []
+    if not extras:
+        return roles
+    out = list(roles)
+    for k, m in enumerate(extras, start=2):
+        for i, r in enumerate(out):
+            if r == "OTHER" and match(i, m):
+                out[i] = f"IDENTITY{k}"
+    return out
+
+
+def named_extras(roles, cfg, names, fluors, excitations, emissions):
+    n = len(roles)
+    get = lambda xs, i: xs[i] if xs and i < len(xs) else None
+    return with_extras(roles, cfg, lambda i, m: _named_match(get(names, i) or "", get(fluors, i), get(excitations, i),
+                                                             get(emissions, i), m))
+
+
 def pick(roles, role):
     return roles.index(role) if roles.count(role) == 1 else None
 
@@ -199,6 +221,7 @@ def leica_images(path, cfg):
         flags = []
         if len(chans) == im["channels"]:
             roles = [marker_from_leica(c, l, cfg) for c, l in zip(chans, luts)]
+            roles = with_extras(roles, cfg, lambda i, m: _leica_match(chans[i], luts[i], m))
         else:
             roles = ["UNRESOLVED"] * im["channels"]
             flags.append(f"{len(chans)} detectors for {im['channels']} channels")
@@ -241,6 +264,8 @@ def zeiss_images(path, cfg):
         roles.append(marker_from_named(c.get("Name") or "", c.findtext("Fluor"), c.findtext("ExcitationWavelength"),
                                        c.findtext("IlluminationType") == "Transmitted", cfg))
     roles = prefer_named_dye(roles, fluors, cfg)
+    roles = named_extras(roles, cfg, names, fluors, [c.findtext("ExcitationWavelength") for c in (chans if chans is not None else [])],
+                         [None] * len(roles))
     mi = pick(roles, "MARKER")
     objective = text("ObjectiveName")
     if not objective and text("NominalMagnification"):
@@ -300,6 +325,8 @@ def ome_images(path, cfg):
             roles.append(marker_from_named(c.get("Name", ""), c.get("Fluor"), c.get("ExcitationWavelength"),
                                            c.get("IlluminationType") == "Transmitted", cfg))
         roles = prefer_named_dye(roles, [c.get("Fluor") for c in px.findall("o:Channel", OME_NS)], cfg)
+        roles = named_extras(roles, cfg, names, [c.get("Fluor") for c in px.findall("o:Channel", OME_NS)],
+                             [c.get("ExcitationWavelength") for c in px.findall("o:Channel", OME_NS)], None)
         mi = pick(roles, "MARKER")
         exposures = sorted({p.get("ExposureTime") for p in px.findall("o:Plane", OME_NS)
                             if p.get("TheC") == str(mi) and p.get("ExposureTime")})
@@ -364,7 +391,9 @@ def nikon_images(path, cfg):
             "objective": objective,
             "n_z": sizes.get("Z", 1), "n_t": sizes.get("T", 1), "width": sizes["X"], "height": sizes["Y"],
             "pixel_um": round(vox.x, 4), "z_step_um": round(vox.z, 3) if "Z" in sizes else 0.0,
-            "bits": bits, "channel_roles": prefer_named_dye(roles, [None] * len(roles), cfg), "channel_names": names,
+            "bits": bits, "channel_roles": named_extras(prefer_named_dye(roles, [None] * len(roles), cfg), cfg, names, None,
+                                                        [c.channel.excitationLambdaNm for c in chans],
+                                                        [c.channel.emissionLambdaNm for c in chans]), "channel_names": names,
             "settings": "; ".join(camera_settings), "zoom": f"{mic.zoomMagnification:g}" if mic.zoomMagnification else "",
             "acquired": " ".join((text.get("date") or "").split()),
             "stage_x": stage.x, "stage_y": stage.y, "flags": [], "_reader": ("nd2", str(path), p, dims),
@@ -406,6 +435,8 @@ def olympus_images(path, cfg):
                                "trans" in str(c.get("LightType", "")).lower() or str(c.get("CH Name", "")).upper().startswith("TD"),
                                cfg, c.get("EmissionWavelength")) for c in chans]
     roles = prefer_named_dye(roles, [c.get("DyeName") for c in chans], cfg)
+    roles = named_extras(roles, cfg, [str(c.get("DyeName", "")) for c in chans], [c.get("DyeName") for c in chans],
+                         [c.get("ExcitationWavelength") for c in chans], [c.get("EmissionWavelength") for c in chans])
     if len(chans) != size.get("C", 1):
         roles = ["UNRESOLVED"] * size.get("C", 1)
     mi = pick(roles, "MARKER")
@@ -438,7 +469,8 @@ def olympus_images(path, cfg):
 
 # ------------------------------------------------------------------ ImageJ hyperstack TIFF
 
-IMAGEJ_ROLES = {"marker": "MARKER", "identity": "IDENTITY", "brightfield": "BF", "other": "OTHER"}
+IMAGEJ_ROLES = {"marker": "MARKER", "identity": "IDENTITY", "brightfield": "BF", "other": "OTHER",
+                "identity2": "IDENTITY2", "identity3": "IDENTITY3", "identity4": "IDENTITY4"}
 
 
 def is_imagej_stack(path):

@@ -87,6 +87,9 @@ def make_real_demo(project, log=print, fetch=download, cache=None):
                       "Score each cell separately; the animal is the unit for statistics."],
         },
         "unblinding": {"min_scored_worms": 2},
+        # 1.23.0: the four NeuroPAL colours shown with the reporter (keys 1, 2 and 3 switch); suggested cells
+        # are found on the GFP reporter, since the task is to pick GFP cells
+        "identity": {"preset": "NeuroPAL", "spots_from": "reporter"},
     }
     (project / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     log(CREDIT)
