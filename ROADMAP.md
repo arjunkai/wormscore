@@ -32,6 +32,8 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.1: **Fix: the "Unlocked for this save" notes in Project settings** pushed a one-line text to the right
+  edge (their class clashed with the top bar's). Found in a check of the new screens at 125% scaling.
 - 1.26.0: **Bleed-through of each NeuroPAL channel.** With several identity channels, identity-only controls
   also fit the reporter channel to all of them together (multiple least squares), giving each channel's share,
   such as CyOFP1's at 488 nm. Images where the channels are too alike to separate (variance inflation factor

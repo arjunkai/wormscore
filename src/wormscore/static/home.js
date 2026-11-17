@@ -1390,7 +1390,7 @@ async function openProjectSettings(section) {
       onchange: e => { set(e.target.value); draw(); } }, opts(choices, value));
     return h("div", { class: "s-card src" + (off ? " locked" : "") },
       mk.locked && !off ? warnNote(`Unlocked for this save (reason: “${mkReason}”). `
-        + "Run Scan data, then rebuild keeping the codes, to use the change.", { class: "warn-note top" }) : null,
+        + "Run Scan data, then rebuild keeping the codes, to use the change.", { class: "warn-note first" }) : null,
       h("div", { class: "src-head" },
         h("label", { class: "f-label", for: "psReporter" }, "Reporter"),
         off ? h("span", { class: "chip wait" }, "Locked: scoring has started") : null,
@@ -1454,7 +1454,7 @@ async function openProjectSettings(section) {
     const extras = !!(a.secondary_defect_calls.length || Object.keys(ia).length || a.dim_cutoff_sd || a.allow_cross_microscope.length);
     return h("div", { class: "s-card src" + (off ? " locked" : "") },
       an.locked && !off ? warnNote(`Unlocked for this save (reason: \u201c${anReason}\u201d). The tests will run on the new settings and be reported as exploratory.`,
-        { class: "warn-note top" }) : null,
+        { class: "warn-note first" }) : null,
       h("div", { class: "src-head" },
         h("label", { class: "f-label", for: "psRef" }, "Compare each genotype with"),
         off ? h("span", { class: "chip wait" }, an.packages ? "Locked: a second-scorer package exists" : "Locked: scoring has started") : null,
@@ -1505,7 +1505,7 @@ async function openProjectSettings(section) {
       const [cls, text] = previewText(previews[i], scanned, s) || ["", ""];
       return h("div", { class: "s-card src" + (off ? " locked" : "") },
         i === 0 && locked && srcReason ? warnNote(`Unlocked for this save (reason: \u201c${srcReason}\u201d). Coded images follow a moved folder; `
-          + "changed genotypes and exclusions are recorded and used at unblinding.", { class: "warn-note top" }) : null,
+          + "changed genotypes and exclusions are recorded and used at unblinding.", { class: "warn-note first" }) : null,
         h("div", { class: "src-head" },
           h("label", { class: "f-label", for: `srcName${i}` }, "Folder name"),
           off ? h("span", { class: "chip wait" }, "Locked: scoring has started") : null,
