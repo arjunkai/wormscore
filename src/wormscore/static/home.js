@@ -314,6 +314,9 @@ function renderMain(d) {
   const ms = p.markers_stale, msScan = !!ms?.scan, msBuild = !!ms && !ms.scan && !!ms.build;
   // image folders or genotype rules changed after the last Scan data or Build (1.26.4)
   const fs = p.folders_stale, fsScan = !!fs?.scan, fsBuild = !!fs && !fs.scan && !!fs.build;
+  // a new scan reads coded images differently than the key records (1.26.7): what a rebuild would change
+  const sc = p.scan_changes || [];
+  const scanDiff = sc.length ? sc[0] + (sc.length > 1 ? ` (and ${sc.length - 1} more)` : "") : "";
   const s1 = stepRunning("scan") ? "running" : msScan || fsScan ? "next" : scanned ? "done" : "next";
   const sF = f?.changed_after_lock ? "changed" : formDone ? "done" : scanned ? "next" : "wait";
   const s2 = building ? "running" : msBuild || fsBuild ? "next" : built ? "done" : scanned && formDone && !msScan ? "next" : "wait";
@@ -338,7 +341,8 @@ function renderMain(d) {
       [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
         !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")],
       msBuild && built && !building ? warnNote("The markers changed. Rebuild, keeping the current codes, to use them.")
-        : fsBuild && built && !building ? warnNote("The image folders or rules changed. Rebuild to use them.") : null),
+        : fsBuild && built && !building ? warnNote("The image folders or rules changed. Rebuild to use them.")
+        : scanDiff && built && !building ? warnNote(`The last scan reads coded images differently: ${scanDiff}. Rebuild, keeping the current codes, to use it.`) : null),
     stepCard(4, s3, ["Score", wsHelp(h, "score", "Score")], "Score each coded image. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
       [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },

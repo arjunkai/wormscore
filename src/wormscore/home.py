@@ -181,6 +181,15 @@ def project_status(path):
     st["markers_stale"] = None if info else stale(p)
     from .editconfig import stale as folders_stale      # 1.26.4: the same for image folders and rules
     st["folders_stale"] = None if info else folders_stale(p)
+    # 1.26.7: a new scan reads coded images differently than the key records (settings groups or bit depth):
+    # the Build card says what a rebuild would change. Counts and group letters only.
+    st["scan_changes"] = []
+    if not info:
+        from .rescan import scan_changes
+        try:
+            st["scan_changes"] = scan_changes(p)["lines"]
+        except (Exception, SystemExit):
+            pass
     inv = p / "outputs" / "inventory.csv"
     st["scanned"] = _rows(inv) if inv.is_file() else None
     blind = p / "blind"

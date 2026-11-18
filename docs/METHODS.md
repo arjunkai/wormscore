@@ -18,6 +18,28 @@ in `outputs/inventory.csv` with objective, planes, pixel size, z-step, bit depth
 acquisition settings that affect brightness (detector gain or voltage, laser power, averaging, exposure).
 Images whose settings differ from the most common value on the same microscope are flagged.
 
+The settings are those of the reporter channel, read from that channel's own part of the metadata:
+
+- Leica: detector gain, each laser line in use with its intensity, and line averaging.
+- Zeiss: detector gain (or voltage), each laser line with the share of its power let through
+  (1 - attenuation), lamp intensity and exposure for cameras, and averaging.
+- Nikon: camera exposure, gain and multiplier, each laser line that is on with its power, and the
+  fluorescence lamp.
+- OME-TIFF: detector gain and voltage, each light source's wavelength and attenuation as the file
+  states them, and exposure.
+- Olympus: detector voltage, each laser with its transmissivity, and integration.
+
+Bit depth is the number of bits the detector used, which sets the saturation level (a 12-bit camera
+saved in a 16-bit file saturates at 4095). A 16-bit Zeiss or OME-TIFF file that does not record it is
+flagged "bit depth not recorded" and its saturation level is taken as 65535; state the true level per
+microscope under `saturation_value` in `config.json`.
+
+Before 1.26.7, gain and laser power were not read for Zeiss, Nikon and OME-TIFF, and Zeiss camera
+files were read as 16-bit. A project built earlier keeps its settings groups and saturation level
+until it runs Scan data again. If the new scan would change them for images that already have a
+code, the Build card says what would change, and the rebuild that applies it records the same in
+`log.md` (for example "4 coded images move from settings group A to B"). Scores never change.
+
 ## 2. Which channel is the marker
 
 From metadata only:

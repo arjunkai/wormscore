@@ -32,6 +32,20 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.7: **Detector gain, laser power and bit depth are read for Zeiss, Nikon and OME-TIFF** (independent audit).
+  - Images taken at different gain or laser power shared a settings group, so their brightness could be
+    compared. Zeiss files now give the reporter channel's gain and laser share (and exposure and lamp
+    intensity for cameras), Nikon files its laser power, OME-TIFF files its detector and light-source
+    settings. The four real demo files were taken at gain 550 and 800 and are now two settings groups.
+  - Zeiss camera files were read as 16-bit. Their true bit depth (12 or 14) is now read, so saturation is
+    flagged and Standard display covers the real range. A 16-bit Zeiss or OME-TIFF file that does not
+    record it is flagged "bit depth not recorded"; state the level under `saturation_value` in `config.json`.
+  - **Who is affected:** projects with Zeiss `.czi`, Nikon `.nd2` or OME-TIFF images. Leica and Olympus
+    projects were already read this way. Nothing changes until the project runs Scan data again: a built
+    project keeps its settings groups and saturation level, and "Rebuild, keeping the current codes" gives
+    the same blind set. **What to do:** run Scan data again. If the Build card then says that coded images
+    would change settings group or saturation level, rebuild, keeping the current codes; the change is
+    recorded in `log.md`. Scores do not change. Brightness comparisons at unblinding then use the new groups.
 - 1.26.6: **Build blind set is much faster on large images with few cells.** Suggested cells are found
   in a square around each bright point, not with passes over the whole image; the regions and numbers
   are exactly the same (a test compares them with the earlier method). A 2048 x 2048 image with one or

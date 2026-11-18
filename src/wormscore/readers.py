@@ -271,51 +271,125 @@ def leica_images(path, cfg):
 
 # ------------------------------------------------------------------ Zeiss CZI
 
-def zeiss_images(path, cfg):
-    with czifile.CziFile(str(path)) as f:
-        md = f.xml_element if not callable(f.xml_element) else f.xml_element()
-        # f.scenes maps scene number -> scene, like a dict
-        scenes = [(k, f.scenes[k].dims, f.scenes[k].shape) for k in f.scenes]
+NO_BITS = "bit depth not recorded"
+
+
+def _no_bits_flag(system, cfg, top):
+    """1.26.7: a 16-bit file that does not say how many bits the detector used (a 12- or 14-bit camera
+    saves into 16). The top of the range is not guessed: the image is flagged, unless config.json
+    states the microscope's saturation_value."""
+    if system in (cfg.get("saturation_value") or {}):
+        return []
+    return [f"{NO_BITS}: saturation is taken as {top}; for a 12- or 14-bit camera set saturation_value in config.json"]
+
+
+def _num(v):
+    try:
+        return float(str(v).strip().replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _zeiss_settings(c, md):
+    """What sets the brightness of one channel (1.26.7), read from that channel's own block: detector gain
+    or voltage, each laser line with the share of its power let through, lamp intensity, camera exposure
+    and averaging. ZEN writes the gain as DetectorSettings/Gain and the laser as LightSourceSettings/
+    Attenuation (the share held back). Before 1.26.7 only Voltage and Transmission were looked for, which
+    those files do not have, so images taken at different gain shared a settings group."""
+    get = lambda path: (c.findtext(path) or "").strip()
+    parts = []
+    volt, gain = _num(get("DetectorSettings/Voltage")), _num(get("DetectorSettings/Gain"))
+    if volt is not None:
+        parts.append(f"PMT {volt:.0f} V")
+    elif gain is not None:
+        parts.append(f"gain {gain:g}")
+    for tag, label in (("DigitalGain", "digital gain"), ("EMGain", "EM gain")):
+        v = _num(get(f"DetectorSettings/{tag}"))
+        if v is not None and v not in (0, 1):
+            parts.append(f"{label} {v:g}")
+    lights = []
+    for l in c.iter("LightSourceSettings"):
+        text = lambda tag: (l.findtext(tag) or "").strip()
+        w, t, a = _num(text("Wavelength")), _num(text("Transmission")), _num(text("Attenuation"))
+        share = t if t is not None else 1 - a if a is not None else None
+        if w is not None and share is not None:
+            lights.append(f"{w:.0f}nm@{share * 100:.2f}%")
+        elif text("Intensity"):
+            lights.append(f"light {text('Intensity')}")
+    if not lights:      # no laser in the channel's block: every line of the experiment, as before 1.26.7
+        lights = [f"{w}nm@{float(t) * 100:.2f}%" for w, t in sorted(
+            {(l.findtext("Wavelength"), l.findtext("Transmission")) for l in md.iter("LightSourceSettings")
+             if l.findtext("Wavelength")}) if t]
+    if lights:
+        parts.append(";".join(lights))
+    exposure = _num(get("ExposureTime"))        # cameras; in nanoseconds
+    if exposure:
+        parts.append(f"exposure {exposure / 1e6:g} ms")
+    avg = get("LaserScanInfo/Averaging") or next((e.text.strip() for e in md.iter("Averaging") if e.text and e.text.strip()), "")
+    if avg:
+        parts.append(f"avg {avg}")
+    return "; ".join(parts)
+
+
+def _zeiss_meta(md, cfg):
+    """Everything read from a CZI's metadata XML; it is the same for every scene of the file."""
     text = lambda tag: next((e.text.strip() for e in md.iter(tag) if e.text and e.text.strip()), "")
     scale = {d.get("Id"): float(d.findtext("Value")) * 1e6 for d in md.iter("Distance") if d.get("Id") in ("X", "Z")}
     chans = md.find(".//Information/Image/Dimensions/Channels")
-    names, roles, volts, fluors = [], [], [], []
-    for c in chans if chans is not None else []:
+    chans = list(chans) if chans is not None else []
+    names, roles, fluors = [], [], []
+    for c in chans:
         names.append(c.get("Name") or "")
-        volts.append(c.findtext("DetectorSettings/Voltage") or "")
         fluors.append(c.findtext("Fluor"))
         roles.append(marker_from_named(c.get("Name") or "", c.findtext("Fluor"), c.findtext("ExcitationWavelength"),
                                        c.findtext("IlluminationType") == "Transmitted", cfg))
     roles = prefer_named_dye(roles, fluors, cfg)
-    roles = named_extras(roles, cfg, names, fluors, [c.findtext("ExcitationWavelength") for c in (chans if chans is not None else [])],
+    roles = named_extras(roles, cfg, names, fluors, [c.findtext("ExcitationWavelength") for c in chans],
                          [None] * len(roles))
     mi = pick(roles, "MARKER")
     objective = text("ObjectiveName")
     if not objective and text("NominalMagnification"):
         na = f"/{float(text('LensNA')):g}" if text("LensNA") else ""
         objective = f"{text('NominalMagnification')}x{na} {text('Immersion')}".strip()
-    lights = sorted({(l.findtext("Wavelength"), l.findtext("Transmission")) for l in md.iter("LightSourceSettings")
-                     if l.findtext("Wavelength")})
-    settings = "; ".join(x for x in [
-        f"PMT {float(volts[mi]):.0f} V" if mi is not None and volts[mi] else "",
-        ";".join(f"{w}nm@{float(t) * 100:.2f}%" for w, t in lights if t),
-        f"avg {text('Averaging')}" if text("Averaging") else ""] if x)
-    bits = int(text("EffectiveBitsPerPixel") or text("BitsPerPixel") or 16)
+    system = f"Zeiss {text('System')}".strip()
+    # 1.26.7: cameras record the bits they use as ComponentBitCount (12 or 14, saved into 16). It was not
+    # read, so saturation was taken as 65535 and never flagged.
+    image = md.find(".//Information/Image")
+    own = lambda tag: ((chans[mi].findtext(tag) if mi is not None else None)
+                       or (image.findtext(tag) if image is not None else None) or "").strip()
+    flags = []
+    bits = text("EffectiveBitsPerPixel") or text("BitsPerPixel") or own("ComponentBitCount")
+    if not bits:
+        bits = "8" if own("PixelType") == "Gray8" else "16"
+        if bits == "16":
+            flags = _no_bits_flag(system, cfg, 65535)
+    return {"system": system, "objective": objective, "pixel_um": round(scale.get("X", 0), 4),
+            "z_step_um": round(scale.get("Z", 0), 3), "bits": int(bits), "channel_roles": roles, "channel_names": names,
+            "settings": _zeiss_settings(chans[mi], md) if mi is not None else "",
+            "zoom": text("Zoom").replace(",", "."), "acquired": text("AcquisitionDateAndTime")[:19].replace("T", " "),
+            "flags": flags}
+
+
+def zeiss_images(path, cfg):
+    with czifile.CziFile(str(path)) as f:
+        md = f.xml_element if not callable(f.xml_element) else f.xml_element()
+        # f.scenes maps scene number -> scene, like a dict
+        scenes = [(k, f.scenes[k].dims, f.scenes[k].shape) for k in f.scenes]
+    meta = _zeiss_meta(md, cfg)
     out = []
     for i, dims, shape in scenes:
         dims = "".join(dims)
         out.append({
-            "format": "Zeiss CZI", "system": f"Zeiss {text('System')}".strip(),
+            "format": "Zeiss CZI", "system": meta["system"],
             "location_in_file": f"whole file (scene {i})" if len(scenes) == 1 else f"scene {i}",
-            "objective": objective,
+            "objective": meta["objective"],
             "n_z": shape[dims.index("Z")] if "Z" in dims else 1,
             "n_t": shape[dims.index("T")] if "T" in dims else 1,
             "width": shape[dims.index("X")], "height": shape[dims.index("Y")],
-            "pixel_um": round(scale.get("X", 0), 4), "z_step_um": round(scale.get("Z", 0), 3),
-            "bits": bits, "channel_roles": roles, "channel_names": names, "settings": settings,
-            "zoom": text("Zoom").replace(",", "."),
-            "acquired": text("AcquisitionDateAndTime")[:19].replace("T", " "),
-            "stage_x": None, "stage_y": None, "flags": [], "_reader": ("czi", str(path), i, dims),
+            "pixel_um": meta["pixel_um"], "z_step_um": meta["z_step_um"],
+            "bits": meta["bits"], "channel_roles": meta["channel_roles"], "channel_names": meta["channel_names"],
+            "settings": meta["settings"], "zoom": meta["zoom"], "acquired": meta["acquired"],
+            "stage_x": None, "stage_y": None, "flags": list(meta["flags"]), "_reader": ("czi", str(path), i, dims),
         })
     return out
 
@@ -323,6 +397,28 @@ def zeiss_images(path, cfg):
 # ------------------------------------------------------------------ OME-TIFF
 
 INCOMPLETE = "file is incomplete (planes missing)"
+
+
+def _ome_settings(chan):
+    """Detector and light-source settings of one channel (1.26.7), as the file states them: gain, voltage,
+    and each light source's wavelength and attenuation. Files without them give nothing, as before."""
+    if chan is None:
+        return []
+    parts = []
+    ds = chan.find("o:DetectorSettings", OME_NS)
+    if ds is not None:
+        gain, volt = _num(ds.get("Gain", "")), _num(ds.get("Voltage", ""))
+        if gain is not None:
+            parts.append(f"gain {gain:g}")
+        if volt is not None:
+            parts.append(f"detector {volt:g} {ds.get('VoltageUnit', 'V')}")
+    for ls in chan.findall("o:LightSourceSettings", OME_NS):
+        w, a = _num(ls.get("Wavelength", "")), _num(ls.get("Attenuation", ""))
+        if w is None and a is None:
+            continue
+        unit = ls.get("WavelengthUnit", "nm")
+        parts.append((f"{w:g}{unit}" if w is not None else "light") + (f" attenuation {a:g}" if a is not None else ""))
+    return parts
 
 
 def ome_images(path, cfg):
@@ -371,6 +467,10 @@ def ome_images(path, cfg):
         exposures = sorted({p.get("ExposureTime") for p in px.findall("o:Plane", OME_NS)
                             if p.get("TheC") == str(mi) and p.get("ExposureTime")})
         bits = int(px.get("SignificantBits") or np.iinfo(dtype).bits if np.issubdtype(dtype, np.integer) else 16)
+        flags = [INCOMPLETE] if i in cut else []
+        if not px.get("SignificantBits") and bits == 16:
+            flags += _no_bits_flag(system, cfg, 65535)
+        chan = px.findall("o:Channel", OME_NS)[mi] if mi is not None else None
         out.append({
             "format": "OME-TIFF", "system": system,
             "location_in_file": "whole file (series 0)" if len(series) == 1 else f"series {i}",
@@ -380,9 +480,9 @@ def ome_images(path, cfg):
             "width": shape[axes.index("X")], "height": shape[axes.index("Y")],
             "pixel_um": float(px.get("PhysicalSizeX", 0) or 0), "z_step_um": float(px.get("PhysicalSizeZ", 0) or 0),
             "bits": bits, "channel_roles": roles, "channel_names": names,
-            "settings": "exposure " + ",".join(exposures) if exposures else "",
+            "settings": "; ".join(_ome_settings(chan) + (["exposure " + ",".join(exposures)] if exposures else [])),
             "zoom": "", "acquired": (img.findtext("o:AcquisitionDate", namespaces=OME_NS) or "")[:19].replace("T", " "),
-            "stage_x": None, "stage_y": None, "flags": [INCOMPLETE] if i in cut else [],
+            "stage_x": None, "stage_y": None, "flags": flags,
             "_reader": ("ome", str(path), i, axes),
         })
     return out
@@ -397,6 +497,45 @@ def _nd2():
     except ImportError:
         raise RuntimeError('Nikon .nd2 support is not installed. Run: pip install "wormscore[nd2]"') from None
     return nd2
+
+
+CAMERA_LINE = r"(Exposure|Gain|Multiplier):\s*([^\n]+)"
+
+
+def _nikon_block(description, name, n_channels):
+    """The part of the file's description that belongs to the channel called name: its "Plane #n:" block,
+    or the whole description of a one-channel file. None if it cannot be told which part is the channel's."""
+    text = description.replace("\r\n", "\n")
+    blocks = re.split(r"^\s*Plane #\d+:\s*$", text, flags=re.M)
+    if len(blocks) > 1:
+        tail = re.split(r"^\s*(?:Time Loop|Z Stack Loop|XY Loop|Multipoint Loop)\b", blocks[-1], flags=re.M)[0]
+        mine = [b for b in blocks[1:-1] + [tail] if re.search(r"^\s*Name:\s*(.*?)\s*$", b, re.M)
+                and re.search(r"^\s*Name:\s*(.*?)\s*$", b, re.M).group(1) == name]
+        return mine[0] if len(mine) == 1 else None
+    return text if n_channels == 1 and text.strip() else None
+
+
+def _nikon_settings(description, capturing, name, n_channels):
+    """Camera and light settings of the reporter channel (1.26.7), from that channel's own part of the
+    description: exposure, gain and multiplier as before, and now each laser line that is on with its
+    power, the fluorescence lamp, and a confocal detector's voltage. Before 1.26.7 only the camera text
+    of the file was read, so images taken at different laser power shared a settings group. Without a
+    part for the channel, the camera text is used as before."""
+    block = _nikon_block(description, name, n_channels) if name is not None else None
+    if block is None:
+        return "; ".join(f"{k.lower()} {v.strip()}" for k, v in re.findall(CAMERA_LINE, capturing))
+    # some files list the camera once for all channels, under the first: then the file's camera text stands
+    parts = [f"{k.lower()} {v.strip()}" for k, v in re.findall(CAMERA_LINE, block) or re.findall(CAMERA_LINE, capturing)]
+    lines = re.findall(r"Line:\s*\d+;\s*(?:ExW|Excitation wavelength):\s*([\d.]+);[^\n]*?Power:\s*([\d.]+)(?:;\s*(\w+))?", block)
+    marked = any(state for _, _, state in lines)       # some files mark the lines in use (Active, On), some list only those
+    lasers = [f"{float(w):g}nm@{float(p):g}" for w, p, state in lines
+              if float(p) > 0 and (state in ("Active", "On") if marked else True)]
+    if lasers:
+        parts.append(";".join(lasers))
+    parts += [f"lamp {k.lower()} {v.strip()}" for k, v in re.findall(r"Light \(EPI\)[^:\n]*?(voltage|intensity):\s*([^\n]+)", block, re.I)
+              if v.strip().upper() != "NA"]
+    parts += [f"{k.strip()} {v}" for k, v in re.findall(r"((?:[A-Za-z]+ )?HV|Laser Power)\s*:\s*([\d.]+)", block)]
+    return "; ".join(parts)
 
 
 def nikon_images(path, cfg):
@@ -422,7 +561,10 @@ def nikon_images(path, cfg):
         objective = f"{mic.objectiveMagnification:g}x {objective}".strip()
     capturing = (text.get("capturing") or "").replace("\r\n", "\n")
     camera = capturing.split("\n", 1)[0].strip()
-    camera_settings = [f"{k.lower()} {v.strip()}" for k, v in re.findall(r"(Exposure|Gain|Multiplier):\s*([^\n]+)", capturing)]
+    roles = named_extras(prefer_named_dye(roles, [None] * len(roles), cfg), cfg, names, None,
+                         [c.channel.excitationLambdaNm for c in chans], [c.channel.emissionLambdaNm for c in chans])
+    mi = pick(roles, "MARKER")
+    settings = _nikon_settings(text.get("description") or "", capturing, names[mi] if mi is not None else None, len(chans))
     dims = "".join(sizes)
     out = []
     for p, stage in enumerate(positions):
@@ -432,10 +574,8 @@ def nikon_images(path, cfg):
             "objective": objective,
             "n_z": sizes.get("Z", 1), "n_t": sizes.get("T", 1), "width": sizes["X"], "height": sizes["Y"],
             "pixel_um": round(vox.x, 4), "z_step_um": round(vox.z, 3) if "Z" in sizes else 0.0,
-            "bits": bits, "channel_roles": named_extras(prefer_named_dye(roles, [None] * len(roles), cfg), cfg, names, None,
-                                                        [c.channel.excitationLambdaNm for c in chans],
-                                                        [c.channel.emissionLambdaNm for c in chans]), "channel_names": names,
-            "settings": "; ".join(camera_settings), "zoom": f"{mic.zoomMagnification:g}" if mic.zoomMagnification else "",
+            "bits": bits, "channel_roles": list(roles), "channel_names": names,
+            "settings": settings, "zoom": f"{mic.zoomMagnification:g}" if mic.zoomMagnification else "",
             "acquired": " ".join((text.get("date") or "").split()),
             "stage_x": stage.x, "stage_y": stage.y, "flags": [], "_reader": ("nd2", str(path), p, dims),
         })

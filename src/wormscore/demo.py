@@ -97,7 +97,7 @@ def make_demo(project, n_per_group=10, seed=7, log=print, identity=False):
             name = f"demo_{group}_{i:02d}.ome.tif"
             tifffile.imwrite(data / name, np.stack(chans), photometric="minisblack", ome=True,
                              metadata={"axes": "CZYX", "PhysicalSizeX": PX_UM, "PhysicalSizeY": PX_UM,
-                                       "PhysicalSizeZ": Z_UM, "Channel": {"Name": names}})
+                                       "PhysicalSizeZ": Z_UM, "SignificantBits": 16, "Channel": {"Name": names}})
             truth.append({"file": name, "genotype": group, "cell_1": cells[0], "cell_2": cells[1]})
     (data / "notes.txt").write_text("Simulated data made by 'wormscore demo'. Not real images.\n")
     with open(project / "demo_truth.csv", "w", newline="") as fh:

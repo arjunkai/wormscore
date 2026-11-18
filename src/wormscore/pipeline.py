@@ -27,6 +27,7 @@ from . import measure as M
 from . import readers as R
 from .files import append_log, now, read_csv, write_csv  # noqa: F401  (re-exported)
 from .browse import browse_log_line
+from .rescan import scan_changes  # noqa: F401  (re-exported)
 from .scoreform import form_log_lines
 
 INCOMPLETE = "file is incomplete"       # inventory flag (readers.ome_images), an exclusion reason at Build
@@ -553,6 +554,24 @@ def prepare(project, reassign=False, add=False, log=print):
             if c not in letters:
                 i = len(letters)
                 letters[c] = chr(ord("A") + i) if i < 26 else f"G{i}"
+    # 1.26.7: a scan that reads coded images differently than the key records (see scan_changes). A rebuild
+    # that keeps the codes uses the new reading and says what it changes; adding images leaves coded
+    # images as they are, so the new ones cannot share their groups until such a rebuild.
+    scan_lines = []
+    if not reassign and (project / "key" / "key.csv").is_file():
+        ch = scan_changes(project, cfg)
+        if add and ch["changed"]:
+            scan_lines = ["Warning: Scan data now reads the microscope settings of coded images differently, so the "
+                          "added images get settings groups of their own. Rebuild, keeping the current codes, to "
+                          "put every image in the right group."]
+        elif not add and ch["lines"]:
+            if ch["letters"]:
+                letters = dict(ch["letters"])
+            scan_lines = ["Warning: this build changes what was recorded for coded images, because Scan data now reads "
+                          f"them differently: {'; '.join(ch['lines'])}. Scores are unchanged. Compare brightness only "
+                          "within the new settings groups."]
+        for line in scan_lines:
+            log(line)
     todo = assign_codes(project, images, reassign, add, cfg)
     repeats = [s for s in todo if "_orig" in s]
     todo = [s for s in todo if "_orig" not in s]
@@ -744,7 +763,7 @@ def prepare(project, reassign=False, add=False, log=print):
             "Images added after scoring began can be recognised as a later batch by the scorer; if a batch is "
             "one genotype, blinding is weaker for it.",
             f"Display ranges: {json.dumps(ranges)}",
-        ] + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + plan_lines + interaction_log_lines(cfg)
+        ] + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + scan_lines + plan_lines + interaction_log_lines(cfg)
           + form_log_lines(cfg, project), cfg)
         log(f"Added {len(todo)} images {added}; {len(images)} images in blind/ in total.")
         return ranges
@@ -774,7 +793,7 @@ def prepare(project, reassign=False, add=False, log=print):
         "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
         f"Settings groups: {len(letters)} (key/settings_groups.csv).",
         f"Display ranges: {json.dumps(ranges)}",
-    ] + browse_log_line(project) + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + plan_lines
+    ] + browse_log_line(project) + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + scan_lines + plan_lines
       + interaction_log_lines(cfg) + form_log_lines(cfg, project), cfg)
     log(f"{len(images)} images in blind/ {per_system}" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
         + f"; {len(excluded)} excluded.")
