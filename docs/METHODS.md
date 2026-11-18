@@ -78,7 +78,12 @@ exactly as before.
 Decided before scoring and applied without regard to genotype. An image is used if its marker channel
 was identified, its objective is at least `min_objective_magnification` (when the metadata names one),
 it has no more than `max_time_points`, and its z-stack covers at least `min_z_extent_um`
-((planes - 1) x step). Images can also be left out by file name with a per-source `exclude` rule
+((planes - 1) x step). Since 1.26.5 an image is also left out, with the reason in `excluded.csv`, if its pixels
+could not be read at Scan data, if its file is incomplete (an OME-TIFF whose planes lie past the end of the file,
+or a set with a file missing: such planes would otherwise read as black), or if the file records no pixel size.
+A file that cannot be opened at Scan data (in use by another program) is listed as unreadable and the scan goes on.
+A magnification written with a decimal (`63.0x`) is read whole; before 1.26.5 it was read as 0x and left out.
+Images can also be left out by file name with a per-source `exclude` rule
 (`{"match": pattern, "reason": text}`), for example a plate found to carry a different reporter; the
 reason is written to `excluded.csv`. Such rules should be set before scoring. In a project with an
 identity channel, an image without one is excluded too (`identity.required`, default true), so every

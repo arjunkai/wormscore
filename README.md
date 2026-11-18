@@ -157,7 +157,9 @@ click it or press Enter, and Escape closes it.
 
 1. **Scan data** (`wormscore inventory my_project`): lists every file (`outputs/manifest.csv`: raw
    image, duplicate, derived projection, reference, hidden system file) and every image with its
-   metadata and channel identity (`outputs/inventory.csv`). Check the flags column.
+   metadata and channel identity (`outputs/inventory.csv`). Check the flags column. A file that cannot be
+   read (damaged, cut short, or open in the microscope software) is listed with the reason and left out;
+   it never stops the scan or the build.
 2. **Set scoring criteria:** choose what the scorer answers for each image (see
    [Scoring criteria](#scoring-criteria) below). **Set criteria...** opens them; pressing Save records
    them in `log.md`, even if you keep the defaults. They lock at the first score. On the command line

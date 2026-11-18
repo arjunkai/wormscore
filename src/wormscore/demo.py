@@ -66,10 +66,18 @@ def _worm(rng, cells, id_rng=None):
     return out + (np.clip(ident, 0, 65535).astype(np.uint16),)
 
 
+def refuse_existing_project(project):
+    """1.26.5: a demo writes its own config.json. In a folder that already holds a project it used to
+    replace that project's settings."""
+    if (Path(project) / "config.json").exists():
+        raise SystemExit(f"{project} already holds a wormscore project. Choose a new, empty folder for the demo.")
+
+
 def make_demo(project, n_per_group=10, seed=7, log=print, identity=False):
     """identity=True adds an mCherry identity channel that marks every cell, whatever its GFP level,
     and sets the project up to find cells on it."""
     project = Path(project)
+    refuse_existing_project(project)
     data = project / "data"
     data.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)

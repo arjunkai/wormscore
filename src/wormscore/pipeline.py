@@ -29,6 +29,9 @@ from .files import append_log, now, read_csv, write_csv  # noqa: F401  (re-expor
 from .browse import browse_log_line
 from .scoreform import form_log_lines
 
+INCOMPLETE = "file is incomplete"       # inventory flag (readers.ome_images), an exclusion reason at Build
+
+
 INVENTORY_FIELDS = [
     "source", "genotype", "system", "format", "file", "location_in_file", "relative_path",
     "local_path", "original_path", "file_sha256", "objective", "n_z", "n_t", "width", "height", "pixel_um",
@@ -165,8 +168,18 @@ def include_reason(img, cfg):
     if ident and ident["required"] and img.get("identity_channel") is None:
         return (f"{ident['label']} identity channel could not be identified from metadata (identity.required is "
                 "true, so every scored image has its cells found the same way)")
-    mag = re.search(r"(\d+)x", img["objective"] or "")
-    if mag and int(mag.group(1)) < inc["min_objective_magnification"]:
+    # 1.26.5: images Build cannot use are left out with the reason. They used to stop the whole build
+    # with a Python error that named no file.
+    flags = str(img.get("flags") or "")
+    if "pixels could not be read" in flags:
+        return "the image could not be read (damaged or incomplete file)"
+    if INCOMPLETE in flags:
+        return "the file is incomplete: some planes are missing (damaged, or still being copied)"
+    if not img["pixel_um"] or img["pixel_um"] <= 0:
+        return "the file does not record its pixel size, which the measurements and the display scale need"
+    # 1.26.5: "63.0x" was read as 0x (the digits before the x), so such images were left out as below the minimum
+    mag = re.search(r"(\d+(?:\.\d+)?)\s*x", img["objective"] or "")
+    if mag and float(mag.group(1)) < inc["min_objective_magnification"]:
         return f"objective is {img['objective']} (minimum {inc['min_objective_magnification']}x)"
     if img["n_t"] > inc["max_time_points"]:
         return f"time series ({img['n_t']} time points)"

@@ -109,13 +109,36 @@ def last_result():
 
 # ------------------------------------------------------------------ check
 
+def https_context():
+    """Certificates for HTTPS in the packaged Mac app (1.26.5), or None (Python's own, everywhere else).
+
+    Python on macOS does not use the system's certificates. The app's OpenSSL looks for a certificate
+    file at the path of the Python it was built with, which exists on the build machine and not on a
+    user's Mac, so the update check and the real-worm demo failed there with CERTIFICATE_VERIFY_FAILED.
+    The Mac app therefore carries certifi's certificate list and uses it."""
+    if sys.platform != "darwin" or not getattr(sys, "frozen", False):
+        return None
+    try:
+        import ssl
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:       # no certifi in this build: as before
+        return None
+
+
+def https_kwargs():
+    """Extra arguments for urlopen: the Mac app's certificates, or nothing (the call is then as before)."""
+    ctx = https_context()
+    return {"context": ctx} if ctx is not None else {}
+
+
 def check(timeout=5):
     """The latest release: {version, notes, page, asset}, asset being this platform's zip
     (None for pip installs or when the release has no zip for this platform)."""
     req = urllib.request.Request(latest_url(), headers={"User-Agent": f"wormscore/{__version__}",
                                                         "Accept": "application/vnd.github+json"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout, **https_kwargs()) as r:
             rel = json.loads(r.read().decode("utf-8"))
     except (OSError, ValueError) as exc:
         raise UpdateError(f"Could not reach GitHub: {exc}")
@@ -162,7 +185,7 @@ def download(asset, dest, progress=lambda done, total: None):
     done = 0
     req = urllib.request.Request(asset["url"], headers={"User-Agent": f"wormscore/{__version__}"})
     try:
-        with urllib.request.urlopen(req, timeout=60) as r, open(part, "wb") as fh:
+        with urllib.request.urlopen(req, timeout=60, **https_kwargs()) as r, open(part, "wb") as fh:
             total = int(r.headers.get("Content-Length") or asset.get("size") or 0)
             while chunk := r.read(1 << 20):
                 fh.write(chunk)

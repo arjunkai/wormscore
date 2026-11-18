@@ -322,10 +322,27 @@ def zeiss_images(path, cfg):
 
 # ------------------------------------------------------------------ OME-TIFF
 
+INCOMPLETE = "file is incomplete (planes missing)"
+
+
 def ome_images(path, cfg):
     with tifffile.TiffFile(str(path)) as f:
         series = [(s.axes, s.shape, s.dtype) for s in f.series]
         xml = f.ome_metadata
+        # 1.26.5: a file cut short (a copy that did not finish) still opens, and its missing planes read
+        # as black, so a cell that is there would look missing. Planes stored past the end of the file
+        # are found here and the image is flagged and left out.
+        size, cut = f.filehandle.size, set()
+        for k, s in enumerate(f.series):
+            for page in s.pages:
+                if page is None:        # a plane the file (or a missing file of its set) no longer has
+                    cut.add(k)
+                    break
+                if getattr(page, "parent", f) is not f:
+                    continue            # a plane kept in another file of the set
+                if any(o + n > size for o, n in zip(page.dataoffsets, page.databytecounts)):
+                    cut.add(k)
+                    break
     md = ET.fromstring(xml) if xml else None
     if md is None or md.find(".//o:Pixels", OME_NS) is None:
         companion = Path(re.sub(r"(_t\d+_p\d+)?\.ome\.tiff?$", ".companion.ome", str(path)))
@@ -365,7 +382,8 @@ def ome_images(path, cfg):
             "bits": bits, "channel_roles": roles, "channel_names": names,
             "settings": "exposure " + ",".join(exposures) if exposures else "",
             "zoom": "", "acquired": (img.findtext("o:AcquisitionDate", namespaces=OME_NS) or "")[:19].replace("T", " "),
-            "stage_x": None, "stage_y": None, "flags": [], "_reader": ("ome", str(path), i, axes),
+            "stage_x": None, "stage_y": None, "flags": [INCOMPLETE] if i in cut else [],
+            "_reader": ("ome", str(path), i, axes),
         })
     return out
 
@@ -622,7 +640,11 @@ def scan(cfg, log=print, progress=None):
         futures = {pool.submit(sha256, p): p for files in all_files.values() for p in files}
         for fut in as_completed(futures):
             p = futures[fut]
-            hashes[p] = fut.result()
+            try:
+                hashes[p] = fut.result()
+            except OSError as exc:      # 1.26.5: open in another program (acquisition software), or unreadable
+                hashes[p] = ""
+                log(f"  could not read {p.name}: {exc.strerror or type(exc).__name__}")
             done += p.stat().st_size
             if progress:
                 progress(done, total)
@@ -640,6 +662,9 @@ def scan(cfg, log=print, progress=None):
                    "original_path": str(original / rel), "size_mb": round(p.stat().st_size / 2**20, 2),
                    "sha256": h, "role": file_role(p), "note": ""}
             rows.append(row)
+            if not h:
+                row["role"], row["note"] = "unreadable file", "could not be opened (in use by another program?)"
+                continue
             # ImageJ TIFF has no microscope metadata: used only if this source turns it on
             if row["role"] == NOT_USED and src.get("imagej_tiff") and p.suffix.lower() in (".tif", ".tiff") \
                     and is_imagej_stack(p):

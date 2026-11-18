@@ -56,7 +56,7 @@ def main(argv=None):
     s = sub.add_parser("make-practice", help="make a practice set (images + answer key) from a finished project")
     s.add_argument("project")
     s.add_argument("destination", help="a new, empty folder outside the project")
-    s.add_argument("--n", type=int, default=20, help="number of images, 5 to 100 (default 20)")
+    s.add_argument("--n", type=int, default=20, help="number of images, 1 to 500 (default 20)")
     s.add_argument("--any-confidence", action="store_true", help="also use images not marked sure")
     s = sub.add_parser("add-practice", help="record a scored practice set's agreement in a project")
     s.add_argument("project")

@@ -47,11 +47,20 @@ def third_party_licenses(toc, out):
                 fh.write(path.read_text(encoding="utf-8", errors="replace"))
 
 
+# The Mac app carries its own certificate list for HTTPS (update.https_context): Python on macOS does not
+# use the system's, and the build Python's certificate file is not on a user's Mac.
+certifi_files = []
+if sys.platform == "darwin":
+    from PyInstaller.utils.hooks import collect_data_files
+    certifi_files = collect_data_files("certifi")
+    if not certifi_files:
+        raise SystemExit("certifi is not installed: the Mac app could not check for updates. pip install certifi")
+
 a = Analysis(
     [str(root / "packaging" / "wormscore_app.py")],
     pathex=[str(root / "src")],
-    datas=[(str(static), "wormscore/static")],
-    hiddenimports=collect_submodules("wormscore") + collect_submodules("imagecodecs"),
+    datas=[(str(static), "wormscore/static")] + certifi_files,
+    hiddenimports=collect_submodules("wormscore") + collect_submodules("imagecodecs") + (["certifi"] if certifi_files else []),
     excludes=["matplotlib", "pandas", "IPython", "pytest", "setuptools", "pkg_resources"],
 )
 pyz = PYZ(a.pure)

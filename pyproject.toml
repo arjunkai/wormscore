@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wormscore"
-version = "1.26.4"
+version = "1.26.5"
 description = "Blind scoring of fluorescent neurons in C. elegans confocal stacks, with measurement and genetics statistics."
 keywords = ["C. elegans", "worm", "neuron", "blind scoring", "fluorescence", "microscopy", "confocal", "penetrance"]
 readme = "README.md"
@@ -43,7 +43,9 @@ Releases = "https://github.com/arjunkai/wormscore/releases"
 # Nikon .nd2 files (large: brings dask and pydantic). The Windows and Mac apps include it.
 nd2 = ["nd2>=0.12"]
 # pyobjc: the Mac app answers the Dock (opening it again, Quit); only the built Mac app uses it
-dev = ["pytest>=8", "pyinstaller>=6.10", "nd2>=0.12", "pyobjc-framework-Cocoa>=10.3; sys_platform == 'darwin'"]
+dev = ["pytest>=8", "pyinstaller>=6.10", "nd2>=0.12", "pyobjc-framework-Cocoa>=10.3; sys_platform == 'darwin'",
+       # certificates for HTTPS inside the Mac app (update check, real-worm demo); see update.https_context
+       "certifi>=2024.2; sys_platform == 'darwin'"]
 
 [project.scripts]
 wormscore = "wormscore.cli:main"

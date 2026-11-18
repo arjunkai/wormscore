@@ -57,6 +57,56 @@ jobs:
           ! up
           grep -q "closing: quit from the Dock or menu" "$LOG"
           ! pgrep -f "wormscore.app/Contents/MacOS/wormscore"
+      - name: HTTPS as on a Mac without Python (the build Python's certificates hidden)
+        # The app's OpenSSL looks for certificates where the build Python keeps them. They are on this
+        # machine and not on a user's Mac, so they are moved away while the app makes real requests.
+        run: |
+          APP=dist/wormscore.app/Contents/MacOS/wormscore
+          CAFILE=$(python -c "import ssl; print(ssl.get_default_verify_paths().openssl_cafile)")
+          CAPATH=$(python -c "import ssl; print(ssl.get_default_verify_paths().openssl_capath)")
+          echo "build Python looks for certificates in: $CAFILE and $CAPATH"
+          for f in "$CAFILE" "$CAPATH"; do if [ -e "$f" ]; then sudo mv "$f" "$f.hidden"; fi; done
+          restore() { for f in "$CAFILE" "$CAPATH"; do if [ -e "$f.hidden" ]; then sudo mv "$f.hidden" "$f"; fi; done; }
+          trap restore EXIT
+          unset SSL_CERT_FILE SSL_CERT_DIR
+          # the check only means something if plain Python now fails
+          if python -c "import urllib.request; urllib.request.urlopen('https://api.github.com', timeout=20)" 2>/dev/null; then
+            echo "::warning::Python still verifies HTTPS with its certificates hidden, so this step proves nothing"
+          else
+            echo "plain Python cannot verify HTTPS now, as on a Mac without it"
+          fi
+          $APP update
+          $APP demo --real "$RUNNER_TEMP/real"
+          $APP inventory "$RUNNER_TEMP/real"
+          $APP prepare "$RUNNER_TEMP/real"
+          test "$(ls "$RUNNER_TEMP/real/blind" | wc -l)" -eq 4
+      - name: What Gatekeeper says about a downloaded copy
+        # A copy built here has no quarantine mark and opens without a question. A downloaded one has it.
+        # This records the verdict (the app is not signed with a paid certificate, so "rejected" is
+        # expected and the README tells people to use Open Anyway); it does not fail the run.
+        continue-on-error: true
+        run: |
+          ditto -c -k --keepParent dist/wormscore.app "$RUNNER_TEMP/wormscore-mac.zip"
+          mkdir "$RUNNER_TEMP/downloaded" && ditto -x -k "$RUNNER_TEMP/wormscore-mac.zip" "$RUNNER_TEMP/downloaded"
+          xattr -w com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" "$RUNNER_TEMP/downloaded/wormscore.app"
+          xattr -l "$RUNNER_TEMP/downloaded/wormscore.app"
+          codesign -dv "$RUNNER_TEMP/downloaded/wormscore.app" 2>&1 || true
+          spctl -a -vv "$RUNNER_TEMP/downloaded/wormscore.app" 2>&1 || true
+          # the program inside still runs from the downloaded copy
+          "$RUNNER_TEMP/downloaded/wormscore.app/Contents/MacOS/wormscore" --version
+      - name: Home and scoring pages in real Safari
+        # Playwright's WebKit is Safari's engine, not Safari. Not required yet: safaridriver on hosted
+        # Macs is not something this project has relied on before.
+        continue-on-error: true
+        run: |
+          python -m pip install selenium
+          sudo safaridriver --enable
+          dist/wormscore.app/Contents/MacOS/wormscore > "$RUNNER_TEMP/app2.out" 2>&1 &
+          PID=$!
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:47311/api/state > /dev/null && break; sleep 1; done
+          python packaging/mac_safari_check.py "$RUNNER_TEMP/demo" || FAILED=1
+          kill $PID || true
+          exit ${FAILED:-0}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

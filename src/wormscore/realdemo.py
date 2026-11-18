@@ -52,7 +52,8 @@ def download(name, md5, size, cache, log=print):
     url = f"{RECORD}/files/{urllib.parse.quote(name)}?download=1"
     log(f"Downloading {name} ({size / 1e6:.0f} MB)")
     part = dst.with_name(dst.name + ".part")
-    with urllib.request.urlopen(url, timeout=60) as r, open(part, "wb") as fh:
+    from .update import https_kwargs
+    with urllib.request.urlopen(url, timeout=60, **https_kwargs()) as r, open(part, "wb") as fh:
         shutil.copyfileobj(r, fh, 1 << 20)
     if _md5(part) != md5:
         part.unlink()
@@ -63,6 +64,8 @@ def download(name, md5, size, cache, log=print):
 
 def make_real_demo(project, log=print, fetch=download, cache=None):
     project = Path(project)
+    from .demo import refuse_existing_project
+    refuse_existing_project(project)
     data = project / "data"
     data.mkdir(parents=True, exist_ok=True)
     cache = Path(cache) if cache else cache_dir()

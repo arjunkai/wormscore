@@ -236,7 +236,7 @@ function welcome() {
 }
 
 // A long path may wrap only after a folder separator, never inside a folder name.
-const breakable = path => path.split(/(?<=[\\/])/).map(part => h("span", {}, part));
+const breakable = path => (path.match(/[^\\/]*[\\/]?/g) || []).filter(Boolean).map(part => h("span", {}, part));
 
 function stepCard(n, state, title, desc, fact, actions, extra) {
   // the check already says done; a waiting step says so by being quiet

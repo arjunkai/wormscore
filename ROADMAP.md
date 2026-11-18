@@ -32,6 +32,18 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.5: **Fixes from an independent audit: files that cannot be read, and the Mac app.**
+  - An OME-TIFF cut short (a copy that did not finish, or a set with a file missing) was coded with black
+    planes, so a cell that was there looked missing. It is now flagged at Scan data and left out at Build.
+  - One image that could not be read, or a file with no pixel size, stopped the whole Build with an error
+    that named no file; a file open in another program stopped Scan data. Each is now left out with the reason.
+  - An objective written as `63.0x` was read as 0x, so those images were left out as below the minimum.
+  - Mac app: the update check and the real-worm demo use a certificate list carried in the app. They could
+    fail on a Mac without the Python the app was built with. The Mac check on GitHub now hides that
+    Python's certificates and makes real requests, reads the real Zeiss files, records what Gatekeeper says
+    about a downloaded copy, and opens the pages in Safari itself.
+  - The home page no longer needs Safari 16.4: one expression kept older Safari on the loading screen.
+  - A demo is refused in a folder that already holds a project; it used to replace that project's `config.json`.
 - 1.26.4: **Fixes from an independent audit: unblinding says when a result is not what it seems.**
   - Scores saved or changed after the first unblinding (when the scorer knows the genotypes) were counted
     with no mark. The summary and the Methods draft now warn, and `merged.csv` marks each one. Tests still run.
