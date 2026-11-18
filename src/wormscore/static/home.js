@@ -312,10 +312,12 @@ function renderMain(d) {
   const formDone = !!f && (f.recorded || !!f.locked);
   // markers changed in Project settings after the last Scan data or Build (1.24.0)
   const ms = p.markers_stale, msScan = !!ms?.scan, msBuild = !!ms && !ms.scan && !!ms.build;
-  const s1 = stepRunning("scan") ? "running" : msScan ? "next" : scanned ? "done" : "next";
+  // image folders or genotype rules changed after the last Scan data or Build (1.26.4)
+  const fs = p.folders_stale, fsScan = !!fs?.scan, fsBuild = !!fs && !fs.scan && !!fs.build;
+  const s1 = stepRunning("scan") ? "running" : msScan || fsScan ? "next" : scanned ? "done" : "next";
   const sF = f?.changed_after_lock ? "changed" : formDone ? "done" : scanned ? "next" : "wait";
-  const s2 = building ? "running" : msBuild ? "next" : built ? "done" : scanned && formDone && !msScan ? "next" : "wait";
-  const s3 = building ? "wait" : built ? (allScored ? "done" : ms ? "wait" : "next") : "wait";
+  const s2 = building ? "running" : msBuild || fsBuild ? "next" : built ? "done" : scanned && formDone && !msScan ? "next" : "wait";
+  const s3 = building ? "wait" : built ? (allScored ? "done" : ms || fs ? "wait" : "next") : "wait";
   const s4 = stepRunning("unblind") ? "running" : p.unblinded ? "done" : allScored ? "next" : "wait";
 
   const steps = h("ol", { class: "steps" },
@@ -325,7 +327,8 @@ function renderMain(d) {
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
         scanned ? "Scan again" : "Scan data")],
-      msScan && scanned && s1 !== "running" ? warnNote("The markers changed. Scan again to find their channels.") : null),
+      msScan && scanned && s1 !== "running" ? warnNote("The markers changed. Scan again to find their channels.")
+        : fsScan && scanned && s1 !== "running" ? warnNote("The image folders or rules changed. Scan again to use them.") : null),
     stepCard(2, sF, ["Set scoring criteria", wsHelp(h, "criteria", "scoring criteria")], "Choose the calls and questions, and what counts as a defect.",
       f ? formFact(f) : null,
       [h("button", { class: sF === "next" ? "primary" : "btn", "data-k": "form", disabled: busy || !ok, onclick: () => openProjectSettings("form") },
@@ -334,7 +337,8 @@ function renderMain(d) {
       building ? "Building..." : built ? `${plural(p.coded, "image")} coded.` : null,
       [h("button", { class: s2 === "next" ? "primary" : "btn", "data-k": "step2", disabled: busy || !ok || !scanned, onclick: build },
         !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")],
-      msBuild && built && !building ? warnNote("The markers changed. Rebuild, keeping the current codes, to use them.") : null),
+      msBuild && built && !building ? warnNote("The markers changed. Rebuild, keeping the current codes, to use them.")
+        : fsBuild && built && !building ? warnNote("The image folders or rules changed. Rebuild to use them.") : null),
     stepCard(4, s3, ["Score", wsHelp(h, "score", "Score")], "Score each coded image. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
       [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },
@@ -1577,7 +1581,7 @@ async function openProjectSettings(section) {
     catch (e) {
       err.textContent = e.message;
       err.hidden = false;
-      form.showError(e.message);
+      form?.showError(e.message);      // no criteria form on the folders page
       return false;
     }
     const foldersChanged = !criteria && JSON.stringify([model.project_name, model.sources]) !== foldersAtOpen;
@@ -1970,7 +1974,7 @@ async function unblind(again = false) {
   const left = Math.max(0, (p.coded || 0) - p.scored);
   const counts = `${p.scored} of ${p.coded} images are scored.`;
   let anyway = false;
-  if (p.scored < p.min_scored) {
+  if (p.scored < p.min_scored && left > 0) {
     anyway = await ask("Fewer images scored than planned",
       h("div", { class: "m-list" }, h("p", {}, counts),
         h("p", {}, `Your plan set a minimum of ${p.min_scored}. If you unblind anyway, log.md notes that you did.`)),

@@ -198,7 +198,8 @@ click it or press Enter, and Escape closes it.
    `log.md`, and the Methods draft says how many were taken.
 5. **Unblind** (`wormscore unblind my_project --i-have-finished-scoring`), only when scoring is
    finished: reveals the genotypes and writes the results tables and a draft Methods paragraph (see
-   [Results](#results) below). The confirmation says how many images are scored and that unscored ones
+   [Results](#results) below). A score saved or changed after the first unblinding is no longer blind: the
+   summary, `merged.csv` and the Methods draft mark it. The confirmation says how many images are scored and that unscored ones
    are left out. Afterwards a **Results** card at the top of the project shows the penetrance per
    genotype and the planned Fisher tests, with **Open results**.
 

@@ -496,6 +496,18 @@ def prepare(project, reassign=False, add=False, log=print):
     else:
         ff_lines = []
 
+    # 1.26.4: a genotype named in the analysis settings that no included image has (a typing mistake in
+    # config.json) used to show only at unblinding, as "no comparison possible"
+    un = cfg["unblinding"]
+    named = {un["reference_genotype"]} | {g for c in un["comparisons"] for g in c} \
+        | {un["interaction"].get(k) for k in ("single_a", "single_b", "double")}
+    have = {s["genotype"] for s in images}
+    plan_lines = [f"Warning: the analysis settings name the genotype {g!r}, which no included image has (genotypes "
+                  f"here: {', '.join(sorted(have))}). Tests with it cannot run. Correct it in Project settings "
+                  "before scoring." for g in sorted(x for x in named if x and x not in have)]
+    for line in plan_lines:
+        log(line)
+
     groups = same_field_groups(images, cfg["inclusion"]["same_field_tolerance_um"])
     for s in images:
         s["field_group"] = groups[id(s)]
@@ -719,7 +731,7 @@ def prepare(project, reassign=False, add=False, log=print):
             "Images added after scoring began can be recognised as a later batch by the scorer; if a batch is "
             "one genotype, blinding is weaker for it.",
             f"Display ranges: {json.dumps(ranges)}",
-        ] + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + interaction_log_lines(cfg)
+        ] + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + plan_lines + interaction_log_lines(cfg)
           + form_log_lines(cfg, project), cfg)
         log(f"Added {len(todo)} images {added}; {len(images)} images in blind/ in total.")
         return ranges
@@ -749,8 +761,8 @@ def prepare(project, reassign=False, add=False, log=print):
         "Codes assigned by random shuffle; seed stored in key/seed.txt (not in this log, to keep the key sealed).",
         f"Settings groups: {len(letters)} (key/settings_groups.csv).",
         f"Display ranges: {json.dumps(ranges)}",
-    ] + browse_log_line(project) + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + interaction_log_lines(cfg)
-      + form_log_lines(cfg, project), cfg)
+    ] + browse_log_line(project) + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + plan_lines
+      + interaction_log_lines(cfg) + form_log_lines(cfg, project), cfg)
     log(f"{len(images)} images in blind/ {per_system}" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
         + f"; {len(excluded)} excluded.")
     return ranges

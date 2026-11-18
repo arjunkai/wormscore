@@ -325,7 +325,9 @@ listed best first, worst last; `"type": "scale"`) or a count (whole numbers goin
 optionally "N+" for N or more; `"type": "count"`). A scale or count may have a "can't tell" answer
 (`cant_tell`), which is never a level. A required question must be answered before the score can be saved,
 and a question for each neuron can be skipped (hidden, saved empty) when the neuron's call is one the
-question's outcome leaves out, such as "not seen". Answers are stored as their text.
+question's outcome leaves out, such as "not seen". Answers are stored as their text. In `scores.csv`, text that starts with `=`, `+`, `-` or `@` is written with a
+leading `'` so a spreadsheet does not run it as a formula; since 1.26.4 unblinding reads such answers back
+without it (before, a call named `+` or `-` matched no call and was never counted as a defect).
 
 The criteria are recorded in `log.md` ("Score form set before scoring") when they are saved in the app (or checked
 and kept as they are, from the home screen's Set scoring criteria step, since 1.5.0), when the
@@ -345,7 +347,12 @@ to `scoring/score_history.csv`.
 ## 8. Unblinding
 
 Allowed only after the scorer confirms scoring is finished and at least `min_scored_worms` images are
-scored (an override is possible and is recorded in `log.md`). `outputs/unblinded/merged.csv` holds, for
+scored (an override is possible and is recorded in `log.md`; since 1.26.4 none is needed once every coded image
+is scored). Since 1.26.4 the summary also warns, and `merged.csv` marks (`score_saved_after_unblinding`), each
+image scored or changed after the project was first unblinded, since those scores were not blind; it warns when
+coded images have another genotype under the rules now in `config.json` than in the key (rules changed after
+Scan data), and when a genotype named in the analysis settings has no counted image. Tests still run.
+`outputs/unblinded/merged.csv` holds, for
 every image, the key (original path, local copy, location in file, checksum, genotype, microscope,
 settings group), the score, and the measurements. The summary counts calls per microscope and genotype
 and lists drawn-region brightness by call within each settings group only.

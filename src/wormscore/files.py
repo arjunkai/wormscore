@@ -28,6 +28,19 @@ def read_csv(path):
         return list(csv.DictReader(fh))
 
 
+def read_scores(path):
+    """The rows of a scores.csv with every answer as it was chosen (1.26.4). The scoring page writes text
+    that starts with = + - or @ with a leading ' so a spreadsheet does not run it as a formula. Read back
+    with it, a call named "-" or "+" matched no call of the criteria, so it never counted as a defect.
+    Notes are typed freely and keep the mark."""
+    rows = read_csv(path)
+    for r in rows:
+        for k, v in r.items():
+            if k != "notes" and isinstance(v, str) and v[:1] == "'" and v[1:2] in ("=", "+", "-", "@"):
+                r[k] = v[1:]
+    return rows
+
+
 APP_FOLDERS = ("key", "blind", "scoring", "outputs", "practice", "scorers", "config_backups")
 
 

@@ -18,7 +18,7 @@ import shutil
 from pathlib import Path
 
 from . import config as C
-from .files import append_log, read_csv, write_csv
+from .files import append_log, read_csv, read_scores, write_csv
 
 PACKAGE_FILE = "package.json"
 # Raw config sections a scorer needs: the form, what the images look like and how drawn regions
@@ -270,7 +270,7 @@ def import_scores(project, package, log=print):
     if (src.is_symlink() or not src.is_dir() or (src / "scores.csv").is_symlink()
             or not (src / "scores.csv").is_file()):
         raise SystemExit("The package's scoring folder is not a plain folder with scores.csv in it.")
-    rows = read_csv(src / "scores.csv")
+    rows = read_scores(src / "scores.csv")
     check_answers(rows, cfg)
     extra = sorted({r["code"] for r in rows} - set(rec["order"]))
     if extra:
@@ -311,7 +311,7 @@ def between_scorers(project, rows, cfg):
         if not path.is_file():
             continue
         second = {r["code"]: {f"score_{k}": v for k, v in r.items() if k != "code"} | {"code": r["code"]}
-                  for r in read_csv(path)}
+                  for r in read_scores(path)}
         pairs = [(by_code[c], second[c]) for c in rec["originals"] if c in by_code and c in second]
         for x in stats.reliability(pairs, cfg):
             agree.append({"second_scorer": rec["scorer"], "package": sid, **x})

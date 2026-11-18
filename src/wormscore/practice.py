@@ -56,7 +56,8 @@ def _checksum(key):
 def _scores(folder):
     """The saved scores of a project or set, by code (scores.csv, as unblinding reads them)."""
     f = Path(folder) / "scoring" / "scores.csv"
-    return {r["code"]: r for r in read_csv(f)} if f.is_file() else {}
+    from .files import read_scores
+    return {r["code"]: r for r in read_scores(f)} if f.is_file() else {}
 
 
 def is_practice(folder):

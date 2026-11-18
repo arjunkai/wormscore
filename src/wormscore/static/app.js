@@ -414,7 +414,7 @@ function renderList() {
   const marked = st.worms.filter(w => w.scored && w.has_roi).length;
   $("#progFill").style.transform = `scaleX(${n / Math.max(st.worms.length, 1)})`;
   $("#progText").textContent = `${n} of ${st.worms.length} scored` +
-    (n < st.cfg.min_scored ? ` (at least ${st.cfg.min_scored} to unblind)` : "") + ` \u00b7 cells outlined on ${marked}`;
+    (n < Math.min(st.cfg.min_scored, st.worms.length) ? ` (at least ${Math.min(st.cfg.min_scored, st.worms.length)} to unblind)` : "") + ` \u00b7 cells outlined on ${marked}`;
 }
 
 // Asks before unsaved outlines are left behind, in the app's own dialog. Stay has the focus, so one

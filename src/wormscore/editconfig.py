@@ -240,6 +240,35 @@ def _origin(body, i, n_old):
 
 MAX_REASON = 500
 FOLDERS_TITLE = "image folders changed after scoring began"
+# 1.26.4: the time folders or rules last changed before scoring began. Genotypes are worked out at Scan
+# data and written to the key at Build, so the home page asks for both until they have run again.
+CHANGED_FILE = ("outputs", "folders_changed.json")
+
+
+def note_folders_changed(project, old_raw, raw):
+    """Remember that the folders or rules changed (only once something is scanned, and before scoring:
+    afterwards the key follows the change at once, see folder_changes)."""
+    project = Path(project)
+    old = [_editable(s) for s in old_raw.get("sources", [])]
+    new = [_editable(s) for s in raw.get("sources", [])]
+    if old == new or scoring_started(project) or not (project / "outputs" / "inventory.csv").is_file():
+        return
+    f = project.joinpath(*CHANGED_FILE)
+    f.write_text(json.dumps({"changed": True}) + "\n", encoding="utf-8")
+
+
+def stale(project):
+    """{"scan": bool, "build": bool} if folders or rules changed after the last Scan data or Build, else None."""
+    import os
+    project = Path(project)
+    f = project.joinpath(*CHANGED_FILE)
+    if not f.is_file():
+        return None
+    t = os.path.getmtime(f)
+    inv, key = project / "outputs" / "inventory.csv", project / "key" / "key.csv"
+    scan = not inv.is_file() or os.path.getmtime(inv) < t
+    build = key.is_file() and os.path.getmtime(key) < t
+    return {"scan": scan, "build": build} if scan or build else None
 
 
 def unlock_reason(body):
@@ -296,6 +325,7 @@ def save(project, body):
                and not S.locked(project) and not S.form_recorded(project, cfg))
     if raw != old_raw:
         write(project, raw)
+        note_folders_changed(project, old_raw, raw)
     if form_changed and was_locked:
         same = S.form_record(cfg) == S.form_record(S._cfg_from_raw(old_raw))
         append_log(project, S.CHANGE_TITLE,

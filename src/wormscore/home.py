@@ -179,6 +179,8 @@ def project_status(path):
     # markers changed in Project settings after Scan data or Build (1.24.0): those steps need a new run
     from .markers import stale
     st["markers_stale"] = None if info else stale(p)
+    from .editconfig import stale as folders_stale      # 1.26.4: the same for image folders and rules
+    st["folders_stale"] = None if info else folders_stale(p)
     inv = p / "outputs" / "inventory.csv"
     st["scanned"] = _rows(inv) if inv.is_file() else None
     blind = p / "blind"

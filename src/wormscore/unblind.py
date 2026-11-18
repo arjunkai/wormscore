@@ -47,6 +47,37 @@ def excluded_after_scoring(project, cfg, rows):
     return out
 
 
+def first_unblinded(project):
+    """When log.md first records an unblinding ("YYYY-MM-DD HH:MM"), or "" if this is the first."""
+    import re
+    log_path = Path(project) / "log.md"
+    if not log_path.is_file():
+        return ""
+    found = re.findall(r"^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) unblinded$", log_path.read_text(encoding="utf-8"), re.M)
+    return min(found) if found else ""
+
+
+def rules_differ(cfg, rows):
+    """(coded images whose genotype in the key is not the one the genotype rules in config.json give now,
+    coded images an exclusion rule in config.json now matches). Both are 0 in a project whose rules were
+    not changed after Scan data, or were changed in the app after scoring began (the key then follows)."""
+    srcs = {s.get("name"): s for s in cfg["sources"]}
+    genotype = excluded = 0
+    for r in rows:
+        s = srcs.get(r.get("source"))
+        if not s or not isinstance(s.get("path"), str):
+            continue
+        try:
+            rel = str(Path(r.get("local_path", "")).relative_to(Path(s["path"]))).replace("\\", "/")
+        except ValueError:
+            continue
+        if C.exclude_rule_for(cfg, r["source"], rel):
+            excluded += 1
+        elif C.genotype_for(s, rel) != r.get("genotype"):
+            genotype += 1
+    return genotype, excluded
+
+
 def plan_status(project, cfg, history):
     """'yes' if the analysis plan matches the one recorded before scoring began, 'changed' if it
     differs (then no test runs), 'NO (...)' if it was never recorded, '' if no plan is set."""
@@ -90,12 +121,20 @@ def unblind(project, finished=False, anyway=False, log=print):
     C.check(cfg)
     sc = cfg["scoring"]
     opt = lambda p: read_csv(p) if p.exists() else []
-    scores = {r["code"]: r for r in opt(project / "scoring" / "scores.csv")}
+    from .files import read_scores
+    scores = {r["code"]: r for r in (read_scores(project / "scoring" / "scores.csv")
+                                     if (project / "scoring" / "scores.csv").exists() else [])}
     need = cfg["unblinding"]["min_scored_worms"]
-    if len(scores) < need and not anyway:
+    key = {r["code"]: r for r in read_csv(project / "key" / "key.csv")}
+    # 1.26.4: with every coded image scored there is nothing left to score, so a project with fewer images
+    # than the planned minimum no longer needs the override (and is not logged as having used it).
+    all_scored = bool(key) and all(c in scores for c in key)
+    if len(scores) < need and not anyway and not all_scored:
         raise SystemExit(f"Only {len(scores)} images scored; the project plan says at least {need} before "
                          "comparing calls to numbers. Use --anyway to override (recorded in the log).")
-    key = {r["code"]: r for r in read_csv(project / "key" / "key.csv")}
+    # 1.26.4: scores saved or changed after the genotypes were first revealed were not blind
+    earlier = first_unblinded(project)
+    after_unblinding = sorted(c for c, s in scores.items() if c in key and earlier and (s.get("saved") or "")[:16] > earlier)
     rois = defaultdict(dict)
     for r in opt(project / "scoring" / "roi_measurements.csv"):
         rois[r["code"]][r["region"]] = r
@@ -120,6 +159,9 @@ def unblind(project, finished=False, anyway=False, log=print):
     if late_excl:          # the column only when there are any, so other projects' merged.csv stays as before
         for r in rows:
             r["left_out_after_scoring"] = late_excl.get(r["code"]) or late_excl.get(r.get("repeat_of"), "")
+    if after_unblinding:   # 1.26.4; the column only when there are any
+        for r in rows:
+            r["score_saved_after_unblinding"] = "yes" if r["code"] in after_unblinding else ""
     write_csv(out / "merged.csv", rows)
 
     # Hidden repeats are only for the consistency check; they never count as animals.
@@ -127,6 +169,22 @@ def unblind(project, finished=False, anyway=False, log=print):
     counted = [r for r in originals if r.get("score_count_this_image") == "yes" and r.get("score_usable") == "yes"]
     counted = [r for r in counted if r["code"] not in late_excl]
     lines = [f"Scored {len(scores)} of {len(rows)} images."]
+    if after_unblinding:
+        n = len(after_unblinding)
+        lines.append(f"WARNING: {n} image{'s were' if n != 1 else ' was'} scored, or had {'their' if n != 1 else 'its'} "
+                     f"score changed, after this project was first unblinded ({earlier}): {', '.join(after_unblinding)}. "
+                     "Those scores were not blind. They are counted below and marked in merged.csv "
+                     "(score_saved_after_unblinding); report them as not blind.")
+    rules_g, rules_x = rules_differ(cfg, [r for r in rows if not r.get("repeat_of") and r["code"] not in late_excl])
+    if rules_g:
+        lines.append(f"WARNING: {rules_g} coded image{'s have' if rules_g != 1 else ' has'} another genotype under the "
+                     "genotype rules now in config.json than in the key: the rules were changed after Scan data. "
+                     "These results use the key. To use the new rules, run Scan data, rebuild keeping the codes, "
+                     "and unblind again.")
+    if rules_x:
+        lines.append(f"WARNING: {rules_x} coded image{'s match' if rules_x != 1 else ' matches'} an exclusion rule now "
+                     "in config.json but " + ("are" if rules_x != 1 else "is") + " counted here: the rule was added "
+                     "after the blind set was built.")
     if late_excl:
         lines.append(f"WARNING: {len(late_excl)} coded image(s) left out by exclusion rules changed after scoring "
                      "began: " + "; ".join(f"{c} ({why})" for c, why in sorted(late_excl.items())) + ".")
@@ -251,6 +309,13 @@ def unblind(project, finished=False, anyway=False, log=print):
         lines.append("  " + stop_note)
     elif not tests:
         lines.append("  none (need two genotypes with scored animals to compare)")
+    # 1.26.4: a misspelled genotype used to give "no comparison possible" with no reason
+    have = {r["genotype"] for r in counted}
+    named = ({g for c in comps for g in c} if comps else {ref} if ref else set()) - have
+    if run and counted and named:
+        lines.append(f"  WARNING: no counted image has the genotype {', '.join(sorted(repr(g) for g in named))}, named "
+                     + ("in the planned comparisons" if comps else "as the genotype to compare with")
+                     + f", so tests with it were not run. Genotypes here: {', '.join(sorted(have))}.")
 
     outcome_rows, outcome_tests, by_outcome = [], [], {"calls": pen_test}
     for oc in un["question_outcomes"]:
@@ -453,11 +518,16 @@ def unblind(project, finished=False, anyway=False, log=print):
         added=sorted(Counter(f"{d[:4]}-{d[4:6]}-{d[6:8]}" for d in (r.get("added_on") for r in key_orig) if d).items()),
         key_rows=key_orig, excluded_rows=excluded, reliability=rel, n_repeats=len(pairs), dim_rows=dims,
         dim_skipped=dim_skipped, second_scorers=second, between=between, form_status=fstatus,
-        form_changes=form_changes, late_excluded=Counter(late_excl.values())),
+        form_changes=form_changes, late_excluded=Counter(late_excl.values()),
+        after_unblinding=(len(after_unblinding), earlier[:10])),
         encoding="utf-8")
     (out / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     append_log(project, "unblinded", [
-        f"{len(scores)} images scored at unblinding" + (" (below the planned minimum; override used)" if len(scores) < need else ""),
+        f"{len(scores)} images scored at unblinding"
+        + (f" (every coded image; fewer than the planned minimum of {need})" if len(scores) < need and all_scored
+           else " (below the planned minimum; override used)" if len(scores) < need else ""),
+        *([f"{len(after_unblinding)} of them scored or changed after the first unblinding ({earlier}): not blind."]
+          if after_unblinding else []),
         "Merged table: outputs/unblinded/merged.csv; summary: outputs/unblinded/summary.txt; "
         "results tables: per_neuron.csv, penetrance.csv, fisher_tests.csv; draft Methods text: methods_text.md",
     ])

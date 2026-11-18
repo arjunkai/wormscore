@@ -317,7 +317,7 @@ def browsed_sentence(project):
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
               dim_rows=(), dim_skipped=0, second_scorers=(), between=(), form_status="yes", rank_tests=(),
-              form_changes=(), late_excluded=None):
+              form_changes=(), late_excluded=None, after_unblinding=(0, "")):
     """added: (date, number of images) for each batch added to an existing key.
     key_rows, excluded_rows: for the table of images per genotype and microscope.
     reliability, n_repeats: agreement of hidden repeats. dim_rows: the measured check of calls."""
@@ -357,7 +357,12 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         f"brightness range. Each neuron was called {calls}; "
         f"{' or '.join(sc['defect_calls'])} counted as affected. " + definitions_sentence(cfg) + criteria_sentence(cfg, project) + practice_sentence(project) + interim_sentence(project) + bleed_sentence(project) + "Codes were linked "
         f"back to genotypes on {dt.date.today():%Y-%m-%d}, after {n_scored} image{'s' if n_scored != 1 else ''} "
-        f"had been scored.",
+        f"had been scored."
+        # 1.26.4: scores saved after the genotypes were first revealed
+        + (f" [{after_unblinding[0]} image{'s were' if after_unblinding[0] != 1 else ' was'} scored, or had "
+           f"{'their' if after_unblinding[0] != 1 else 'its'} score changed, after the genotypes were first revealed on "
+           f"{after_unblinding[1]}; those scores were not blind (merged.csv, column score_saved_after_unblinding). "
+           "Say so, and report them separately.]" if after_unblinding[0] else ""),
         "",
         "**Measurement.** "
         + flat_field_sentence(project, cfg)

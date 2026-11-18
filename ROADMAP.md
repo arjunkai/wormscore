@@ -32,6 +32,20 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.4: **Fixes from an independent audit: unblinding says when a result is not what it seems.**
+  - Scores saved or changed after the first unblinding (when the scorer knows the genotypes) were counted
+    with no mark. The summary and the Methods draft now warn, and `merged.csv` marks each one. Tests still run.
+  - Folders or genotype rules changed after Scan data: Scan data and Build show a warning until they have
+    run again (it was a message shown for a few seconds), and unblinding warns if the key still has the
+    old genotypes.
+  - A genotype in the analysis settings that no image has (a typing mistake in `config.json`) is named at
+    Build and at unblinding, instead of only "no comparison possible".
+  - **Calls or answers that start with `+`, `-`, `=` or `@`** (for example calls named "+" and "-") were never
+    counted as a defect at unblinding, because `scores.csv` stores them with a leading `'`. They are now read
+    back as chosen. **This changes the results of an existing project that uses such names: unblind it again.**
+    Projects without such names report exactly as before.
+  - A project with fewer images than the planned minimum unblinds without the override once every image is scored.
+  - Fix: a failed Save in Project settings raised a script error after showing the message.
 - 1.26.3: **Fixes from an independent audit: a build never changes what was scored.**
   - With the key folder moved away (some labs keep it elsewhere while scoring), Build blind set gave every
     image a new code, so saved scores then belonged to other images. It now stops and asks for the key
