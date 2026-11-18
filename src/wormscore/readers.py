@@ -524,7 +524,9 @@ def ome_images(path, cfg):
         # the metadata is in another file: the one the file names (1.26.8), or <name>.companion.ome next to it
         named = md.find("o:BinaryOnly", OME_NS).get("MetadataFile") if md is not None and md.find("o:BinaryOnly", OME_NS) is not None else None
         companion = Path(re.sub(r"(_t\d+_p\d+)?\.ome\.tiff?$", ".companion.ome", str(path)))
-        if named and (Path(path).parent / named).is_file():
+        # only a plain file name next to this file: the value comes from the file, so a path elsewhere
+        # (another folder, a network address) is never opened
+        if named and re.fullmatch(r"[^\\/:]+", named) and named not in (".", "..") and (Path(path).parent / named).is_file():
             companion = Path(path).parent / named
         if not companion.exists():
             return []

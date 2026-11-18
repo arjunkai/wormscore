@@ -71,8 +71,21 @@ a guided list on the right. The older launcher window is still available: `worms
 
 **Mac (Apple silicon, M1 and newer), no Python needed:** click **Download for macOS** above, unzip,
 and drag `wormscore.app` into Applications. The app is not signed with a paid Apple developer
-account, so the first time macOS blocks it: close the warning, then open **System Settings > Privacy &
-Security** and click **Open Anyway**. It opens in your web browser. On an Intel Mac, use Python below.
+account, so the first time macOS blocks it ("Apple could not verify..."). To open it once:
+
+1. Double-click `wormscore.app`. In the warning, click **Done** (not Move to Trash).
+2. Open **System Settings > Privacy & Security**, scroll down to Security, and click **Open Anyway**
+   next to wormscore. The button is there for about an hour after step 1.
+3. Click **Open Anyway** again and confirm with your password or Touch ID.
+
+After that it opens normally, in your web browser. Or, instead of steps 1 to 3, run this once in Terminal:
+
+```
+xattr -dr com.apple.quarantine /Applications/wormscore.app
+```
+
+It removes the mark macOS puts on downloaded files, so the app opens without the warning. It changes
+nothing else. On an Intel Mac, use Python below.
 
 **With Python 3.12 or newer:**
 
@@ -84,6 +97,10 @@ The newest code from GitHub: `pip install git+https://github.com/arjunkai/wormsc
 
 This installs a `wormscore` command and `wormscore-launcher`, which opens the same app window (in your
 default browser on macOS and Linux).
+
+In a browser, score in a normal window. Safari Private windows, Brave, and Firefox with fingerprinting
+protection change the image data a page reads back, which would show as speckle in the images. The scoring
+page checks for this when it opens and shows a warning above the image if the window does it.
 
 ### Updates
 
@@ -98,8 +115,9 @@ The downloaded app (Windows and Mac) checks for a new version when it starts. If
 window shows what is new with **Update and restart**, **Not now** and **Skip this version**.
 Update downloads the zip for your computer, checks it against the SHA-256 checksum GitHub lists for
 it, runs the new copy once to confirm its version, and swaps it in after the app closes. The previous
-version is kept: **Settings > Go back to ...** swaps it back. Projects, codes and scores are never
-touched. From the command line: `wormscore update`, `wormscore update --install`,
+version is kept: **Settings > Go back to ...** swaps it back. If the swap cannot be done (for example a
+file in the app folder is open in another program), nothing is changed: the app and the kept copy
+stay as they were, and you can try again. Projects, codes and scores are never touched. From the command line: `wormscore update`, `wormscore update --install`,
 `wormscore update --rollback`.
 
 If a project has a blind set built but is not unblinded yet, the update window warns that updating

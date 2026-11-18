@@ -7,6 +7,7 @@ statistics. Facts wormscore cannot know (names, whether imaging was blind) come 
 """
 import datetime as dt
 from collections import Counter
+from pathlib import Path
 
 from . import __version__
 from . import config as C
@@ -15,6 +16,48 @@ from . import ranks, stats
 
 def _date(path):
     return dt.datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d") if path.exists() else "[date]"
+
+
+def versions_used(project, current=__version__):
+    """Every wormscore version log.md records from the build of the current blind set on, plus the one
+    running now (1.26.9). Scan data, Build and Add new images each write a "Software:" line. An update
+    between Build and Unblind used to leave the earlier version out of the Methods draft."""
+    import json
+    import re
+    project = Path(project)
+    log, seed = project / "log.md", project / "key" / "seed.txt"
+    sections, title, ts = [], "", ""
+    for line in (log.read_text(encoding="utf-8").splitlines() if log.exists() else []):
+        if line.startswith("## "):
+            ts, title = line[3:19], line[20:].strip()
+        elif line.startswith("- Software: ") and title != "browse images":
+            text = line[len("- Software: "):]
+            try:
+                v = json.loads(text).get("wormscore")
+            except (ValueError, AttributeError):
+                m = re.match(r"wormscore (\S+)", text)
+                v = m.group(1) if m else None
+            if v:
+                sections.append((ts, title, str(v)))
+    builds = [i for i, x in enumerate(sections) if x[1].startswith("prepare")]
+    start = None
+    if seed.exists():       # the build that assigned the current codes: the first one logged after its seed was written
+        made = dt.datetime.fromtimestamp(seed.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+        start = next((i for i in builds if sections[i][0] >= made), None)
+    if start is None:
+        start = builds[0] if builds else len(sections)
+    found = {x[2] for x in sections[start:]} | {current}
+    order = lambda v: [int(n) for n in re.findall(r"\d+", v)]
+    return sorted(found, key=order)
+
+
+def software_phrase(project):
+    """'wormscore 1.26.7', or every version when log.md records more than one for this blind set."""
+    used = versions_used(project)
+    if len(used) == 1:
+        return f"wormscore {used[0]}"
+    return (f"wormscore {', '.join(used[:-1])} and {used[-1]} (the versions log.md records from building the "
+            f"blind set to unblinding; the results were computed with {__version__})")
 
 
 FORMULAS = {"product": "1 - (1 - P1)(1 - P2)", "additive": "P1 + P2 (at most 1)", "min": "the larger of P1 and P2"}
@@ -339,7 +382,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "# Methods text (draft; check every statement before use)",
         "",
         "**Blinded scoring.** "
-        f"{imaging} " + "".join(x + " " for x in looked[:1]) + f"Images were then coded and scored blind with wormscore {__version__} "
+        f"{imaging} " + "".join(x + " " for x in looked[:1]) + f"Images were then coded and scored blind with {software_phrase(project)} "
         "(https://github.com/arjunkai/wormscore). Inclusion rules were set before scoring and applied "
         f"without regard to genotype: {n_included} of {n_included + n_excluded} images were included"
         + (" (the reason for each exclusion is listed in excluded.csv)" if n_excluded else "")

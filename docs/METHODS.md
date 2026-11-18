@@ -589,7 +589,9 @@ Results tables use counted, usable images only, with the animal as the unit (one
   settings and are logged.
 - One version per project: `log.md` records the wormscore version at every step. Updating between
   Build blind set and Unblind would put two versions in the Methods; the app warns before such an
-  update and defaults to Not now.
+  update and defaults to Not now. If it happens, the Methods draft names every version `log.md` records
+  from the build of the current blind set to unblinding (Scan data, Build and Add new images each record
+  one), and says which one computed the results.
 - Identity channel: no correction is made for bleed-through between channels or for the small depth
   shift between colors (chromatic aberration). Acquire channels sequentially, image single-label
   controls, and remember that gut autofluorescence shows in red too, so a suggestion on the identity

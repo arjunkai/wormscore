@@ -1,0 +1,135 @@
+"""Saving outlines (1.26.9): the same numbers as before, without filtering the whole stack, and without
+holding up a score that is saved meanwhile."""
+import copy
+import http.client
+import json
+import threading
+
+import numpy as np
+import pytest
+
+from wormscore import config as C
+from wormscore import measure as M
+from wormscore import server
+from wormscore.pipeline import read_csv
+
+
+def earlier_method(code, raw, cands, meta, rois, cfg, sat_mask=None):
+    """measure_regions as it was up to 1.26.6: every plane median-filtered in full."""
+    filt = M.median_filter_stack(raw, cfg["measurement"]["median_filter_px"])
+    h, w = raw.shape[1:]
+    masks = {r["label"]: server.roi_mask(r, h, w, cands) for r in rois}
+    cells = {k: m for k, m in masks.items() if k != "background" and m.any()}
+    exclude = np.zeros((h, w), bool)
+    for m in cells.values():
+        exclude |= m
+    user_bg = masks.get("background")
+    rows = []
+    for label, m in cells.items():
+        r = M.measure_region(raw, filt, m, exclude, meta["pixel_um"], meta["saturation_value"], cfg, sat_mask)
+        if user_bg is not None and user_bg.any():
+            bz = r["best_z"]
+            r["user_bg_mip"] = float(np.median(raw.max(0)[user_bg]))
+            r["user_bg_best_plane"] = float(np.median(raw[bz][user_bg]))
+            r["mean_mip_minus_user_bg"] = round(r["mean_mip"] - r["user_bg_mip"], 2)
+            r["mean_best_minus_user_bg"] = round(r["mean_best_plane"] - r["user_bg_best_plane"], 2)
+        source = next((x.get("source", "drawn") for x in rois if x["label"] == label), "drawn")
+        rows.append({"code": code, "region": label, "source": source, **r})
+    return rows
+
+
+def stack(seed, shape=(7, 60, 90)):
+    rng = np.random.default_rng(seed)
+    raw = rng.integers(90, 140, shape).astype(np.uint16)
+    raw[rng.random(shape) < 0.02] = 4095            # hot pixels, which the median filter removes
+    raw[3, 20:28, 30:40] += 900                     # a cell
+    return raw
+
+
+ROI_SETS = [
+    # cells in the middle; one touching a corner, one an edge; one outline crossing the whole image
+    [{"type": "ellipse", "label": "Neuron 1", "cx": 35, "cy": 24, "rx": 6, "ry": 5},
+     {"type": "ellipse", "label": "Neuron 2", "cx": 70, "cy": 40, "rx": 4, "ry": 4}],
+    [{"type": "ellipse", "label": "Neuron 1", "cx": 2, "cy": 1, "rx": 5, "ry": 4},
+     {"type": "polygon", "label": "Neuron 2", "points": [[84, 50], [89, 50], [89, 59], [84, 59]]},
+     {"type": "ellipse", "label": "background", "cx": 50, "cy": 10, "rx": 5, "ry": 5}],
+    [{"type": "polygon", "label": "Neuron 1", "points": [[0, 0], [89, 0], [89, 59], [0, 59]]}],
+    [{"type": "candidate", "rank": 1, "label": "Neuron 1", "source": "suggestion S1"},
+     {"type": "ellipse", "label": "Neuron 2", "cx": 88, "cy": 30, "rx": 3, "ry": 9}],
+    [{"type": "ellipse", "label": "background", "cx": 50, "cy": 10, "rx": 5, "ry": 5}],
+    [],
+]
+
+
+@pytest.mark.parametrize("size", [1, 2, 3, 4, 5, 7])
+@pytest.mark.parametrize("dim_cutoff", [0, 3])
+def test_outline_measurements_are_exactly_those_of_the_earlier_method(size, dim_cutoff):
+    cfg = copy.deepcopy(C.DEFAULTS)
+    cfg["measurement"]["median_filter_px"] = size
+    cfg["unblinding"]["dim_cutoff_sd"] = dim_cutoff
+    meta = {"pixel_um": 0.25, "saturation_value": 4095}
+    cand = np.zeros((60, 90), bool)
+    cand[19:29, 29:41] = True
+    for seed in range(3):
+        raw = stack(seed)
+        for rois in ROI_SETS:
+            new = server.measure_regions("W0001", raw, {"arr_0": cand}, meta, rois, cfg)
+            old = earlier_method("W0001", raw, {"arr_0": cand}, meta, rois, cfg)
+            assert json.dumps(new, sort_keys=True) == json.dumps(old, sort_keys=True)
+
+
+def test_only_the_area_around_the_outlines_is_filtered(monkeypatch):
+    """Filtering all of a 2048 x 2048 x 50 stack took most of the 45 s a save needed."""
+    seen = []
+    real = M.median_filter_stack
+    monkeypatch.setattr(M, "median_filter_stack", lambda s, size: seen.append(s.shape) or real(s, size))
+    raw = stack(0, (5, 200, 300))
+    rois = [{"type": "ellipse", "label": "Neuron 1", "cx": 150, "cy": 100, "rx": 6, "ry": 6}]
+    server.measure_regions("W0001", raw, {}, {"pixel_um": 0.25, "saturation_value": 4095}, rois, C.DEFAULTS)
+    (shape,) = seen
+    assert shape[0] == 5 and shape[1] < 40 and shape[2] < 40
+
+
+def post(port, path, body, timeout=60):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    conn.request("POST", path, body=json.dumps(body), headers={"Content-Type": "application/json"})
+    res = conn.getresponse()
+    data = res.read()
+    conn.close()
+    return res.status, data
+
+
+def test_a_score_is_saved_while_outlines_are_being_measured(fresh_project):
+    srv = server.make_server(fresh_project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_address[1]
+    measuring, go = threading.Event(), threading.Event()
+    real = srv.project.measure_rois
+
+    def slow(code, rois):
+        measuring.set()
+        assert go.wait(60)
+        return real(code, rois)
+    srv.project.measure_rois = slow
+    rois = [{"type": "candidate", "rank": 1, "label": "Neuron 1", "source": "suggestion S1"}]
+    result = {}
+    t = threading.Thread(target=lambda: result.update(rois=post(port, "/api/worm/W0001/rois", {"rois": rois})))
+    t.start()
+    try:
+        assert measuring.wait(30)
+        score = {"usable": "no", "unusable_reason": "out of focus", "flag_answers": {}}
+        try:
+            status, _ = post(port, "/api/worm/W0002/score", score, timeout=10)
+        except OSError:
+            status = "the score waited for the outlines"
+        assert status == 200
+        assert read_csv(fresh_project / "scoring" / "scores.csv")[0]["code"] == "W0002"
+        assert not (fresh_project / "scoring" / "rois.json").exists()      # nothing written before it is measured
+    finally:
+        go.set()
+        t.join(60)
+        srv.shutdown()
+        srv.server_close()
+    assert result["rois"][0] == 200
+    assert read_csv(fresh_project / "scoring" / "roi_measurements.csv")[0]["region"] == "Neuron 1"
+    assert json.loads((fresh_project / "scoring" / "rois.json").read_text(encoding="utf-8"))["W0001"] == rois

@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import zipfile
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -212,10 +213,152 @@ def test_rollback_swaps_the_kept_copy_back(tmp_path, monkeypatch):
     U._remember_previous("0.7.0")
     assert U.previous_version() == "0.7.0"
     started = []
-    monkeypatch.setattr(U, "start_helper", lambda p, new, relaunch=True: started.append(new))
+    monkeypatch.setattr(U, "start_helper", lambda p, new, **kw: started.append((new, kw)))
     assert U.rollback() == "0.7.0"
-    assert started == [apps / "wormscore-update" / "wormscore-previous"] and (started[0] / "VERSION").read_text() == "1"
-    assert json.loads((tmp_path / "data" / "previous.json").read_text())["version"] == __version__
+    new, kw = started[0]
+    assert new == apps / "wormscore-update" / "wormscore-previous" and (new / "VERSION").read_text() == "1"
+    # the helper names this version as the kept copy once the swap has worked, and puts the kept copy back if not
+    assert kw["prev_version"] == __version__ and kw["restore"] == prev
+    assert json.loads((tmp_path / "data" / "previous.json").read_text())["version"] == "0.7.0"
+
+
+# ------------------------------------------------------------------ a swap that fails (1.26.9)
+
+def whole_app(folder, version):
+    """An app folder with the program, a library folder and a version, like the packaged app."""
+    (folder / "_internal").mkdir(parents=True)
+    for name in ("wormscore.exe", "VERSION", "_internal/lib.dll"):
+        (folder / name).write_text(version)
+
+
+def contents(folder):
+    return {p.relative_to(folder).as_posix(): p.read_text() for p in folder.rglob("*") if p.is_file()}
+
+
+def swap_setup(tmp_path, monkeypatch):
+    monkeypatch.setattr(U, "data_dir", lambda: tmp_path / "data")
+    monkeypatch.setattr(U, "install_kind", lambda: "windows")
+    monkeypatch.setattr(U, "WINDOWS_HELPER", U.WINDOWS_HELPER.replace("$i -ge 60", "$i -ge 1"))
+    monkeypatch.setattr(U, "POSIX_HELPER", U.POSIX_HELPER.replace("-ge 60", "-ge 1"))
+    apps = tmp_path / "apps"
+    paths = {"current": apps / "wormscore", "previous": apps / "wormscore-previous", "stage": apps / "wormscore-update",
+             "app": "wormscore.exe", "check": "wormscore.exe"}
+    monkeypatch.setattr(U, "app_paths", lambda kind=None: paths)
+    return paths
+
+
+def swap(paths, new, **kw):
+    U.start_helper(paths, new, pid=finished_pid(), relaunch=False, **kw).wait(timeout=180)
+    return U.last_result()
+
+
+def go_back_until_the_helper(monkeypatch):
+    """U.rollback() up to the point where the helper would start: returns what it would be started with."""
+    calls = []
+    with monkeypatch.context() as m:
+        m.setattr(U, "start_helper", lambda p, new, **kw: calls.append((new, kw)))
+        U.rollback(relaunch=False)
+    new, kw = calls[0]
+    return new, {k: kw[k] for k in ("prev_version", "restore")}
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="an open file stops a folder from being moved on Windows only")
+def test_failed_swap_with_a_file_held_open_leaves_every_copy_whole_and_go_back_works(tmp_path, monkeypatch):
+    """Audit item 9: with a file in the app folder open in another program, the helper moved the files it
+    could one by one, so the app folder was left without wormscore.exe and Go back had nothing whole."""
+    paths = swap_setup(tmp_path, monkeypatch)
+    cur, prev, new = paths["current"], paths["previous"], paths["stage"] / "wormscore"
+    whole_app(cur, "1")
+    whole_app(prev, "0")
+    whole_app(new, "2")
+    U._remember_previous("0.0.1")
+    one = {"wormscore.exe": "1", "VERSION": "1", "_internal/lib.dll": "1"}
+    zero = {k: "0" for k in one}
+    with open(cur / "_internal" / "lib.dll", "rb"):
+        r = swap(paths, new, prev_version="1.0.0")
+    assert not r["ok"] and "previous version was kept" in r["message"]
+    assert contents(cur) == one                                    # the app folder still holds the whole app
+    assert contents(prev) == zero and contents(new) == {k: "2" for k in one}
+    assert not Path(str(prev) + ".old").exists()
+    assert U.previous_version() == "0.0.1"                         # Go back still names the copy that is kept
+
+    # Go back with a file still open: nothing moves, and the kept copy is back in its place for another try
+    staged, kw = go_back_until_the_helper(monkeypatch)
+    with open(cur / "wormscore.exe", "rb"):
+        r = swap(paths, staged, **kw)
+    assert not r["ok"]
+    assert contents(cur) == one and contents(prev) == zero and U.previous_version() == "0.0.1"
+
+    # the file is closed: Go back swaps the kept copy in, and this version becomes the kept one
+    staged, kw = go_back_until_the_helper(monkeypatch)
+    assert swap(paths, staged, **kw) == {"ok": True, "message": ""}
+    assert contents(cur) == zero and contents(prev) == one and U.previous_version() == __version__
+
+
+def test_kept_version_is_recorded_only_after_a_swap_that_worked(tmp_path, monkeypatch):
+    paths = swap_setup(tmp_path, monkeypatch)
+    cur, prev = paths["current"], paths["previous"]
+    whole_app(cur, "1")
+    whole_app(prev, "0")
+    U._remember_previous("0.9.0")
+    r = swap(paths, paths["stage"] / "wormscore", prev_version="1.0.0")      # the new copy is not there
+    assert not r["ok"] and U.previous_version() == "0.9.0" and contents(prev)["VERSION"] == "0"
+    whole_app(paths["stage"] / "wormscore", "2")
+    assert swap(paths, paths["stage"] / "wormscore", prev_version="1.0.0")["ok"]
+    assert U.previous_version() == "1.0.0" and contents(prev)["VERSION"] == "1" and contents(cur)["VERSION"] == "2"
+
+
+def test_a_new_copy_without_the_program_is_not_left_in_place(tmp_path, monkeypatch):
+    paths = swap_setup(tmp_path, monkeypatch)
+    cur, prev, new = paths["current"], paths["previous"], paths["stage"] / "wormscore"
+    whole_app(cur, "1")
+    whole_app(prev, "0")
+    make_app(new, "2")                      # no wormscore.exe
+    r = swap(paths, new, prev_version="1.0.0")
+    assert not r["ok"] and "previous version was kept" in r["message"]
+    assert contents(cur)["wormscore.exe"] == "1" and contents(prev)["wormscore.exe"] == "0"
+    assert (new / "VERSION").read_text() == "2"
+
+
+def test_a_failed_go_back_puts_the_kept_copy_back(tmp_path, monkeypatch):
+    paths = swap_setup(tmp_path, monkeypatch)
+    prev, staged = paths["previous"], paths["stage"] / "wormscore-previous"
+    whole_app(staged, "0")                  # where Go back puts the kept copy before the swap
+    r = swap(paths, staged, prev_version="1.0.0", restore=prev)      # the app folder cannot be moved (it is not there)
+    assert not r["ok"] and contents(prev)["wormscore.exe"] == "0" and not staged.exists()
+
+
+# ------------------------------------------------------------------ the latest release from a local file (1.26.9)
+
+def local_release(tmp_path, monkeypatch, zip_bytes, digest=None):
+    monkeypatch.setattr(U, "data_dir", lambda: tmp_path / "data")
+    monkeypatch.setattr(U, "install_kind", lambda: "windows")
+    z = tmp_path / "release" / "wormscore-windows.zip"
+    z.parent.mkdir()
+    z.write_bytes(zip_bytes)
+    rel = {"tag_name": "v9.0.0", "body": "", "assets": [{
+        "name": z.name, "browser_download_url": z.as_uri(), "size": len(zip_bytes),
+        "digest": digest or "sha256:" + hashlib.sha256(zip_bytes).hexdigest()}]}
+    (tmp_path / "release" / "latest.json").write_text(json.dumps(rel))
+    monkeypatch.setenv("WORMSCORE_UPDATE_FILE", str(tmp_path / "release" / "latest.json"))
+
+
+def test_latest_release_can_be_read_from_a_local_file(tmp_path, monkeypatch):
+    body = app_zip(tmp_path, {"wormscore/wormscore.exe": "x"})
+    local_release(tmp_path, monkeypatch, body)
+    info = U.check()
+    assert info["version"] == "9.0.0" and info["asset"]["url"].startswith("file:")
+    got = U.download(info["asset"], tmp_path / "data" / "updates" / "wormscore-windows.zip")
+    assert got.read_bytes() == body
+
+
+def test_a_local_release_must_still_match_its_checksum(tmp_path, monkeypatch):
+    local_release(tmp_path, monkeypatch, app_zip(tmp_path, {"wormscore/wormscore.exe": "x"}), digest="sha256:" + "0" * 64)
+    with pytest.raises(U.UpdateError, match="does not match"):
+        U.download(U.check()["asset"], tmp_path / "data" / "updates" / "wormscore-windows.zip")
+    monkeypatch.delenv("WORMSCORE_UPDATE_FILE")
+    monkeypatch.delenv("WORMSCORE_UPDATE_URL", raising=False)
+    assert U.latest_url() == U.LATEST_URL            # without the test setting: GitHub, as before
 
 
 # ------------------------------------------------------------------ projects between build and unblind

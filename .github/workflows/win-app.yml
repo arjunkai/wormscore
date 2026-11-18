@@ -1,0 +1,30 @@
+name: win-app
+
+# Builds the Windows app, builds it again with a higher version number, and installs the second
+# over the first through the app's own updater, then goes back (packaging/update_check.py).
+# Also repeats both with a file in the app folder held open, which makes the swap fail: the app
+# folder must stay whole. No release is involved (the updater reads the "latest release" from a
+# local file), and nothing is attached to a release.
+on:
+  push:
+    paths:
+      - "src/wormscore/**"
+      - "packaging/**"
+      - ".github/workflows/win-app.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-and-go-back:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -e .[dev]
+      - name: Update, then Go back, with the packaged app
+        run: python -X utf8 packaging/update_check.py --work "$env:RUNNER_TEMP\update-check"

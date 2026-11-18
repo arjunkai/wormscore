@@ -1,12 +1,17 @@
 wormscore for macOS (Apple silicon: M1 and newer)
 
 1. Unzip, then drag wormscore.app into Applications.
-2. The first time, macOS blocks it because the app is not signed with a paid Apple developer
-   account. Open it once like this:
-   - Double-click wormscore.app and close the warning.
-   - Open System Settings > Privacy & Security, scroll down, and click "Open Anyway" next to
-     wormscore. Confirm with your password.
+2. The first time, macOS blocks it ("Apple could not verify...") because the app is not signed
+   with a paid Apple developer account. Open it once like this:
+   - Double-click wormscore.app. In the warning, click "Done" (not "Move to Trash").
+   - Open System Settings > Privacy & Security, scroll down to Security, and click
+     "Open Anyway" next to wormscore. The button is there for about an hour after the warning.
+   - Click "Open Anyway" again and confirm with your password or Touch ID.
    After that it opens normally.
+   Or, instead, run this once in Terminal:
+     xattr -dr com.apple.quarantine /Applications/wormscore.app
+   It removes the mark macOS puts on downloaded files, so the app opens without the warning.
+   It changes nothing else.
 3. wormscore opens in your web browser. Nothing leaves your computer: the page is served from
    your own Mac (127.0.0.1). Closed the page? Click wormscore in the Dock to open it again.
    To close wormscore, quit it from the Dock (or press Cmd+Q). It also closes by itself

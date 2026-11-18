@@ -175,6 +175,14 @@ function answerByKey(radio, k) {
   return true;
 }
 
+// Safari does not give a clicked radio button or check box the keyboard focus, so after a click the
+// number keys (which act on the question that has the focus) did nothing. A clicked answer now takes
+// the focus in every browser, as it already did in the app's own window.
+$("#scoreForm").addEventListener("click", e => {
+  const t = e.target;
+  if (t.tagName === "INPUT" && (t.type === "radio" || t.type === "checkbox") && document.activeElement !== t) t.focus({ preventScroll: true });
+});
+
 // Notes is one line until it holds more; it grows with its text (CSS caps it, then it scrolls).
 function fitNotes() {
   const t = $("#scoreForm").elements.notes;
@@ -228,6 +236,27 @@ function loadValues(url, w, h, packed = true) {
     img.onerror = reject;
     img.src = url;
   });
+}
+
+// 1.26.9: some browser windows change what a page reads back from a canvas, to stop sites from telling
+// browsers apart (Safari Private windows, Brave, Firefox with fingerprinting protection). The images
+// here are decoded through a canvas, so they would show speckle that is not in the data. A small image
+// with known values (pixel i holds (i * 61 + 7), packed like the planes) is decoded by the same path
+// when the page starts; if a value comes back changed, a warning stays above the image.
+const READBACK_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAe0lEQVR42u2TQQrAIAwENyDorS/y3G/mY/6lF0UoCRY0py54iMTFzeoIMlDnko3abKWsY9OABqhbz2NebcnlugPt9wm+2F+P4khS0TNRePJUdEu/vP4d0Vn7UkdEcR9pRBRjv0cUyoH1yOfsQ8kBOSAH5IAckANy8BcOHjlyOP0w3XoNAAAAAElFTkSuQmCC";
+async function checkReadback() {
+  let altered = false;
+  try {
+    // decoded twice: some browsers add different noise each time, others the same noise every time
+    for (let k = 0; k < 2 && !altered; k++) {
+      const v = await loadValues(READBACK_PNG, 32, 32);
+      altered = v.some((x, i) => x !== i * 61 + 7);
+    }
+  } catch {
+    return;       // the test image did not load: nothing is known, and the worm images report their own errors
+  }
+  st.readbackAltered = altered;
+  $("#readbackWarn").classList.toggle("hidden", !altered);
 }
 
 const radios = (name, options) => wsForm.radios(h, name, options);
@@ -358,10 +387,16 @@ function renderMeasure(rows) {
   const out = $("#measureOut");
   if (!rows) return out.replaceChildren();
   if (!rows.length) return out.replaceChildren(h("p", { class: "small" }, "Draw a cell region to measure it."));
-  const head = h("tr", {}, ...MEASURE_COLS.map(([, t]) => h("th", { scope: "col" }, t)));
-  const body = rows.map(r => h("tr", {}, ...MEASURE_COLS.map(([k]) =>
-    k === "region" ? h("th", { scope: "row" }, measureCell(k, r)) : h("td", {}, measureCell(k, r)))));
+  // One column for each region and one row for each measurement (1.26.9): six columns of numbers were
+  // wider than the panel on a laptop screen. With many regions the table scrolls sideways and the
+  // measurements' names stay in place.
+  const head = h("tr", {}, h("th", { scope: "col" }, MEASURE_COLS[0][1]), ...rows.map(r => h("th", { scope: "col" }, measureCell("region", r))));
+  const body = MEASURE_COLS.slice(1).map(([k, t]) => h("tr", {}, h("th", { scope: "row" }, t), ...rows.map(r => h("td", {}, measureCell(k, r)))));
   out.replaceChildren(h("div", { class: "m-wrap" }, h("table", { class: "m-table" }, h("thead", {}, head), h("tbody", {}, ...body))));
+  // the numbers are the answer to the click: bring them into view above the Measure button
+  const panel = $("#panel"), bar = $("#saveRois").closest(".actions");
+  const over = out.getBoundingClientRect().bottom - bar.getBoundingClientRect().top;
+  if (over > 0) panel.scrollTop += over;
 }
 
 async function measure() {
@@ -444,6 +479,7 @@ function confirmLeave() {
 async function openWorm(code) {
   // Outlines are only kept once saved, so leaving them asks first. Unsaved answers stay as a
   // draft (never a score) and come back when this image is opened again.
+  if (st.roisSaving) await st.roisSaving;      // outlines on their way to the file: no question about leaving them
   if (st.roisDirty && !(await confirmLeave())) return;
   if (st.formDirty) {
     saveDraft();
@@ -1120,16 +1156,34 @@ function renderRoiList() {
       } }, "Remove")))));
 }
 
-$("#saveRois").onclick = async () => {
+// 1.26.9: says "Saving..." at once (measuring a large stack takes a few seconds, and nothing showed
+// meanwhile). The button is off until the save has answered, so one click saves once; a score can be
+// saved meanwhile. The message is only for the image the outlines belong to.
+$("#saveRois").onclick = () => {
   if (browsing()) return measure();
-  try {
-    await api(`/api/worm/${st.code}/rois`, { rois: st.rois });
-    st.roisDirty = false;
-    roiMessage(`Saved ${st.rois.length} outline${st.rois.length === 1 ? "" : "s"}`);
-    await loadList();
-  } catch (err) {
-    roiMessage(`Not saved: ${err.message}`, true);
-  }
+  if (st.roisSaving) return;
+  const code = st.code, sent = JSON.stringify(st.rois), n = st.rois.length, btn = $("#saveRois");
+  roiMessage("Saving...");
+  btn.disabled = true;
+  st.roisSaving = (async () => {
+    try {
+      await api(`/api/worm/${code}/rois`, { rois: JSON.parse(sent) });
+      if (st.code === code) {
+        // outlines changed while it was saving are still unsaved
+        if (JSON.stringify(st.rois) === sent) {
+          st.roisDirty = false;
+          roiMessage(`Saved ${n} outline${n === 1 ? "" : "s"}`);
+        } else roiMessage("Unsaved changes");
+      }
+      await loadList();
+    } catch (err) {
+      if (st.code === code) roiMessage(`Not saved: ${err.message}`, true);
+    } finally {
+      st.roisSaving = null;
+      btn.disabled = false;
+    }
+  })();
+  return st.roisSaving;
 };
 
 // ---------------------------------------------------------------- score form
@@ -1488,6 +1542,7 @@ async function start() {
       buildForm();
     }
     await loadList();
+    if (st.readbackAltered === undefined) await checkReadback();      // before the first image is shown
     st.ready = true;
     const first = browsing() ? st.worms[0] : st.worms.find(w => !w.scored) || st.worms[0];
     if (first) openWorm(first.code);

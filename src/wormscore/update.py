@@ -35,7 +35,16 @@ class UpdateError(Exception):
 
 
 def latest_url():
-    # Another address only for testing an update against a local copy of the release.
+    # Two settings that only a test sets; the app never sets them and no screen offers them.
+    # WORMSCORE_UPDATE_FILE (1.26.9): a file on this computer that holds what GitHub's "latest release"
+    # answer would be, with the zip's address as a file:// address. The checks on GitHub's Windows and Mac
+    # machines use it to install a newer build over an older one through the real updater, then go back,
+    # without a published release. Everything else is the same code as a real update: the zip must match
+    # the SHA-256 the file lists, is unpacked, and must start and report the version expected.
+    # WORMSCORE_UPDATE_URL: another address, for the tests' stand-in for GitHub.
+    local = os.environ.get("WORMSCORE_UPDATE_FILE")
+    if local:
+        return Path(local).resolve().as_uri()
     return os.environ.get("WORMSCORE_UPDATE_URL") or LATEST_URL
 
 
@@ -75,12 +84,12 @@ def app_paths(kind=None):
     if kind == "windows":
         cur = Path(sys.executable).resolve().parent
         return {"current": cur, "previous": cur.with_name(cur.name + "-previous"),
-                "stage": cur.with_name(cur.name + "-update"), "app": "wormscore.exe"}
+                "stage": cur.with_name(cur.name + "-update"), "app": "wormscore.exe", "check": "wormscore.exe"}
     if kind == "mac":
         cur = Path(sys.executable).resolve().parents[2]            # wormscore.app/Contents/MacOS/wormscore
         d = data_dir()
         return {"current": cur, "previous": d / "previous" / cur.name, "stage": d / "update-stage",
-                "app": "wormscore.app"}
+                "app": "wormscore.app", "check": "Contents/MacOS/wormscore"}
     return {}
 
 
@@ -88,7 +97,7 @@ def previous_version():
     """Version of the copy kept for rollback, or None."""
     p = app_paths()
     try:
-        info = json.loads((data_dir() / "previous.json").read_text(encoding="utf-8"))
+        info = json.loads((data_dir() / "previous.json").read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return None
     if p and p["previous"].exists() and parse_version(info.get("version", "")):
@@ -239,12 +248,29 @@ def new_version(app, kind):
     return m.group(1) if m else None
 
 
-WINDOWS_HELPER = r"""param([int]$WaitPid, [string]$Current, [string]$New, [string]$Previous, [string]$Result, [string]$Launch)
+# 1.26.9: every move in the helpers is one rename of a whole folder, which either happens or does not.
+# The Windows helper used Move-Item, which, when a file in the app folder is still open in another
+# program (a virus scanner, a second copy of the app), moves the files it can one by one and then
+# stops: the app folder was left with only the open file, without wormscore.exe, and "Go back" then
+# had nothing whole to put back. [System.IO.Directory]::Move fails as a whole instead, so a failed
+# swap leaves every copy as it was. The helpers also:
+# - write previous.json (which version the kept copy is) only after a swap that worked, so after a
+#   failed one "Go back" still names and restores the copy that is really kept;
+# - on a failed "Go back", put the kept copy back where it was (-Restore), so it can be tried again;
+# - check that the app folder holds the app before reporting "ok".
+WINDOWS_HELPER = r"""param([int]$WaitPid, [string]$Current, [string]$New, [string]$Previous, [string]$Result, [string]$Launch,
+      [string]$PrevJson, [string]$PrevVersion, [string]$Restore, [string]$Check)
 # Written by wormscore: swaps in a new app folder after wormscore has closed.
 $ErrorActionPreference = 'Stop'
+function Move-Whole($from, $to) {
+  # one rename: it fails as a whole if a file inside is open, and never moves part of a folder
+  if (Test-Path -LiteralPath $to) { throw "$to is in the way." }
+  try { [System.IO.Directory]::Move($from, $to) }
+  catch { throw "Could not move $from. A file in it may be open in another program." }
+}
 function Move-Retry($from, $to) {
   for ($i = 0; ; $i++) {
-    try { Move-Item -LiteralPath $from -Destination $to; return }
+    try { Move-Whole $from $to; return }
     catch { if ($i -ge 60) { throw }; Start-Sleep -Seconds 1 }
   }
 }
@@ -255,18 +281,29 @@ try {
   if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
   if (Test-Path -LiteralPath $Previous) { Move-Retry $Previous $old }
   try { Move-Retry $Current $Previous }
-  catch { if (Test-Path -LiteralPath $old) { Move-Item -LiteralPath $old -Destination $Previous }; throw }
+  catch { if (Test-Path -LiteralPath $old) { Move-Retry $old $Previous }; throw }
   try { Move-Retry $New $Current }
   catch {
-    Move-Item -LiteralPath $Previous -Destination $Current
-    if (Test-Path -LiteralPath $old) { Move-Item -LiteralPath $old -Destination $Previous }
+    Move-Retry $Previous $Current
+    if (Test-Path -LiteralPath $old) { Move-Retry $old $Previous }
     throw
   }
+  if ($Check -and -not (Test-Path -LiteralPath (Join-Path $Current $Check))) {
+    # the copy moved in is not a whole app: put the one that worked back
+    Move-Retry $Current $New
+    Move-Retry $Previous $Current
+    if (Test-Path -LiteralPath $old) { Move-Retry $old $Previous }
+    throw "The new copy has no $Check."
+  }
+  if ($PrevJson) { [System.IO.File]::WriteAllText($PrevJson, "{`"version`": `"$PrevVersion`"}") }
   if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }
   $stage = Split-Path -Parent $New
   if (-not (Get-ChildItem -LiteralPath $stage -Force)) { Remove-Item -LiteralPath $stage -ErrorAction SilentlyContinue }
 } catch {
   $status = @('failed', "$($_.Exception.Message) The previous version was kept.")
+  try {
+    if ($Restore -and (Test-Path -LiteralPath $New) -and -not (Test-Path -LiteralPath $Restore)) { Move-Retry $New $Restore }
+  } catch {}
 }
 Set-Content -LiteralPath $Result -Value $status -Encoding UTF8
 if ($Launch) { Start-Process -FilePath (Join-Path $Current $Launch) -WorkingDirectory $HOME }
@@ -274,11 +311,13 @@ if ($Launch) { Start-Process -FilePath (Join-Path $Current $Launch) -WorkingDire
 
 POSIX_HELPER = r"""#!/bin/sh
 # Written by wormscore: swaps in a new app after wormscore has closed.
-# Arguments: wait_pid current new previous result launch(1 or empty)
+# Arguments: wait_pid current new previous result launch(1 or empty) prev_json prev_version restore check
 pid="$1"; current="$2"; new="$3"; previous="$4"; result="$5"; launch="$6"
+prev_json="$7"; prev_version="$8"; restore="$9"; shift 9; check="$1"
 i=0
 while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 240 ]; do sleep 0.5; i=$((i+1)); done
-retry() { n=0; until mv "$1" "$2" 2>/dev/null; do n=$((n+1)); [ "$n" -ge 60 ] && return 1; sleep 1; done; }
+# never onto something that is already there: mv would put the folder inside it
+retry() { n=0; until [ ! -e "$2" ] && mv "$1" "$2" 2>/dev/null; do n=$((n+1)); [ "$n" -ge 60 ] && return 1; sleep 1; done; }
 old="$previous.old"
 status="ok"; msg=""
 rm -rf "$old"
@@ -286,29 +325,40 @@ mkdir -p "$(dirname "$previous")"
 if [ -e "$previous" ] && ! retry "$previous" "$old"; then
   status="failed"; msg="Could not move the previous copy aside."
 elif ! retry "$current" "$previous"; then
-  [ -e "$old" ] && mv "$old" "$previous"
+  [ -e "$old" ] && retry "$old" "$previous"
   status="failed"; msg="Could not move the current copy aside."
 elif ! retry "$new" "$current"; then
-  mv "$previous" "$current"; [ -e "$old" ] && mv "$old" "$previous"
+  retry "$previous" "$current"; [ -e "$old" ] && retry "$old" "$previous"
   status="failed"; msg="Could not move the new copy into place."
+elif [ -n "$check" ] && [ ! -e "$current/$check" ]; then
+  # the copy moved in is not a whole app: put the one that worked back
+  retry "$current" "$new"; retry "$previous" "$current"; [ -e "$old" ] && retry "$old" "$previous"
+  status="failed"; msg="The new copy is not a whole app."
 else
+  [ -n "$prev_json" ] && printf '{"version": "%s"}' "$prev_version" > "$prev_json"
   rm -rf "$old"
   rmdir "$(dirname "$new")" 2>/dev/null
 fi
-[ "$status" = "failed" ] && msg="$msg The previous version was kept."
+if [ "$status" = "failed" ]; then
+  msg="$msg The previous version was kept."
+  if [ -n "$restore" ] && [ -e "$new" ] && [ ! -e "$restore" ]; then retry "$new" "$restore"; fi
+fi
 printf '%s\n%s\n' "$status" "$msg" > "$result"
 [ -n "$launch" ] && open "$current"
 exit 0
 """
 
 
-def start_helper(paths, new, pid=None, relaunch=True):
-    """Start the helper that swaps `new` into place once process `pid` (this app) has exited."""
+def start_helper(paths, new, pid=None, relaunch=True, prev_version=None, restore=None):
+    """Start the helper that swaps `new` into place once process `pid` (this app) has exited.
+    prev_version: what the copy moved aside is, written to previous.json once the swap has worked.
+    restore: where `new` goes back to if the swap fails (Go back: the kept previous copy's place)."""
     d = data_dir()
     d.mkdir(parents=True, exist_ok=True)
     result = d / "update-result.txt"
     result.unlink(missing_ok=True)
     pid = os.getpid() if pid is None else pid
+    prev_json = str(d / "previous.json") if prev_version else ""
     if sys.platform == "win32":
         script = d / "update-helper.ps1"
         script.write_text(WINDOWS_HELPER, encoding="utf-8")
@@ -316,6 +366,11 @@ def start_helper(paths, new, pid=None, relaunch=True):
                "-WaitPid", str(pid), "-Current", str(paths["current"]), "-New", str(new),
                "-Previous", str(paths["previous"]), "-Result", str(result),
                "-Launch", paths["app"] if relaunch else ""]
+        # after -Launch, as before; an empty value is left out
+        for name, value in (("-PrevJson", prev_json), ("-PrevVersion", prev_version), ("-Restore", restore),
+                            ("-Check", paths.get("check"))):
+            if value:
+                cmd[-2:-2] = [name, str(value)]
         flags = NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
         try:   # leave any job object this app runs in, so closing the app does not stop the helper
             return subprocess.Popen(cmd, cwd=str(Path.home()), creationflags=flags | 0x01000000, close_fds=True)
@@ -324,7 +379,8 @@ def start_helper(paths, new, pid=None, relaunch=True):
     script = d / "update-helper.sh"
     script.write_text(POSIX_HELPER, encoding="utf-8")
     return subprocess.Popen(["/bin/sh", str(script), str(pid), str(paths["current"]), str(new),
-                             str(paths["previous"]), str(result), "1" if relaunch else ""],
+                             str(paths["previous"]), str(result), "1" if relaunch else "",
+                             prev_json, prev_version or "", str(restore or ""), paths.get("check") or ""],
                             cwd=str(Path.home()), start_new_session=True, close_fds=True)
 
 
@@ -364,8 +420,7 @@ def prepare_install(info, say=lambda text: None, progress=lambda done, total: No
 
 def install(info, say=lambda text: None, progress=lambda done, total: None, relaunch=True):
     paths, new = prepare_install(info, say, progress)
-    _remember_previous(__version__)
-    start_helper(paths, new, relaunch=relaunch)
+    start_helper(paths, new, relaunch=relaunch, prev_version=__version__)
 
 
 def rollback(relaunch=True):
@@ -379,9 +434,12 @@ def rollback(relaunch=True):
         shutil.rmtree(paths["stage"])
     paths["stage"].mkdir(parents=True)
     new = paths["stage"] / paths["previous"].name
-    shutil.move(str(paths["previous"]), str(new))
-    _remember_previous(__version__)
-    start_helper(paths, new, relaunch=relaunch)
+    try:
+        os.rename(paths["previous"], new)       # one rename; a copy that stopped halfway would lose the kept version
+    except OSError:
+        shutil.move(str(paths["previous"]), str(new))
+    # if the swap fails, the helper puts the kept copy back where it was, so Go back can be tried again
+    start_helper(paths, new, relaunch=relaunch, prev_version=__version__, restore=paths["previous"])
     return back
 
 

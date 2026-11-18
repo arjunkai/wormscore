@@ -130,14 +130,34 @@ def saturated_mask(d):
     return np.array(Image.open(f)) > 0 if f.is_file() else None
 
 
+def filtered_near(raw, masks, size):
+    """The median-filtered stack, worked out only around the regions (1.26.9). The filtered values are
+    read only inside the regions, and a filtered pixel depends only on the pixels within the filter's
+    width of it, so filtering a rectangle around the regions (wider than them by the filter's width, or up
+    to the image edge) gives exactly the values that filtering every plane in full gives there. Outside
+    the rectangle the result is zero and is never read. Filtering a whole 2048 x 2048 x 50 stack took most
+    of the time of saving outlines."""
+    np, _, _, M = heavy_imports()
+    filt = np.zeros_like(raw)
+    if not masks:
+        return filt
+    union = np.logical_or.reduce(masks)
+    ys, xs = np.nonzero(union.any(1))[0], np.nonzero(union.any(0))[0]
+    pad = int(size) + 1
+    y0, y1 = max(0, ys[0] - pad), min(raw.shape[1], ys[-1] + 1 + pad)
+    x0, x1 = max(0, xs[0] - pad), min(raw.shape[2], xs[-1] + 1 + pad)
+    filt[:, y0:y1, x0:x1] = M.median_filter_stack(raw[:, y0:y1, x0:x1], size)
+    return filt
+
+
 def measure_regions(code, raw, cands, meta, rois, cfg, sat_mask=None):
     """Measure drawn or suggested regions on one image stack. cands maps "arr_<rank-1>" to the
     suggested cells' masks. Used when a scorer saves regions, and by Browse images (not saved)."""
     np, _, _, M = heavy_imports()
-    filt = M.median_filter_stack(raw, cfg["measurement"]["median_filter_px"])
     h, w = raw.shape[1:]
     masks = {r["label"]: roi_mask(r, h, w, cands) for r in rois}
     cells = {k: m for k, m in masks.items() if k != "background" and m.any()}
+    filt = filtered_near(raw, list(cells.values()), cfg["measurement"]["median_filter_px"])
     exclude = np.zeros((h, w), bool)
     for m in cells.values():
         exclude |= m
@@ -273,13 +293,19 @@ class Project:
         raw = np.stack([M.unpack16(np.array(Image.open(d / "planes" / f"z{z:02d}.png"))) for z in range(meta["n_z"])])
         return measure_regions(code, raw, np.load(d / "candidates.npz"), meta, rois, self.cfg, saturated_mask(d))
 
-    def save_rois(self, code, rois):
-        check_writable(*(self.scoring / n for n in ("rois.json", "roi_measurements.json", "roi_measurements.csv")))
+    ROI_FILES = ("rois.json", "roi_measurements.json", "roi_measurements.csv")
+
+    def save_rois(self, code, rois, rows=None):
+        """rows: the regions' measurements if they were already made (the server measures before it
+        takes the lock that saves share, so a score can be saved meanwhile); None measures here."""
+        check_writable(*(self.scoring / n for n in self.ROI_FILES))
+        if rows is None:
+            rows = self.measure_rois(code, rois) if rois else []
         all_rois = self.load("rois.json", {})
         all_rois[code] = rois
         self.save("rois.json", all_rois)
         meas = self.load("roi_measurements.json", {})
-        meas[code] = self.measure_rois(code, rois) if rois else []
+        meas[code] = rows
         self.save("roi_measurements.json", meas)
         fields = ROI_FIELDS + (["background_sd_best_plane"] if C.dim_cutoff(self.cfg) else [])
         with open(self.scoring / "roi_measurements.csv", "w", newline="", encoding="utf-8") as fh:
@@ -435,6 +461,16 @@ def make_handler(project):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
             except json.JSONDecodeError:
                 return self.send_error(400)
+            if what == "rois":
+                # 1.26.9: measured before the lock is taken (reading and measuring a large stack takes
+                # seconds), so saving a score or a draft never waits for it. Only the writing is locked.
+                rois = body.get("rois", [])
+                check_writable(*(project.scoring / n for n in project.ROI_FILES))
+                rows = project.measure_rois(code, rois) if rois else []
+                with project.lock:
+                    project.save_rois(code, rois, rows)
+                # Only confirm the save; the numbers stay in the CSV, not on screen.
+                return self.send_json({"ok": True, "n_regions": len(rois)})
             with project.lock:
                 if what == "score":
                     return self.send_json({"ok": True, "saved": project.save_score(code, body)})
@@ -449,10 +485,6 @@ def make_handler(project):
                     else:
                         return self.send_error(400)
                     return self.send_json({"ok": True})
-                if what == "rois":
-                    project.save_rois(code, body.get("rois", []))
-                    # Only confirm the save; the numbers stay in the CSV, not on screen.
-                    return self.send_json({"ok": True, "n_regions": len(body.get("rois", []))})
             self.send_error(404)
 
     return Handler

@@ -158,3 +158,22 @@ def test_scan_progress_covers_the_pixel_checksums_too(tmp_path):
     assert seen == sorted(seen) and seen[-1] == 1.0
     assert sum(0.5 < x < 1.0 for x in seen) >= 3 and sum(x <= 0.5 for x in seen) >= 1
     assert sum(x == 1.0 for x in seen) == 1
+
+
+def test_metadata_named_in_another_folder_is_not_opened(tmp_path):
+    """The companion file's name comes from the image file itself: only a plain name next to it is followed."""
+    cfg = C.merge(C.DEFAULTS, {})
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "set").mkdir()
+    full = write_ome(tmp_path / "elsewhere" / "meta.ome.tif", bits=16)
+    with tifffile.TiffFile(full) as f:
+        planes = f.asarray()
+    for named, found in (("meta.ome.tif", 1), ("../elsewhere/meta.ome.tif", 0), (str(full), 0)):
+        if found:
+            write_ome(tmp_path / "set" / "meta.ome.tif", bits=16)
+        xml = (f'<OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06"><BinaryOnly MetadataFile="{named}" '
+               'UUID="urn:uuid:0"/></OME>')
+        part = tmp_path / "set" / "part.ome.tif"
+        tifffile.imwrite(part, planes.reshape(-1, 32, 32), description=xml, metadata=None, photometric="minisblack")
+        assert len(readers.ome_images(part, cfg)) == found, named
+        (tmp_path / "set" / "meta.ome.tif").unlink(missing_ok=True)

@@ -40,6 +40,9 @@ jobs:
           kill $PID || true
           cat "$RUNNER_TEMP/app.out"
           exit ${FAILED:-0}
+      - name: Scoring page in WebKit (browser image check, number keys, Save outlines, Browse layout)
+        # these tests skip where no browser engine is installed, as in the tests workflow; here WebKit is
+        run: python -m pytest -q tests/test_scoring_page.py -rs
       - name: Open the app twice, then quit it from the Dock
         run: |
           APP="$PWD/dist/wormscore.app"
@@ -75,11 +78,21 @@ jobs:
           else
             echo "plain Python cannot verify HTTPS now, as on a Mac without it"
           fi
-          $APP update
+          # GitHub sometimes answers the shared runner "rate limit exceeded": that reply came over verified HTTPS,
+          # which is what this step checks, so only a failure to connect or verify fails it
+          out=$($APP update 2>&1) || true
+          echo "$out"
+          if echo "$out" | grep -q "Could not reach GitHub" && ! echo "$out" | grep -q "rate limit"; then exit 1; fi
           $APP demo --real "$RUNNER_TEMP/real"
           $APP inventory "$RUNNER_TEMP/real"
           $APP prepare "$RUNNER_TEMP/real"
           test "$(ls "$RUNNER_TEMP/real/blind" | wc -l)" -eq 4
+      - name: Update, then Go back, with the packaged app
+        # Builds the app again with a higher version number, zips it as the release does and installs it
+        # over the first build through the app's own updater, then goes back; then the same with the app
+        # marked unchangeable, so the swap fails and must leave every copy whole. No release is involved:
+        # the updater reads the "latest release" from a local file (update.latest_url).
+        run: python packaging/update_check.py --first dist/wormscore.app --work "$RUNNER_TEMP/update-check"
       - name: What Gatekeeper says about a downloaded copy
         # A copy built here has no quarantine mark and opens without a question. A downloaded one has it.
         # This records the verdict (the app is not signed with a paid certificate, so "rejected" is
@@ -94,13 +107,33 @@ jobs:
           spctl -a -vv "$RUNNER_TEMP/downloaded/wormscore.app" 2>&1 || true
           # the program inside still runs from the downloaded copy
           "$RUNNER_TEMP/downloaded/wormscore.app/Contents/MacOS/wormscore" --version
+      - name: The README's Terminal line removes the download mark
+        # README.md and README-mac.txt give `xattr -dr com.apple.quarantine <app>` as the alternative to
+        # Open Anyway. The mark is put on every file of the copy, as a download has it; after the line
+        # none may be left, and the app must start. This one must pass.
+        run: |
+          APP="$RUNNER_TEMP/downloaded/wormscore.app"
+          xattr -rw com.apple.quarantine "0081;$(printf %x $(date +%s));Safari;" "$APP"
+          test -n "$(xattr -lr "$APP" | grep com.apple.quarantine | head -1)"
+          xattr -dr com.apple.quarantine "$APP"
+          if xattr -lr "$APP" | grep -q com.apple.quarantine; then echo "the download mark is still there"; exit 1; fi
+          "$APP/Contents/MacOS/wormscore" --version
       - name: Home and scoring pages in real Safari
-        # Playwright's WebKit is Safari's engine, not Safari. Not required yet: safaridriver on hosted
-        # Macs is not something this project has relied on before.
+        # Playwright's WebKit is Safari's engine, not Safari. Not required: safaridriver has not been able
+        # to start a session on GitHub's hosted Macs, so this step may fail without failing the run.
         continue-on-error: true
         run: |
           python -m pip install selenium
-          sudo safaridriver --enable
+          # Tried for free on the hosted Mac (1.26.9): allow remote automation in Safari's own settings
+          # before enabling the driver, and open Safari once first so its first-run setup is done.
+          # Each line may fail without stopping the step; the check below says whether a session started.
+          defaults write com.apple.Safari AllowRemoteAutomation 1 || true
+          defaults write com.apple.Safari IncludeDevelopMenu 1 || true
+          sudo safaridriver --enable || true
+          safaridriver --version || true
+          open -a Safari || true
+          sleep 10
+          defaults read com.apple.Safari AllowRemoteAutomation || true
           dist/wormscore.app/Contents/MacOS/wormscore > "$RUNNER_TEMP/app2.out" 2>&1 &
           PID=$!
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:47311/api/state > /dev/null && break; sleep 1; done

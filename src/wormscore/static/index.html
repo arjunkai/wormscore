@@ -48,6 +48,7 @@
         <button data-zoom="1" class="on">1x</button><button data-zoom="2">2x</button><button data-zoom="3">3x</button>
       </div>
     </div>
+    <p id="readbackWarn" class="img-warn hidden" role="alert"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg><span class="sr">Warning: </span><span>This browser window changes image data, so images can show speckle that is not real. Use a normal window (not Private), or turn off fingerprinting protection for this page.</span></p>
     <div id="canvasWrap"><canvas id="cv" role="img" aria-label="Image"></canvas></div>
     <div id="loadErr" class="load-err hidden" role="alert"><span id="loadErrText"></span><button id="loadErrRetry" type="button" class="primary">Try again</button></div>
     <div class="hint"><span id="keysText">Keys: ← → plane · P planes · D 3D · E range · B brightfield · <span id="chanKeys" class="hidden">1 2 3 channel · </span>N next<span id="saveKeys"><span id="answerKeys"> · 1–9 answer</span> · <span class="mod">Ctrl</span>+Enter save and next</span></span><span id="depthTip" hidden></span></div>

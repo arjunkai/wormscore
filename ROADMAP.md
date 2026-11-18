@@ -32,6 +32,30 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.9: **Update and Go back, the scoring page, and the Methods draft** (independent audit).
+  - **Update and Go back never leave the app folder incomplete.** With a file in the app folder open in
+    another program (a virus scanner, a second copy of the app), a failed swap on Windows moved some files
+    and left the folder without `wormscore.exe`. Each move is now all or nothing: a swap that fails changes
+    nothing, Go back still restores the copy that is kept, and a failed Go back can be tried again.
+  - **Update and Go back are checked with the real app on every change.** GitHub's Windows and Mac machines
+    build the app twice, install the newer build over the older through the app's own updater, go back, and
+    repeat with the app folder held so the swap fails. No release is involved: for this check only, the
+    updater reads the "latest release" from a local file, and the checksum check stays in force.
+  - **The scoring page warns when the browser changes the images.** Safari Private windows, Brave, and
+    Firefox with fingerprinting protection change the image data a page reads back, which shows as speckle.
+    The page checks for this when it opens and shows a warning above the image. Score in a normal window.
+  - Number keys answer the questions after a click on an answer in Safari; they did nothing until Tab was pressed.
+  - **Save outlines** shows "Saving..." at once and no longer holds up saving a score. It is also much
+    faster on large stacks (two cells on a 2048 x 2048 x 50 stack: about 46 s before, 6 s now); the numbers
+    are exactly the same (a test compares them with the earlier method).
+  - **Browse images** on a laptop screen at 125% scaling: Next image was cut off at the edge of the window
+    and the measurements were wider than their panel. The measurements now show one column for each region.
+  - The Methods draft names every wormscore version `log.md` records from building the blind set to
+    unblinding, and says which one computed the results. It used to name only the version that ran Unblind.
+    A project built and unblinded with one version gets the same text as before.
+  - An OME-TIFF that names the file holding its metadata is followed only to a file in the same folder.
+  - Mac: the README and the note in the zip give the "Open Anyway" steps as current macOS shows them, and a
+    one-line Terminal command that does the same (`xattr -dr com.apple.quarantine /Applications/wormscore.app`).
 - 1.26.8: **Leica sequential scans from current LAS X, and files that are flagged instead of guessed** (independent audit).
   - Sequential scans from LAS X 3.5 (SP8) and 4.4 (Stellaris) never gave a reporter channel, so none of
     their images could be used. Each step records only what differs from the master setting; its
