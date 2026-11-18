@@ -23,6 +23,7 @@ import tifffile
 from liffile import LifFile
 
 from . import config as C
+from .rescan import tidy_number
 
 OME_NS = {"o": "http://www.openmicroscopy.org/Schemas/OME/2016-06"}
 DERIVED = re.compile(r"^(MAX_|SUM_|AVG_|STD_|MIN_|MED_|Projections? of |C\d+-|Composite|RGB_)", re.I)
@@ -252,6 +253,16 @@ def _lif_series(lf):
     return out
 
 
+def _leica_detector_kind(d):
+    """The kind of detector for the settings text (1.26.13): "HyD" for Leica's hybrid detectors (HyD, HyD S,
+    HyD X, as before), otherwise the type the file gives, or its name without the number ("PMT 3" is
+    "PMT"). The text said "HyD gain" for every detector, also for a PMT."""
+    name, kind = (d.get("Name") or "").strip(), (d.get("Type") or "").strip()
+    if "hyd" in name.lower() or "hyd" in kind.lower():
+        return "HyD"
+    return kind or re.sub(r"[\s\d]+$", "", name) or "detector"
+
+
 def _leica_channels(elem):
     seq = elem.find(".//LDM_Block_Sequential_List")
     steps = seq.findall(".//ATLConfocalSettingDefinition") if seq is not None else []
@@ -284,7 +295,7 @@ def _leica_channels(elem):
             if gain is None and d.get("Channel") in m_dets:
                 gain = m_dets[d.get("Channel")].get("Gain")
             line_avg = s.get("LineAverage") or (master.get("LineAverage") if master is not None else None)
-            chans.append({"detector": d.get("Name"), "gain": float(gain or 0),
+            chans.append({"detector": d.get("Name"), "kind": _leica_detector_kind(d), "gain": float(gain or 0),
                           "band": f"{band.get('LeftWorld')}-{band.get('RightWorld')}" if band is not None else "",
                           "lasers": lasers, "line_avg": line_avg})
     return chans
@@ -316,7 +327,7 @@ def leica_images(path, cfg):
             "n_z": im["z"], "n_t": im["t"], "width": im["x"], "height": im["y"],
             "pixel_um": round(1 / sx, 4) if sx else 0.0, "z_step_um": round(abs(1 / sz), 3) if sz else 0.0,
             "bits": bits, "channel_roles": roles, "channel_names": luts,
-            "settings": (f"HyD gain {g['gain']:.1f}; " + ";".join(f"{ln}nm@{p:.1f}%" for ln, p in g["lasers"])
+            "settings": (f"{g.get('kind', 'HyD')} gain {g['gain']:.1f}; " + ";".join(f"{ln}nm@{p:.1f}%" for ln, p in g["lasers"])
                          + f"; line avg {g['line_avg']}") if g else "",
             "zoom": st.get("Zoom", ""), "acquired": "",
             "stage_x": float(st["StagePosX"]) * 1e6 if "StagePosX" in st else None,
@@ -489,7 +500,10 @@ def _ome_settings(chan, md=None):
             parts.append(f"amplification {amp:g}")
     for ls in chan.findall("o:LightSourceSettings", OME_NS):
         src = next((e for e in (md.iter() if md is not None else []) if e.get("ID") == ls.get("ID")
-                    and e.tag.split("}")[-1] in ("Laser", "LightEmittingDiode", "Arc", "Filament", "GenericExcitationSource")), None)
+                    and e.tag.split("}")[-1] in ("Laser", "LightEmittingDiode", "Arc", "Filament", "GenericExcitationSource",
+                                                 "LightSource")), None)
+        if src is not None and src.tag.split("}")[-1] == "LightSource":     # schemas up to 2008-09: the laser is inside it
+            src = next((e for e in src if e.get("Wavelength")), src)
         w, a = _num(ls.get("Wavelength", "")), _num(ls.get("Attenuation", ""))
         unit = ls.get("WavelengthUnit", "nm")
         if w is None and src is not None and _num(src.get("Wavelength", "")) is not None:
@@ -512,7 +526,48 @@ def _ome_root(md):
         for el in md.iter():
             if el.tag.startswith("{" + old.group(0) + "}"):
                 el.tag = "{" + OME_NS["o"] + "}" + el.tag.split("}", 1)[1]
+        _ome_logical_channels(md)
     return md
+
+
+CHANNELS_NOT_STATED = "the file does not say which channel is which"
+
+
+def _ome_logical_channels(md):
+    """The schemas up to 2008-09 describe channels in LogicalChannel elements next to Pixels, each naming
+    the pixel channels it covers (ChannelComponent Index), and give the objective's values as elements
+    (1.26.13; names checked against the 2008-09 schema and its sample files). They are rewritten here in
+    the current form, so the rest of the reader finds them. Such a file was read with no channels at all.
+    If the components do not name every pixel channel exactly once, the channels are left unresolved."""
+    q = lambda tag: "{" + OME_NS["o"] + "}" + tag
+    for obj in md.iter(q("Objective")):
+        for tag in ("NominalMagnification", "LensNA", "Immersion"):
+            if obj.get(tag) is None and (obj.findtext(q(tag)) or "").strip():
+                obj.set(tag, obj.findtext(q(tag)).strip())
+    for img in md.iter(q("Image")):
+        logical = img.findall(q("LogicalChannel"))
+        for px in img.findall(q("Pixels")) if logical else []:
+            if px.find(q("Channel")) is not None:
+                continue
+            owner = {}
+            for lc in logical:
+                for cc in lc.findall(q("ChannelComponent")):
+                    if cc.get("Pixels") in (None, px.get("ID")) and (cc.get("Index") or "").isdigit():
+                        owner.setdefault(int(cc.get("Index")), []).append(lc)
+            n = int(px.get("SizeC") or 0) if (px.get("SizeC") or "").isdigit() else 0
+            if not n or sorted(owner) != list(range(n)) or any(len(v) != 1 for v in owner.values()):
+                px.set("ChannelsNotStated", "1")
+                continue
+            for k in range(n):
+                lc = owner[k][0]
+                ch = ET.SubElement(px, q("Channel"))
+                for was, now in (("Name", "Name"), ("Fluor", "Fluor"), ("ExWave", "ExcitationWavelength"),
+                                 ("EmWave", "EmissionWavelength"), ("IlluminationType", "IlluminationType")):
+                    if lc.get(was) is not None:
+                        ch.set(now, lc.get(was))
+                for was, now in (("DetectorRef", "DetectorSettings"), ("LightSourceRef", "LightSourceSettings")):
+                    for ref in lc.findall(q(was)):
+                        ET.SubElement(ch, q(now), dict(ref.attrib))
 
 
 def _ome_um(px, axis, flags):
@@ -564,7 +619,9 @@ def ome_images(path, cfg):
         if md.find(".//o:Pixels", OME_NS) is None:
             return []
     obj = md.find(".//o:Objective", OME_NS)
-    objective = (f"{obj.get('NominalMagnification')}x/{obj.get('LensNA')} {obj.get('Immersion', '')}".strip()
+    # 1.26.13: numbers as a program stored them ("40.0x/1.2000000000000002 Water", from Bio-Formats) are
+    # written plainly ("40x/1.2 Water"); the objective is named in the Methods draft
+    objective = (f"{tidy_number(obj.get('NominalMagnification'))}x/{tidy_number(obj.get('LensNA'))} {obj.get('Immersion', '')}".strip()
                  if obj is not None and obj.get("NominalMagnification") else "")
     model = md.find(".//o:Microscope", OME_NS)
     system = (model.get("Model") if model is not None and model.get("Model") else "") or "OME-TIFF (instrument not named)"
@@ -595,6 +652,10 @@ def ome_images(path, cfg):
                 and (px.get("SizeZ") or "").isdigit() and int(px.get("SizeZ")) != n_z:
             # 1.26.8: one file of a set that stores each plane in its own file
             flags.append(f"the metadata lists {px.get('SizeZ')} planes, this file holds {n_z} (one file of a multi-file set)")
+        if px.get("ChannelsNotStated"):         # 1.26.13: a schema up to 2008-09 whose channels are not all named
+            n_c = shape[axes.index("C")] if "C" in axes else 1
+            names, roles = [""] * n_c, ["UNRESOLVED"] * n_c
+            flags.append(f"{CHANNELS_NOT_STATED} (an OME schema from before 2009)")
         pixel_um, z_step_um = _ome_um(px, "X", flags), _ome_um(px, "Z", flags)
         out.append({
             "format": "OME-TIFF", "system": system,
@@ -625,6 +686,7 @@ def _nd2():
 
 
 NOT_CALIBRATED = "is not calibrated in the file"
+COLOUR_CAMERA = "a colour camera image (red, green and blue in one picture), which wormscore does not read"
 CAMERA_LINE = r"(Exposure|Gain|Multiplier):\s*([^\n]+)"
 
 
@@ -998,6 +1060,9 @@ def scan(cfg, log=print, progress=None):
                 continue
             if not found:
                 row["role"] = NOT_USED
+                if p.suffix.lower() == ".nd2":      # 1.26.13: say why (nikon_images gives nothing only for these)
+                    row["note"] = COLOUR_CAMERA
+                    log(f"  not used: {row['relative_path']}: {COLOUR_CAMERA}")
                 continue
             for img in found:
                 img.update({"source": row["source"], "file": p.name, "relative_path": row["relative_path"],

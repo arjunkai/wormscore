@@ -43,13 +43,14 @@ def neuron_calls(row, cfg):
 
 def per_neuron_rows(rows, cfg):
     """Long table for plotting (for example SuperPlots): one row per animal and neuron."""
+    from .flatfield import imaging_date
     out = []
     defect = cfg["scoring"]["defect_calls"]
     for r in rows:
         for i, (name, call) in enumerate(zip(cfg["scoring"]["neurons"], neuron_calls(r, cfg)), start=1):
             out.append({
                 "code": r["code"], "genotype": r["genotype"], "system": r["system"],
-                "settings_group": r["settings_group"], "imaging_date": (r.get("acquired") or "")[:10],
+                "settings_group": r["settings_group"], "imaging_date": imaging_date(r.get("acquired")),
                 "n_z": r["n_z"], "z_step_um": r["z_step_um"], "neuron": name, "call": call,
                 "affected": "" if not call else int(call in defect),
                 **{f"roi_{c}": r.get(f"n{i}_roi_{c}", "") for c in ROI_COLS},

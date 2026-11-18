@@ -32,6 +32,24 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.13: **Imaging dates from Nikon files, OME-TIFF in the 2008 schema, and how settings are worded.**
+  - `per_neuron.csv`: the `imaging_date` column held the first 10 characters of the date, which for Nikon
+    files is written as the acquiring computer shows it ("11/3/2009 1"). It is now YYYY-MM-DD when the date
+    has one reading (17/7/2009), and the date as written, marked "day or month first: not known", when it
+    has two (11/3/2009). Dates already written as 2026-01-02 give the same text as before.
+  - OME-TIFF files in the 2008 schema were read with no channels. Their channels are now read where the
+    file says which is which, and are flagged and left unresolved where it does not.
+  - Leica: the settings text said "HyD gain" for every detector. A PMT is now named "PMT gain".
+  - OME-TIFF written by Bio-Formats: the objective read "40.0x/1.2000000000000002 Water" and now reads
+    "40x/1.2 Water" (it is named in the Methods draft).
+  - Nikon colour-camera files (histology, brightfield pictures) are still not used; `manifest.csv` now says why.
+  - **Who is affected:**
+    - Projects with Nikon `.nd2` images: the `imaging_date` column of `per_neuron.csv` changes the next
+      time they unblind. It is a label; no count, test or other number changes.
+    - Leica projects with the reporter on a PMT, and OME-TIFF projects from Bio-Formats: after the next Scan
+      data the settings or objective text is worded anew. Wording alone moves no image to another settings
+      group, also for images added later; nothing is warned, and flat-field slide images measured before
+      still match. "Rebuild, keeping the current codes" writes the new wording into the key.
 - 1.26.12: **OME-TIFF files converted with Bio-Formats, flat-field slide images after a new scan, and the Windows zip.**
   - OME-TIFF: Bio-Formats writes the detector gain on the instrument's detector and has the channel point
     to it. Only the channel was read (1.26.7), so two real Zeiss files converted to OME-TIFF (gain 550 and

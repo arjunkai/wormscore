@@ -3,6 +3,7 @@
 Kept apart from pipeline.py because the home page asks every few seconds, and this loads no image library.
 """
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -26,6 +27,33 @@ def next_letter(letters):
     while _group_letter(i) in letters.values():
         i += 1
     return _group_letter(i)
+
+
+LEICA_GAIN = re.compile(r"^[^;]*? gain (?=-?\d)")
+NUMBER = re.compile(r"\d+\.\d+")
+
+
+def tidy_number(text):
+    """A number without the noise of how a program stored it: "40.0" is "40" and "1.2000000000000002" is
+    "1.2". A number written as a person would ("1.40") is left as it is."""
+    text = str(text)
+    m = re.fullmatch(r"-?\d+\.(\d+)", text.strip())
+    if m and (len(m.group(1)) > 6 or not m.group(1).strip("0")):
+        short = repr(round(float(text), 6))
+        return short[:-2] if short.endswith(".0") else short
+    return text
+
+
+def same_reading(system, settings):
+    """One text for settings that 1.26.13 writes in another way than earlier versions, with the same
+    meaning, so that a project scanned before and after is not split by the wording alone:
+    - Leica: the detector is named as the file names it ("PMT gain 625.0"); it was always "HyD gain".
+    - the objective of an OME-TIFF (in a flat-field session's text): "40.0x/1.2000000000000002" is "40x/1.2".
+    Used only to compare; what is recorded is the text as Scan data read it."""
+    settings = str(settings or "")
+    if str(system or "").startswith("Leica"):
+        settings = LEICA_GAIN.sub("HyD gain ", settings, count=1)
+    return NUMBER.sub(lambda m: tidy_number(m.group(0)), settings)
 
 
 _scan_changes = {}
@@ -53,7 +81,9 @@ def scan_changes(project, cfg=None):
     rows = [r for r in read_csv(key_path) if not r.get("repeat_of") and (r["local_path"], r["location_in_file"]) in images]
     pairs = [(r, images[(r["local_path"], r["location_in_file"])]) for r in rows]
     out = dict(none)
-    out["changed"] = any((r["system"], r["settings"]) != (s["system"], s["settings"]) for r, s in pairs)
+    # 1.26.13: settings that only read differently (same_reading) are not a change
+    out["changed"] = any((r["system"], same_reading(r["system"], r["settings"]))
+                         != (s["system"], same_reading(s["system"], s["settings"])) for r, s in pairs)
     if pairs:      # also when nothing changed: a rebuild that keeps the codes takes its letters from the key (1.26.10)
         members = {}
         for r, s in pairs:

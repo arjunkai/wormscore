@@ -20,7 +20,9 @@ Images whose settings differ from the most common value on the same microscope a
 
 The settings are those of the reporter channel, read from that channel's own part of the metadata:
 
-- Leica: detector gain, each laser line in use with its intensity, and line averaging.
+- Leica: detector gain, each laser line in use with its intensity, and line averaging. The detector is
+  named as the file names it: "HyD gain" for hybrid detectors, "PMT gain" for a PMT (1.26.13; before, the
+  text said "HyD gain" for every detector).
 - Zeiss: detector gain (or voltage), each laser line with the share of its power let through
   (1 - attenuation), lamp intensity and exposure for cameras, and averaging.
 - Nikon: camera exposure, gain and multiplier, each laser line that is on with its power, and the
@@ -41,6 +43,12 @@ files were read as 16-bit. A project built earlier keeps its settings groups and
 until it runs Scan data again. If the new scan would change them for images that already have a
 code, the Build card says what would change, and the rebuild that applies it records the same in
 `log.md` (for example "4 coded images move from settings group A to B"). Scores never change.
+
+1.26.13 words two things differently: a Leica PMT is named "PMT", and the objective of an OME-TIFF
+written by Bio-Formats is "40x/1.2 Water" where it was "40.0x/1.2000000000000002 Water". After a new
+scan the key and the Methods draft carry the new wording. Wording alone moves no image: such settings
+keep their group and letter (also for images added later), nothing is warned, and flat-field slide
+images measured before still match their images.
 
 ## 2. Which channel is the marker
 
@@ -64,7 +72,8 @@ From metadata only:
   wavelength the file records; brightfield is the channel recorded as brightfield or transmitted light
   (Olympus detectors named TD). These files also record an emission wavelength, which counts only if
   `marker.emission_nm` gives a range (for example `[500, 550]` for GFP). Olympus numbers written with a
-  decimal comma (`0,207`) are read as decimals. Colour (RGB) camera pictures are not used.
+  decimal comma (`0,207`) are read as decimals. Colour (RGB) camera pictures are not used; `manifest.csv`
+  says so in the file's note (1.26.13).
 - **ImageJ hyperstack TIFF:** these files record pixel size and z-step but not which channel is which.
   They are used only if their source in `config.json` has `imagej_tiff` with the channel order, for
   example `{"channels": ["marker", "brightfield"]}`, and optionally the objective; that setting is
@@ -86,6 +95,10 @@ If not exactly one channel matches, the marker is UNRESOLVED and the image is ex
   file holds 1").
 - OME-TIFF files written to the 2010 to 2015 schemas are read like current ones. Nikon `.nd2` files from
   before 2010 are listed as unreadable, with the way to convert them.
+- OME-TIFF files written to the 2008 schema describe their channels apart from the pixels (1.26.13; they
+  were read with no channels). The channels are read where the file says which pixel channel each
+  description belongs to. Where it does not, they are UNRESOLVED and flagged "the file does not say
+  which channel is which"; the order of the descriptions is not taken as the order of the channels.
 
 **Other fluorescent proteins** (since 1.0.0). `"marker": {"preset": "mCherry"}` replaces the GFP
 settings with those of another protein: GFP, mNeonGreen, YFP, mCherry, TagRFP, mScarlet, mKate2 or BFP.
@@ -408,6 +421,10 @@ Results tables use counted, usable images only, with the animal as the unit (one
 
 - `per_neuron.csv`: one row per animal and neuron (genotype, microscope, settings group, imaging date,
   call, affected yes/no, region measurements), ready for plots that show every animal, such as SuperPlots.
+  The imaging date is a label; nothing is grouped or tested by it. It is written as YYYY-MM-DD. Nikon
+  files give the date as the acquiring computer shows it: a date with only one reading (17/7/2009,
+  7/17/2009) is converted, and one with two (11/3/2009) is given as written and marked "day or month
+  first: not known", not guessed (1.26.13; before, the column held the first 10 characters of such a date).
 - `penetrance.csv`: per microscope and genotype, the number of animals with 0, 1, 2, ... affected
   neurons (a neuron is affected when its call is one of `defect_calls`), the share with at least one
   (penetrance), and the share affected for each neuron. Animals with a neuron left uncalled are counted

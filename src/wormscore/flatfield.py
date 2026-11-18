@@ -43,6 +43,7 @@ from pathlib import Path
 
 from . import config as C
 from .files import append_log, plural, write_csv
+from .rescan import same_reading
 
 KEY = "flat_field"                    # config.json key; absent unless the correction is on
 FOLDER = "flat_field"                 # outputs/flat_field/
@@ -83,6 +84,33 @@ def acquired_day(acquired):
         except ValueError:
             continue
     return ""
+
+
+UNCLEAR_DATE = "day or month first: not known"
+
+
+def imaging_date(acquired):
+    """The acquisition day for the imaging_date column of per_neuron.csv (1.26.13). ISO dates give their
+    first 10 characters, as before. Nikon and Olympus write the date as the acquiring computer shows it
+    ("11/3/2009 12:20:54 PM"); the column held its first 10 characters ("11/3/2009 1"). Such a date is now
+    given as YYYY-MM-DD when only one reading is possible (a number above 12 is the day). When two are
+    (3 November or 11 March), the date is given as written and marked, not guessed. Text that is no date
+    is given whole. This is a label: nothing is grouped or tested by it."""
+    import re
+    raw = str(acquired or "")
+    if re.match(r"\d{4}-\d{2}-\d{2}", raw):
+        return raw[:10]
+    a = " ".join(raw.split())
+    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})(?!\d)", a)
+    if not m:
+        return acquired_day(a) or a
+    p, q, year = (int(x) for x in m.groups())
+    if p != q and p <= 12 and q <= 12:
+        return f"{m.group(0)} ({UNCLEAR_DATE})"
+    try:
+        return dt.date(year, *((p, q) if q > 12 else (q, p))).isoformat()
+    except ValueError:
+        return a
 
 
 def session_key(img):
@@ -404,7 +432,11 @@ class Correction:
         """The image's own session, or None: same microscope and settings, and the same day, or the only
         session of that microscope and settings when either has no date."""
         system, settings, day = session_key(img)
-        same = [s for s in self.sessions if s["system"] == system and s["settings"] == settings]
+        # 1.26.13: settings that this version only words differently than the one that measured the slide
+        # images (same_reading: a Leica detector's name, an OME-TIFF objective's numbers) are the same session
+        same = [s for s in self.sessions if s["system"] == system and s["settings"] == settings] \
+            or [s for s in self.sessions if s["system"] == system
+                and same_reading(system, s["settings"]) == same_reading(system, settings)]
         hit = [s for s in same if s["day"] == day] if day else []
         if hit:
             return hit[0]
@@ -422,7 +454,9 @@ class Correction:
         if own is not None and fits(own):
             return {**own, "how": SAME}
         system, settings, day = session_key(img)
-        group = [s for s in self.sessions if s["system"] == system and s["settings"] == settings and fits(s)]
+        group = [s for s in self.sessions if s["system"] == system and s["settings"] == settings and fits(s)] \
+            or [s for s in self.sessions if s["system"] == system and fits(s)
+                and same_reading(system, s["settings"]) == same_reading(system, settings)]
         others = [s for s in self.sessions if s["system"] == system and fits(s)]
         # 1.26.12: among sessions with other settings, those with the image's objective and zoom come first.
         # The light across the field depends on the objective; a session's settings end with them
@@ -430,7 +464,9 @@ class Correction:
         # scanned again no longer match slide images measured before, and the nearest day alone could
         # pick the slide images of another objective taken the same day.
         optics = " | ".join(x for x in (str(img.get("objective", "") or ""), str(img.get("zoom", "") or "")) if x)
-        same_optics = [s for s in others if optics and (s["settings"] == optics or s["settings"].endswith(" | " + optics))]
+        optics = same_reading("", optics)
+        same_optics = [s for s in others if optics and (same_reading("", s["settings"]) == optics
+                                                        or same_reading("", s["settings"]).endswith(" | " + optics))]
         pool = group or same_optics or others
         if not pool:
             return None

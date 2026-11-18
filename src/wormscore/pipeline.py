@@ -27,7 +27,7 @@ from . import measure as M
 from . import readers as R
 from .files import append_log, now, read_csv, write_csv  # noqa: F401  (re-exported)
 from .browse import browse_log_line
-from .rescan import next_letter, scan_changes  # noqa: F401  (re-exported)
+from .rescan import next_letter, same_reading, scan_changes  # noqa: F401  (re-exported)
 from .scoreform import form_log_lines
 
 INCOMPLETE = "file is incomplete"       # inventory flag (readers.ome_images), an exclusion reason at Build
@@ -553,6 +553,12 @@ def prepare(project, reassign=False, add=False, log=print):
     if add and (project / "key" / "settings_groups.csv").exists():
         letters = {(r["system"], r["settings"]): r["settings_group"]
                    for r in read_csv(project / "key" / "settings_groups.csv")}
+        # 1.26.13: settings that a new scan only words differently (a Leica detector named as the file names
+        # it) are the group they were, so added images join the coded images taken at the same settings
+        worded = {(system, same_reading(system, text)): letter for (system, text), letter in letters.items()}
+        for c in combos:
+            if c not in letters and (c[0], same_reading(*c)) in worded:
+                letters[c] = worded[(c[0], same_reading(*c))]
     for c in combos:
         if c not in letters:
             letters[c] = next_letter(letters)
