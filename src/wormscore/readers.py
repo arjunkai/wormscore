@@ -103,20 +103,25 @@ def _fluor_name(name, cfg):
                for p in m.get("channel_name_prefixes", []) if isinstance(p, str) and len(p) >= 3)
 
 
-TRANSMITTED_NAMES = ("TD", "TPMT")      # 1.26.8: transmitted-light detectors, whatever config.json lists
+# 1.26.8: transmitted-light detectors, whatever config.json lists. Only the detector's name itself, with a
+# number or a track ("TD", "TD1", "TPMT-T2"): "td-Tomato" and "TD Tomato" are a fluorophore (1.26.10).
+TRANSMITTED_NAME = re.compile(r"(TD|TPMT)\s*\d*([-_ ]T\d+)?", re.I)
+WHOLE_WORD = ("BF", "TL")
 
 
 def _brightfield_name(name, cfg):
-    """True if the channel name is a brightfield name. A short name (BF, TL, TD, DIC) must be the whole
-    word (1.26.8): "BFP" and "TLR-4" begin like "BF" and "TL" and were read as brightfield. "TL DIC",
-    "BF 2" and "TLDIC" still are."""
-    names = [p.upper() for p in list(cfg["brightfield_channel_names"]) + list(TRANSMITTED_NAMES) if p]
+    """True if the channel name is a brightfield name: it begins with one of brightfield_channel_names,
+    as before. "BF" and "TL" must be the whole word (1.26.8): "BFP" and "TLR-4" begin like them and were
+    read as brightfield. "TL DIC", "BF 2" and "TLDIC" still are."""
+    names = [p.upper() for p in cfg["brightfield_channel_names"] if p]
     up = name.upper().strip()
+    if TRANSMITTED_NAME.fullmatch(up):
+        return True
     for p in names:
         if not up.startswith(p):
             continue
         rest = up[len(p):]
-        if len(p) > 4 or not rest[:1].isalpha() or any(rest.startswith(q) for q in names):
+        if p not in WHOLE_WORD or not rest[:1].isalpha() or any(rest.startswith(q) for q in names):
             return True
     return False
 
@@ -634,7 +639,7 @@ def _nikon_settings(description, capturing, name, n_channels):
         parts.append(";".join(lasers))
     parts += [f"lamp {k.lower()} {v.strip()}" for k, v in re.findall(r"Light \(EPI\)[^:\n]*?(voltage|intensity):\s*([^\n]+)", block, re.I)
               if v.strip().upper() != "NA"]
-    parts += [f"{k.strip()} {v}" for k, v in re.findall(r"((?:[A-Za-z]+ )?HV|Laser Power)\s*:\s*([\d.]+)", block)]
+    parts += [f"{k.strip()} {v}" for k, v in re.findall(r"((?:[A-Za-z]+ )?HV(?:\([A-Za-z]+\))?|Laser Power)\s*:\s*([\d.]+)", block)]
     return "; ".join(parts)
 
 

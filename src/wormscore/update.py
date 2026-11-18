@@ -295,7 +295,8 @@ try {
     if (Test-Path -LiteralPath $old) { Move-Retry $old $Previous }
     throw "The new copy has no $Check."
   }
-  if ($PrevJson) { [System.IO.File]::WriteAllText($PrevJson, "{`"version`": `"$PrevVersion`"}") }
+  # the swap is done: a label that cannot be written must not report it as failed (1.26.10)
+  if ($PrevJson) { try { [System.IO.File]::WriteAllText($PrevJson, "{`"version`": `"$PrevVersion`"}") } catch {} }
   if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }
   $stage = Split-Path -Parent $New
   if (-not (Get-ChildItem -LiteralPath $stage -Force)) { Remove-Item -LiteralPath $stage -ErrorAction SilentlyContinue }
@@ -430,14 +431,21 @@ def rollback(relaunch=True):
     if kind not in ASSETS or not back:
         raise UpdateError("There is no previous version to go back to.")
     paths = app_paths(kind)
+    # 1.26.10: the kept copy is checked before anything is touched, and moved with one rename or not at
+    # all. A copy-and-delete (the fallback until 1.26.9) could stop halfway when a file of the kept copy
+    # was open in another program; the next Go back then put a folder with one file in the app's place.
+    if paths.get("check") and not (paths["previous"] / paths["check"]).exists():
+        raise UpdateError("The kept copy of the previous version is not complete, so nothing was changed. "
+                          "To use another version, download it from the Releases page.")
     if paths["stage"].exists():
         shutil.rmtree(paths["stage"])
     paths["stage"].mkdir(parents=True)
     new = paths["stage"] / paths["previous"].name
     try:
-        os.rename(paths["previous"], new)       # one rename; a copy that stopped halfway would lose the kept version
+        os.rename(paths["previous"], new)
     except OSError:
-        shutil.move(str(paths["previous"]), str(new))
+        raise UpdateError("The kept copy of the previous version could not be moved: a file in it may be open in "
+                          "another program. Nothing was changed. Close other programs and try again.") from None
     # if the swap fails, the helper puts the kept copy back where it was, so Go back can be tried again
     start_helper(paths, new, relaunch=relaunch, prev_version=__version__, restore=paths["previous"])
     return back

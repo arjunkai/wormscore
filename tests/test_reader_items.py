@@ -125,12 +125,20 @@ def test_older_ome_schemas_are_read(tmp_path):
 def test_channel_names_that_only_begin_like_brightfield():
     cfg = C.merge(C.DEFAULTS, {})
     role = lambda name: readers.marker_from_named(name, None, None, False, cfg)
-    for name in ("BFP", "TLR-4", "BFP-T1", "TDP-43", "DICER"):
+    for name in ("BFP", "TLR-4", "BFP-T1", "TDP-43", "td-Tomato", "TD Tomato", "TD_561", "tdTomato-T2"):
         assert role(name) == "OTHER", name
     for name in ("BF", "BF 2", "BF-T1", "Brightfield", "DIC", "TL DIC", "TLDIC", "TL", "Trans", "Transmitted",
                  "T PMT-T1", "T-PMT", "TD", "TD1", "TPMT", "TPMT-T2"):
         assert role(name) == "BF", name
     assert role("GFP") == "MARKER"
+    # a name the project lists itself is matched as before, whatever follows it
+    own = C.merge(C.DEFAULTS, {"brightfield_channel_names": ["Ph", "DIC"]})
+    assert readers.marker_from_named("Phase", None, None, False, own) == "BF"
+    assert readers.marker_from_named("DICblue", None, None, False, own) == "BF"
+    # a td-Tomato reporter found by its laser line keeps its role
+    red = C.merge(C.DEFAULTS, {})
+    red["marker"] = dict(red["marker"], excitation_nm=[561])
+    assert readers.marker_from_named("td-Tomato", None, "561", False, red) == "MARKER"
 
 
 def test_a_pixel_size_that_a_new_scan_reads_differently_is_named(tmp_path, monkeypatch):

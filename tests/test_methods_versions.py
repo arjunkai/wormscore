@@ -37,4 +37,17 @@ def test_versions_from_before_the_current_blind_set_are_left_out(fresh_project):
     old = ('\n## 2020-01-01 09:00 inventory\n- Software: {"wormscore": "0.9.0"}\n'
            '\n## 2020-01-01 09:05 prepare\n- Software: {"wormscore": "0.9.0"}\n')
     log.write_text(old + log.read_text(encoding="utf-8"), encoding="utf-8")       # an earlier key, since replaced
+    (fresh_project / "key" / "superseded_20200201_120000").mkdir()                  # as a build with new codes leaves it
     assert methods.versions_used(fresh_project) == [__version__]
+
+
+def test_a_copied_project_still_names_the_version_that_built_it(fresh_project):
+    """The start was found from the date of key/seed.txt, which copying or syncing a project can reset: the
+    version that built the blind set was then left out (1.26.10)."""
+    import os
+    log = fresh_project / "log.md"
+    old = ('\n## 2020-01-01 09:00 inventory\n- Software: {"wormscore": "0.9.0"}\n'
+           '\n## 2020-01-01 09:05 prepare\n- Software: {"wormscore": "0.9.0"}\n')
+    log.write_text(old, encoding="utf-8")
+    os.utime(fresh_project / "key" / "seed.txt")            # now: later than every build in the log
+    assert methods.versions_used(fresh_project) == ["0.9.0", __version__]

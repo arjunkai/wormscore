@@ -3,6 +3,9 @@
 All brightness numbers come from functions in this file, so this is the file to read
 when writing a Methods section.
 """
+import os
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 from scipy import ndimage
 
@@ -57,7 +60,33 @@ def unpack16(rgb):
 def median_filter_stack(stack, size):
     """Median filter on each plane separately. Removes single hot pixels and one-pixel
     scan-line streaks so they cannot become the 'peak'."""
-    return ndimage.median_filter(stack, size=(1, size, size))
+    if size != 3 or stack.ndim != 3 or min(stack.shape[1:]) < 2 or not np.issubdtype(stack.dtype, np.number) \
+            or (np.issubdtype(stack.dtype, np.floating) and np.isnan(stack).any()):
+        return ndimage.median_filter(stack, size=(1, size, size))
+    # 1.26.10: the usual 3 x 3 filter, worked out as the median of the nine neighbours with whole-plane
+    # minimum and maximum steps, a few planes at a time on separate threads. The values are exactly those
+    # of ndimage.median_filter (a test compares them, edges included); on a 2048 x 2048 x 50 stack it took
+    # about 40 s of the time to build or open an image.
+    out = np.empty_like(stack)
+    with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as pool:
+        list(pool.map(lambda z: _median9(stack[z], out[z]), range(stack.shape[0])))
+    return out
+
+
+_MEDIAN9 = ((1, 2), (4, 5), (7, 8), (0, 1), (3, 4), (6, 7), (1, 2), (4, 5), (7, 8), (0, 3), (5, 8), (4, 7),
+            (3, 6), (1, 4), (2, 5), (4, 7), (4, 2), (6, 4), (4, 2))
+
+
+def _median9(plane, out):
+    """Median of each pixel's 3 x 3 neighbourhood, edges mirrored as ndimage's default ("reflect") does."""
+    p = np.pad(plane, 1, mode="symmetric")
+    h, w = plane.shape
+    v = [p[dy:dy + h, dx:dx + w].copy() for dy in range(3) for dx in range(3)]
+    for a, b in _MEDIAN9:           # each step leaves the smaller value in a and the larger in b
+        lo = np.minimum(v[a], v[b])
+        np.maximum(v[a], v[b], out=v[b])
+        v[a] = lo
+    out[...] = v[4]
 
 
 def candidate_spots(mip_filtered, px_um, cfg):

@@ -19,6 +19,15 @@ def _group_letter(i):
     return chr(ord("A") + i) if i < 26 else f"G{i}"
 
 
+def next_letter(letters):
+    """The first settings-group letter no group has yet. Counting the groups (as before 1.26.10) gave a
+    letter already in use when the letters had a gap, which a new scan can leave by merging two groups."""
+    i = 0
+    while _group_letter(i) in letters.values():
+        i += 1
+    return _group_letter(i)
+
+
 _scan_changes = {}
 
 
@@ -44,14 +53,14 @@ def scan_changes(project, cfg=None):
     rows = [r for r in read_csv(key_path) if not r.get("repeat_of") and (r["local_path"], r["location_in_file"]) in images]
     pairs = [(r, images[(r["local_path"], r["location_in_file"])]) for r in rows]
     out = dict(none)
-    if any((r["system"], r["settings"]) != (s["system"], s["settings"]) for r, s in pairs):
-        out["changed"] = True
+    out["changed"] = any((r["system"], r["settings"]) != (s["system"], s["settings"]) for r, s in pairs)
+    if pairs:      # also when nothing changed: a rebuild that keeps the codes takes its letters from the key (1.26.10)
         members = {}
         for r, s in pairs:
             members.setdefault((s["system"], s["settings"]), []).append(r["settings_group"])
         letters = {}
         for combo in sorted(members, key=lambda c: (-len(members[c]), c)):
-            for old, _ in Counter(members[combo]).most_common():
+            for old, _ in sorted(Counter(members[combo]).items(), key=lambda x: (-x[1], x[0])):
                 if old not in letters.values():
                     letters[combo] = old
                     break

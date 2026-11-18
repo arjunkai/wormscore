@@ -52,8 +52,9 @@ From metadata only:
   detection band, averaging and (where the step gives none) gain are taken from the master (1.26.8).
 - **Zeiss and OME-TIFF:** the marker is the channel whose fluorophore, channel name or excitation
   wavelength matches the configuration; brightfield is the channel recorded with transmitted light
-  (or named BF, Brightfield, DIC, Trans, T-PMT, T PMT, TL, TD, TPMT). A short name must be the whole
-  word: "BFP" and "TLR-4" are not brightfield (they were before 1.26.8). If several channels match, for example a
+  (or named BF, Brightfield, DIC, Trans, T-PMT, T PMT, TL, or a transmitted detector named TD or TPMT, alone or with a number or track). "BF"
+  and "TL" must be the whole word: "BFP" and "TLR-4" are not brightfield (they were before 1.26.8), and
+  neither is "td-Tomato". If several channels match, for example a
   second fluorophore excited by the same 488 nm laser, and exactly one of them names a configured dye
   (EGFP, GFP), that one is the marker. If the file gives no objective name, the objective is written
   from its magnification, NA and immersion.
@@ -415,8 +416,9 @@ Results tables use counted, usable images only, with the animal as the unit (one
   settings, at Build and at the first score); if it differs at unblinding from the one recorded before
   scoring, no planned test runs. Projects that scored before 1.15.0 have no such record. Tests
   are run only between genotypes imaged on the same microscope, because calls made on different
-  microscopes are not interchangeable. p-values are Bonferroni-corrected for the number of tests in the
-  file. Other tests (for example per neuron) can be run from `per_neuron.csv`; correct them too.
+  microscopes are not interchangeable. p-values are Bonferroni-corrected for the number of tests made for
+  one definition of a defect and one outcome (the `n_tests` column), not across every row of a file that
+  holds several definitions or outcomes. Other tests (for example per neuron) can be run from `per_neuron.csv`; correct them too.
 - `question_outcomes.csv` and `question_outcome_tests.csv` (only if `unblinding.question_outcomes` is
   set): the same penetrance and Fisher's exact tables, built from the per-neuron questions instead of the
   calls. For each outcome the config names the questions, the answers that count as a defect (for

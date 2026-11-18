@@ -25,7 +25,7 @@ def versions_used(project, current=__version__):
     import json
     import re
     project = Path(project)
-    log, seed = project / "log.md", project / "key" / "seed.txt"
+    log = project / "log.md"
     sections, title, ts = [], "", ""
     for line in (log.read_text(encoding="utf-8").splitlines() if log.exists() else []):
         if line.startswith("## "):
@@ -40,12 +40,15 @@ def versions_used(project, current=__version__):
             if v:
                 sections.append((ts, title, str(v)))
     builds = [i for i, x in enumerate(sections) if x[1].startswith("prepare")]
-    start = None
-    if seed.exists():       # the build that assigned the current codes: the first one logged after its seed was written
-        made = dt.datetime.fromtimestamp(seed.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
-        start = next((i for i in builds if sections[i][0] >= made), None)
-    if start is None:
-        start = builds[0] if builds else len(sections)
+    # The build that assigned the current codes: the first one logged, or the first after the last time
+    # the codes were assigned again (the old key is then kept in key/superseded_<date>_<time>). The time
+    # is read from that folder's name, not from a file's date, which copying a project can reset (1.26.10).
+    start = builds[0] if builds else len(sections)
+    stamps = sorted(d.name[len("superseded_"):] for d in (project / "key").glob("superseded_*") if d.is_dir())
+    if stamps and re.fullmatch(r"\d{8}_\d{6}", stamps[-1]):
+        s = stamps[-1]
+        again = f"{s[:4]}-{s[4:6]}-{s[6:8]} {s[9:11]}:{s[11:13]}"
+        start = next((i for i in builds if sections[i][0] >= again), start)
     found = {x[2] for x in sections[start:]} | {current}
     order = lambda v: [int(n) for n in re.findall(r"\d+", v)]
     return sorted(found, key=order)

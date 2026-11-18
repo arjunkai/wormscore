@@ -27,7 +27,7 @@ from . import measure as M
 from . import readers as R
 from .files import append_log, now, read_csv, write_csv  # noqa: F401  (re-exported)
 from .browse import browse_log_line
-from .rescan import scan_changes  # noqa: F401  (re-exported)
+from .rescan import next_letter, scan_changes  # noqa: F401  (re-exported)
 from .scoreform import form_log_lines
 
 INCOMPLETE = "file is incomplete"       # inventory flag (readers.ome_images), an exclusion reason at Build
@@ -555,8 +555,7 @@ def prepare(project, reassign=False, add=False, log=print):
                    for r in read_csv(project / "key" / "settings_groups.csv")}
     for c in combos:
         if c not in letters:
-            i = len(letters)
-            letters[c] = chr(ord("A") + i) if i < 26 else f"G{i}"
+            letters[c] = next_letter(letters)
     # 1.26.3: a rebuild that keeps the codes of a key with added batches keeps what Add new images
     # promised: the batch each image came in (added_on), the settings-group letters and each microscope's
     # display ranges. It used to work them out again over all images, so images already scored could look
@@ -569,8 +568,7 @@ def prepare(project, reassign=False, add=False, log=print):
                    for r in read_csv(project / "key" / "settings_groups.csv")}
         for c in combos:
             if c not in letters:
-                i = len(letters)
-                letters[c] = chr(ord("A") + i) if i < 26 else f"G{i}"
+                letters[c] = next_letter(letters)
     # 1.26.7: a scan that reads coded images differently than the key records (see scan_changes). A rebuild
     # that keeps the codes uses the new reading and says what it changes; adding images leaves coded
     # images as they are, so the new ones cannot share their groups until such a rebuild.
@@ -581,9 +579,11 @@ def prepare(project, reassign=False, add=False, log=print):
             scan_lines = ["Warning: Scan data now reads the microscope settings of coded images differently, so the "
                           "added images get settings groups of their own. Rebuild, keeping the current codes, to "
                           "put every image in the right group."]
-        elif not add and ch["lines"]:
-            if ch["letters"]:
-                letters = dict(ch["letters"])
+        if not add and ch["letters"]:
+            # 1.26.10: a rebuild that keeps the codes keeps each settings group's letter too, from the key.
+            # Sorted order (as on a first build) could swap the letters on the rebuild after a warned change.
+            letters = dict(ch["letters"])
+        if not add and ch["lines"]:
             scan_lines = ["Warning: this build changes what was recorded for coded images, because Scan data now reads "
                           f"them differently: {'; '.join(ch['lines'])}. Scores are unchanged. Compare brightness only "
                           "within the new settings groups."]

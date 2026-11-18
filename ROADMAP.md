@@ -32,6 +32,28 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.10: **Fixes from an independent review of 1.26.7 to 1.26.9, and faster Build and Browse on large images.**
+  - **Go back** with a file of the kept copy open in another program (a virus scanner) could leave the
+    kept copy with one file; the next Go back then put that folder in the app's place and said it had
+    worked. The kept copy is now checked and moved in one step, or nothing is changed.
+  - **Settings-group letters** after a new scan (1.26.7): the rebuild after the warned one could swap the
+    letters A and B with no warning, and an image added later could get a letter already in use, so two
+    settings shared a group. A rebuild that keeps the codes now keeps the letters from the key, and a new
+    group always gets a letter no group has.
+  - A channel named "td-Tomato" or "TD Tomato" was read as brightfield in 1.26.8. Only a detector named
+    TD or TPMT (alone, or with a number or track) is; a brightfield name the project lists itself is
+    matched as before.
+  - The Methods draft found the build of the current blind set from a file's date, which copying a
+    project can reset; the version that built it could be left out. It now reads `log.md` and the key folder.
+  - On Windows, an update that worked was reported as failed if the note of the kept version could not be written.
+  - **Build and Browse on large images:** the 3 x 3 median filter took about 40 s per 2048 x 2048 x 50
+    stack and now takes about 3 s, with exactly the same values (a test compares them).
+  - METHODS: Bonferroni correction is per definition of a defect and per outcome, as the files' `n_tests`
+    column shows; it said "for the tests in the file".
+  - **Who is affected:** a project that rebuilt after a 1.26.7 to 1.26.9 scan and then rebuilt again, or
+    added images, may have settings-group letters that differ from its `log.md` line or are shared. Run
+    "Rebuild, keeping the current codes" once more if images were added; `key/settings_groups.csv` lists
+    one letter per setting when it is right. None of these versions was published as a release.
 - 1.26.9: **Update and Go back, the scoring page, and the Methods draft** (independent audit).
   - **Update and Go back never leave the app folder incomplete.** With a file in the app folder open in
     another program (a virus scanner, a second copy of the app), a failed swap on Windows moved some files
