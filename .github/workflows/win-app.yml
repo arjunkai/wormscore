@@ -28,3 +28,19 @@ jobs:
       - run: python -m pip install -e .[dev]
       - name: Update, then Go back, with the packaged app
         run: python -X utf8 packaging/update_check.py --work "$env:RUNNER_TEMP\update-check"
+      - name: Zip the build that was checked, as the release has it
+        # The Windows zip of a release used to be built by hand on one computer. This is the same build
+        # the step above installed, updated and went back to, zipped as packaging/build_windows.bat does,
+        # with the versions of everything inside it listed. It is kept with the run for 30 days; nothing
+        # is published.
+        run: |
+          python -c "import shutil; shutil.make_archive(r'$env:RUNNER_TEMP\wormscore-windows', 'zip', r'$env:RUNNER_TEMP\update-check\dist1', 'wormscore')"
+          python -m pip freeze > "$env:RUNNER_TEMP\wormscore-windows-packages.txt"
+          Get-FileHash "$env:RUNNER_TEMP\wormscore-windows.zip" -Algorithm SHA256 | Format-List
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wormscore-windows
+          path: |
+            ${{ runner.temp }}/wormscore-windows.zip
+            ${{ runner.temp }}/wormscore-windows-packages.txt
+          retention-days: 30

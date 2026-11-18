@@ -196,7 +196,7 @@ def built_before(tmp_path, monkeypatch):
     write_ome(project / "data" / "demo_control_01.ome.tif", gain=1, bits=16, seed=1)
     write_ome(project / "data" / "demo_mutant_01.ome.tif", gain=4, bits=16, seed=2)
     with monkeypatch.context() as m:
-        m.setattr(readers, "_ome_settings", lambda chan: [])
+        m.setattr(readers, "_ome_settings", lambda chan, md=None: [])
         inventory(project, log=quiet)
     prepare(project, log=quiet)
     return project
@@ -244,7 +244,7 @@ def test_settings_text_that_changes_for_every_image_alike_moves_no_image(tmp_pat
     for k, name in enumerate(("demo_control_01.ome.tif", "demo_mutant_01.ome.tif")):
         write_ome(project / "data" / name, gain=2, bits=16, seed=k)
     with monkeypatch.context() as m:
-        m.setattr(readers, "_ome_settings", lambda chan: [])
+        m.setattr(readers, "_ome_settings", lambda chan, md=None: [])
         inventory(project, log=quiet)
     prepare(project, log=quiet)
     inventory(project, log=quiet)

@@ -424,7 +424,14 @@ class Correction:
         system, settings, day = session_key(img)
         group = [s for s in self.sessions if s["system"] == system and s["settings"] == settings and fits(s)]
         others = [s for s in self.sessions if s["system"] == system and fits(s)]
-        pool = group or others
+        # 1.26.12: among sessions with other settings, those with the image's objective and zoom come first.
+        # The light across the field depends on the objective; a session's settings end with them
+        # (session_key). Since 1.26.7 reads more of the settings for Zeiss, Nikon and OME-TIFF, images
+        # scanned again no longer match slide images measured before, and the nearest day alone could
+        # pick the slide images of another objective taken the same day.
+        optics = " | ".join(x for x in (str(img.get("objective", "") or ""), str(img.get("zoom", "") or "")) if x)
+        same_optics = [s for s in others if optics and (s["settings"] == optics or s["settings"].endswith(" | " + optics))]
+        pool = group or same_optics or others
         if not pool:
             return None
         where = "" if group else " (other settings)"

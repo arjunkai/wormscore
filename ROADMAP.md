@@ -32,6 +32,20 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.12: **OME-TIFF files converted with Bio-Formats, flat-field slide images after a new scan, and the Windows zip.**
+  - OME-TIFF: Bio-Formats writes the detector gain on the instrument's detector and has the channel point
+    to it. Only the channel was read (1.26.7), so two real Zeiss files converted to OME-TIFF (gain 550 and
+    800) still shared a settings group. The value is now followed to the detector or light source named.
+  - Flat-field correction: slide images measured before 1.26.7 carry the settings text of that time, so
+    after a new scan an image no longer matched its own slide images. Slide images of the same objective
+    and zoom now stand in first; before, the nearest day alone could pick another objective's taken that
+    day. Build still warns "other settings" for such images. Measure the slide images again (before
+    scoring) to have them match exactly.
+  - Zeiss camera files that give a channel only its dye list the dye as the channel name in `inventory.csv`.
+  - The Windows zip is built by GitHub's `win-app` check on every change (the same build it updates and
+    goes back with) and kept with the run, with the versions of everything inside it. It was built by hand.
+  - **Who is affected:** projects with OME-TIFF files written by Bio-Formats, after their next Scan data
+    (the Build card says which coded images would change group).
 - 1.26.11: **Nikon A1 and AX confocal files: laser power and detector voltage are read.** These microscopes
   write them in a form of their own, so every such image had empty settings and one settings group,
   whatever its laser power or detector voltage. The reporter channel's laser power, detector voltage (HV)

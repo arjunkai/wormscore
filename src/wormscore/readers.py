@@ -398,11 +398,17 @@ def _zeiss_meta(md, cfg):
     for c in chans:
         names.append(c.get("Name") or "")
         fluors.append(c.findtext("Fluor"))
+    # 1.26.12: ZEN blue camera files give a channel no name, only its dye; the dye is then listed as the
+    # name in inventory.csv. The roles are worked out from what the file has, as before.
+    shown = [n or (f or "").strip() for n, f in zip(names, fluors)]
+    names_for_roles = names
+    for c in chans:
         roles.append(marker_from_named(c.get("Name") or "", c.findtext("Fluor"), c.findtext("ExcitationWavelength"),
                                        c.findtext("IlluminationType") == "Transmitted", cfg))
     roles = prefer_named_dye(roles, fluors, cfg)
-    roles = named_extras(roles, cfg, names, fluors, [c.findtext("ExcitationWavelength") for c in chans],
+    roles = named_extras(roles, cfg, names_for_roles, fluors, [c.findtext("ExcitationWavelength") for c in chans],
                          [None] * len(roles))
+    names = shown
     mi = pick(roles, "MARKER")
     objective = text("ObjectiveName")
     if not objective and text("NominalMagnification"):
@@ -457,24 +463,39 @@ def zeiss_images(path, cfg):
 INCOMPLETE = "file is incomplete (planes missing)"
 
 
-def _ome_settings(chan):
+def _ome_settings(chan, md=None):
     """Detector and light-source settings of one channel (1.26.7), as the file states them: gain, voltage,
-    and each light source's wavelength and attenuation. Files without them give nothing, as before."""
+    and each light source's wavelength and attenuation. Files without them give nothing, as before.
+    Bio-Formats writes the gain on the instrument's Detector and has the channel point to it by ID
+    (1.26.12, found with a real file converted from Zeiss): a value the channel does not give is taken
+    from the Detector or light source it names."""
     if chan is None:
         return []
+    named = lambda tag, ref: next((e for e in md.iter("{" + OME_NS["o"] + "}" + tag) if e.get("ID") == ref), None) \
+        if md is not None and ref else None
     parts = []
     ds = chan.find("o:DetectorSettings", OME_NS)
     if ds is not None:
-        gain, volt = _num(ds.get("Gain", "")), _num(ds.get("Voltage", ""))
+        det = named("Detector", ds.get("ID"))
+        get = lambda key: _num(ds.get(key, "")) if _num(ds.get(key, "")) is not None \
+            else _num(det.get(key, "")) if det is not None else None
+        gain, volt, amp = get("Gain"), get("Voltage"), get("AmplificationGain")
         if gain is not None:
             parts.append(f"gain {gain:g}")
         if volt is not None:
-            parts.append(f"detector {volt:g} {ds.get('VoltageUnit', 'V')}")
+            unit = ds.get("VoltageUnit") or (det.get("VoltageUnit") if det is not None else None) or "V"
+            parts.append(f"detector {volt:g} {unit}")
+        if amp is not None and amp != 1:
+            parts.append(f"amplification {amp:g}")
     for ls in chan.findall("o:LightSourceSettings", OME_NS):
+        src = next((e for e in (md.iter() if md is not None else []) if e.get("ID") == ls.get("ID")
+                    and e.tag.split("}")[-1] in ("Laser", "LightEmittingDiode", "Arc", "Filament", "GenericExcitationSource")), None)
         w, a = _num(ls.get("Wavelength", "")), _num(ls.get("Attenuation", ""))
+        unit = ls.get("WavelengthUnit", "nm")
+        if w is None and src is not None and _num(src.get("Wavelength", "")) is not None:
+            w, unit = _num(src.get("Wavelength")), src.get("WavelengthUnit", "nm")
         if w is None and a is None:
             continue
-        unit = ls.get("WavelengthUnit", "nm")
         parts.append((f"{w:g}{unit}" if w is not None else "light") + (f" attenuation {a:g}" if a is not None else ""))
     return parts
 
@@ -584,7 +605,7 @@ def ome_images(path, cfg):
             "width": shape[axes.index("X")], "height": shape[axes.index("Y")],
             "pixel_um": pixel_um, "z_step_um": z_step_um,
             "bits": bits, "channel_roles": roles, "channel_names": names,
-            "settings": "; ".join(_ome_settings(chan) + (["exposure " + ",".join(exposures)] if exposures else [])),
+            "settings": "; ".join(_ome_settings(chan, md) + (["exposure " + ",".join(exposures)] if exposures else [])),
             "zoom": "", "acquired": (img.findtext("o:AcquisitionDate", namespaces=OME_NS) or img.findtext("o:AcquiredDate", namespaces=OME_NS) or "")[:19].replace("T", " "),
             "stage_x": None, "stage_y": None, "flags": flags,
             "_reader": ("ome", str(path), i, axes),

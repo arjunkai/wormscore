@@ -71,7 +71,7 @@ def groups(project):
 def test_group_letters_stay_on_the_rebuild_after_a_warned_change(tmp_path, monkeypatch):
     """Three images at gain 4 and one at gain 1, all in group A before. The warned rebuild named gain 1 as
     group B; the next rebuild, with no new scan, gave the letters in sorted order and swapped A and B."""
-    project = project_with_gains(tmp_path, monkeypatch, [4, 4, 4, 1], lambda chan: [])
+    project = project_with_gains(tmp_path, monkeypatch, [4, 4, 4, 1], lambda chan, md=None: [])
     inventory(project, log=quiet)
     lines = []
     prepare(project, log=lines.append)
@@ -88,10 +88,10 @@ def test_group_letters_stay_on_the_rebuild_after_a_warned_change(tmp_path, monke
 def test_an_added_setting_never_gets_a_letter_that_is_in_use(tmp_path, monkeypatch):
     """Two groups that a new scan reads as one leave a gap in the letters (A and C). The next added
     setting was given the letter after the number of groups, which was C again."""
-    by_gain = lambda chan: ["old text " + chan.find("o:DetectorSettings", readers.OME_NS).get("Gain")]
+    by_gain = lambda chan, md=None: ["old text " + chan.find("o:DetectorSettings", readers.OME_NS).get("Gain")]
     project = project_with_gains(tmp_path, monkeypatch, [1, 2, 4, 4], by_gain)       # groups A, B, C
     assert sorted(groups(project).values()) == ["A", "B", "C", "C"]
-    merged = lambda chan: ["gain low" if chan.find("o:DetectorSettings", readers.OME_NS).get("Gain") in ("1", "2")
+    merged = lambda chan, md=None: ["gain low" if chan.find("o:DetectorSettings", readers.OME_NS).get("Gain") in ("1", "2")
                            else "gain " + chan.find("o:DetectorSettings", readers.OME_NS).get("Gain")]
     monkeypatch.setattr(readers, "_ome_settings", merged)
     inventory(project, log=quiet)

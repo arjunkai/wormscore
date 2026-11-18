@@ -27,7 +27,8 @@ The settings are those of the reporter channel, read from that channel's own par
   fluorescence lamp. For the A1 and AX point-scanning confocals (1.26.11): the laser power and detector
   voltage (HV) of the detector channel with the reporter's excitation wavelength, and line averaging.
 - OME-TIFF: detector gain and voltage, each light source's wavelength and attenuation as the file
-  states them, and exposure.
+  states them, and exposure. A value the channel does not give itself is taken from the instrument's
+  detector or light source that the channel names (as Bio-Formats writes converted files; 1.26.12).
 - Olympus: detector voltage, each laser with its transmissivity, and integration.
 
 Bit depth is the number of bits the detector used, which sets the saturation level (a 12-bit camera

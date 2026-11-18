@@ -435,7 +435,7 @@ The tests build a simulated project and check the measurements, the blinding (no
 name reaches the scoring page), code stability, the unblinding locks and traceability. Leica and
 Zeiss readers are checked against real files locally; real images are never committed.
 
-Build the Windows app: `packaging\build_windows.bat`.
+Build the Windows app: `packaging\build_windows.bat`. The `win-app` workflow on GitHub builds the same zip on every change, installs an update over it and goes back, and keeps the zip with the run (Actions > win-app > the run > Artifacts > `wormscore-windows`).
 
 ## Privacy
 
