@@ -125,10 +125,13 @@ def app_paths(kind=None):
 
 def kept_copy(paths):
     """The folder that holds the previous version, or None."""
-    for key in ("previous", "previous_before"):
-        if paths.get(key) and paths[key].exists():
-            return paths[key]
-    return None
+    found = [paths[key] for key in ("previous", "previous_before") if paths.get(key) and paths[key].exists()]
+    if len(found) == 2:
+        # 1.26.16 (found by review): a Mac with the app on another volume can hold two kept copies, one next
+        # to the app and one an earlier version put in the data folder after going back to it. The one the
+        # last update or Go back made is the one whose folder was changed last (moving a copy in changes it).
+        found.sort(key=lambda p: p.parent.stat().st_mtime, reverse=True)
+    return found[0] if found else None
 
 
 def copy_whole(src, dst):
@@ -188,8 +191,10 @@ def last_result():
         # a kept copy an earlier version left in the data folder of a Mac whose app is on another
         # volume: the exchange that just worked keeps its copy next to the app, so that one is spare
         p = app_paths()
-        if p.get("previous_before") and p["previous"].exists():
+        if p.get("previous_before") and p["previous"].exists() and kept_copy(p) == p["previous"]:
             shutil.rmtree(p["previous_before"], ignore_errors=True)
+        elif p.get("previous_before") and p["previous_before"].exists() and p["previous"].exists():
+            shutil.rmtree(p["previous"], ignore_errors=True)       # the older of two kept copies
     return {"ok": ok, "message": " ".join(lines[1:]).strip()}
 
 
@@ -525,9 +530,14 @@ def rollback(relaunch=True):
     if paths.get("check") and not (kept / paths["check"]).exists():
         raise UpdateError("The kept copy of the previous version is not complete, so nothing was changed. "
                           "To use another version, download it from the Releases page.")
-    if paths["stage"].exists():
-        shutil.rmtree(paths["stage"])
-    paths["stage"].mkdir(parents=True)
+    try:
+        if paths["stage"].exists():
+            shutil.rmtree(paths["stage"])
+        paths["stage"].mkdir(parents=True)
+    except OSError:     # 1.26.16: the folder next to the app cannot be written (a read-only disk)
+        raise UpdateError("The folder that holds the app cannot be written to, so nothing was changed. Move the "
+                          "app to a folder you can write to, or download the version you want from the "
+                          "Releases page.") from None
     new = paths["stage"] / paths["previous"].name
     try:
         # one rename; from another volume (a copy an earlier version kept there on a Mac) a whole copy

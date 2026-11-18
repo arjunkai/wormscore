@@ -294,7 +294,23 @@ def missing_files(images):
     return sorted({s["local_path"] for s in images if not Path(s["local_path"]).is_file()})
 
 
-def assign_codes(project, images, reassign, add=False, cfg=None, later=None):
+def _codes_in_use(project, prefix):
+    """Codes that the key may not list but that are taken: those with a saved score or outlines.
+    An Add new images that failed in 1.26.12 or earlier could leave coded images in blind/ with no key row;
+    they could be scored. A new image must never get such a code (1.26.16, found by review). A folder
+    left that way with nothing saved for it is removed when its code is given out."""
+    import json
+    import re
+    taken = set()
+    for name in ("scores.json", "rois.json"):
+        try:
+            taken |= set(json.loads((project / "scoring" / name).read_text(encoding="utf-8")))
+        except (OSError, ValueError, TypeError):
+            pass
+    return [c for c in taken if re.fullmatch(re.escape(prefix) + r"\d+", str(c))]
+
+
+def assign_codes(project, images, reassign, add=False, cfg=None, later=None, undo=None):
     """Random codes. An existing key is reused so codes never change while scoring.
     add: images not yet in the key get new codes after the highest existing one, shuffled
     among themselves with a new seed; existing codes are kept. Returns the images to render,
@@ -329,6 +345,12 @@ def assign_codes(project, images, reassign, add=False, cfg=None, later=None):
                              "are missing. Adding images never removes coded images; restore them or the rules.")
         new = [s for s in images if ident(s) not in old]
         if not new:
+            # 1.26.16: an Add new images that was cut off after it wrote the key (the computer shut down)
+            lost = [c for c in all_codes if not (project / "blind" / c).is_dir()]
+            if lost:
+                raise SystemExit(f"{len(lost)} code{'s' if len(lost) != 1 else ''} in the key {'have' if len(lost) != 1 else 'has'} "
+                                 "no images in the blind folder: an earlier Add new images was cut off. Choose "
+                                 "Rebuild, keeping the current codes, to make them.")
             raise SystemExit("No new images: every included image already has a code.")
         for s in images:
             s["code"] = old.get(ident(s))
@@ -337,7 +359,7 @@ def assign_codes(project, images, reassign, add=False, cfg=None, later=None):
         do(lambda: (key_dir / f"seed_added_{stamp}.txt").write_text(f"{seed}\n"))
         random.Random(seed).shuffle(new)
         prefix, width = all_codes[0][0], len(all_codes[0]) - 1
-        start = max(int(c[1:]) for c in all_codes) + 1
+        start = max(int(c[1:]) for c in all_codes + _codes_in_use(project, prefix)) + 1
         for n, s in enumerate(new, start=start):
             s["code"] = f"{prefix}{n:0{width}d}"
             s["added_on"] = stamp
@@ -373,7 +395,23 @@ def assign_codes(project, images, reassign, add=False, cfg=None, later=None):
         drafts = project / "scoring_drafts" / "drafts.json"
         if drafts.exists():
             drafts.rename(drafts.with_name(f"superseded_{stamp}.json"))
+    def put_back():
+        """Undo set_aside and the new seed, when the new images could not be put in place."""
+        old_dir = key_dir / f"superseded_{stamp}"
+        (key_dir / "seed.txt").unlink(missing_ok=True)
+        if old_dir.is_dir():
+            for f in ("key.csv", "seed.txt", "settings_groups.csv"):
+                if (old_dir / f).exists():
+                    (old_dir / f).replace(key_dir / f)
+            if not any(old_dir.iterdir()):
+                old_dir.rmdir()
+        drafts = project / "scoring_drafts" / "drafts.json"
+        aside = drafts.with_name(f"superseded_{stamp}.json")
+        if aside.exists() and not drafts.exists():
+            aside.rename(drafts)
     do(set_aside)
+    if undo is not None:
+        undo.append(put_back)
     seed = secrets.randbits(32)
     do(lambda: (key_dir / "seed.txt").write_text(f"{seed}\n"))
     fraction = C.repeat_fraction(cfg) if cfg else 0
@@ -524,6 +562,9 @@ def _stopped(exc, run, add):
                 "project's files open, then build again.")
     kept = ("No image was added: the blind set, key and scores are as they were." if add else
             "The blind set, key and scores are as they were." if run["had_blind"] else "No blind set was made.")
+    if run["phase"] == "exchange":
+        return (f"The build did not finish: the new coded images could not be put in place ({why}). {kept} Close "
+                "other programs that have the project's files open, then build again.")
     if isinstance(exc, SystemExit):
         return f"{why} {kept}"
     if name and (BUILDING in Path(str(name)).parts or getattr(exc, "errno", None) == 28):
@@ -549,7 +590,7 @@ def prepare(project, reassign=False, add=False, log=print):
     except BaseException as exc:
         if run["phase"] in ("", "done"):
             raise                     # stopped by a check before anything was made: as before
-        if run["phase"] == "making":
+        if run["phase"] in ("making", "exchange"):
             shutil.rmtree(project / BUILDING, ignore_errors=True)
         if isinstance(exc, (Exception, SystemExit)):
             raise SystemExit(_stopped(exc, run, add)) from exc
@@ -649,11 +690,12 @@ def _build(project, reassign, add, log, run):
         letters = {(r["system"], r["settings"]): r["settings_group"]
                    for r in read_csv(project / "key" / "settings_groups.csv")}
         # 1.26.13: settings that a new scan only words differently (a Leica detector named as the file names
-        # it) are the group they were, so added images join the coded images taken at the same settings
-        worded = {(system, same_reading(system, text)): letter for (system, text), letter in letters.items()}
-        for c in combos:
-            if c not in letters and (c[0], same_reading(*c)) in worded:
-                letters[c] = worded[(c[0], same_reading(*c))]
+        # it) are the group they were, so added images join the coded images taken at the same settings.
+        # The letter moves to the new wording; an added image that reads as the old wording did (a true
+        # HyD at the gain of a PMT once written "HyD") is another setting and gets a letter of its own.
+        for old, new in (scan_changes(project, cfg)["reworded"] or {}).items():
+            if old in letters and new not in letters:
+                letters[new] = letters.pop(old)
     for c in combos:
         if c not in letters:
             letters[c] = next_letter(letters)
@@ -691,7 +733,8 @@ def _build(project, reassign, add, log, run):
         for line in scan_lines:
             log(line)
     key_changes = []          # the old key set aside, the new seed: made once the images are rendered
-    todo = assign_codes(project, images, reassign, add, cfg, later=key_changes)
+    key_undo = []
+    todo = assign_codes(project, images, reassign, add, cfg, later=key_changes, undo=key_undo)
     repeats = [s for s in todo if "_orig" in s]
     todo = [s for s in todo if "_orig" not in s]
     by_field = {}
@@ -802,7 +845,7 @@ def _build(project, reassign, add, log, run):
             "stage_y_um": "" if s["stage_y"] is None else round(s["stage_y"], 1),
             "same_field_group": s["field_group"], "counted_by_default": s["counted_by_default"],
             **({"identity_channel_used": has_identity} if ident else {}),
-            **(corr.key_columns(s) if corr is not None else {}),
+            **(corr.key_columns(s, code=code) if corr is not None else {}),
             **({"added_on": s["added_on"]} if add else {"added_on": kept.get(code, "")} if kept else {}), **extra,
         })
         log(f"{code} ({n}/{len(todo)})")
@@ -883,8 +926,8 @@ def _build(project, reassign, add, log, run):
                 change()
             write_csv(key_file, key_rows)
             for d in sorted(blind.iterdir()):
-                if (real / d.name).exists():      # left by a failed Add new images of an earlier version; never in the key
-                    shutil.rmtree(real / d.name)
+                if (real / d.name).exists():    # left by a failed Add new images of an earlier version: not in the
+                    shutil.rmtree(real / d.name)        # key, and nothing saved for it (_codes_in_use skips those)
                 _rename(d, real / d.name)
                 moved.append(real / d.name)
         except BaseException:
@@ -909,13 +952,15 @@ def _build(project, reassign, add, log, run):
         except BaseException:
             if previous.exists() and not real.exists():
                 _rename(previous, real)
-            run["phase"] = "saving" if key_changes else "making"
+            for back in key_undo:           # new codes: the key, seed and drafts that were set aside
+                back()
+            run["phase"] = "exchange"
             raise
         run["phase"] = "saving"
         shutil.rmtree(previous, ignore_errors=True)
         write_csv(key_file, key_rows)
     if corr is not None:
-        FF.record_build(project, key_rows)
+        FF.record_build(project, key_rows, corr.used_now)
     write_csv(project / "key" / "settings_groups.csv",
               [{"settings_group": l, "system": c[0], "settings": c[1]} for c, l in letters.items()])
     write_csv(out / "auto_measurements.csv", auto_rows or [{"code": "none"}])

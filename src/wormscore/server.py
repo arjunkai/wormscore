@@ -193,6 +193,9 @@ class Project:
         # Sent back by the page with every request, so a scoring window left open from another
         # project can never save into this one (both would use the same port).
         self.id = hashlib.sha256(str(self.path.resolve()).lower().encode()).hexdigest()[:16]
+        if not self.blind.is_dir() and (self.path / "blind_previous").is_dir():
+            # 1.26.16: a rebuild cut off (the computer shut down) in the moment it exchanged the blind set
+            (self.path / "blind_previous").rename(self.blind)
         if not self.blind.is_dir():
             raise SystemExit(f"No blind/ folder in {self.path}. Run 'wormscore prepare' first.")
 

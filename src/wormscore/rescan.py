@@ -30,7 +30,7 @@ def next_letter(letters):
 
 
 LEICA_GAIN = re.compile(r"^[^;]*? gain (?=-?\d)")
-NUMBER = re.compile(r"\d+\.\d+")
+OBJECTIVE_NUMBER = re.compile(r"\d+\.\d+(?=x/)|(?<=x/)\d+\.\d+")     # the two numbers of "40.0x/1.2000000000000002"
 
 
 def tidy_number(text):
@@ -53,7 +53,25 @@ def same_reading(system, settings):
     settings = str(settings or "")
     if str(system or "").startswith("Leica"):
         settings = LEICA_GAIN.sub("HyD gain ", settings, count=1)
-    return NUMBER.sub(lambda m: tidy_number(m.group(0)), settings)
+    return OBJECTIVE_NUMBER.sub(lambda m: tidy_number(m.group(0)), settings)
+
+
+def reworded(pairs):
+    """{(system, settings in the key): (system, settings as now scanned)} for coded images whose settings
+    a new scan only words differently, or None if the scan changes more than the wording. It is only
+    wording if each text in the key became exactly one text now and the reverse: "HyD gain 500" in the
+    key that is now "PMT gain 500" for some images and "HyD gain 500" for others was two detectors
+    (1.26.16; the two then shared a group when images were added, found by review)."""
+    now, was = {}, {}
+    for r, s in pairs:
+        old, new = (r["system"], r["settings"]), (s["system"], s["settings"])
+        if old[0] != new[0] or same_reading(*old) != same_reading(*new):
+            return None
+        now.setdefault(old, set()).add(new)
+        was.setdefault(new, set()).add(old)
+    if any(len(v) != 1 for v in now.values()) or any(len(v) != 1 for v in was.values()):
+        return None
+    return {old: next(iter(new)) for old, new in now.items() if old != next(iter(new))}
 
 
 _scan_changes = {}
@@ -70,7 +88,7 @@ def scan_changes(project, cfg=None):
     that really change group are named. It holds counts and group letters only, never a genotype."""
     project = Path(project)
     key_path, inv_path = project / "key" / "key.csv", project / "outputs" / "inventory.csv"
-    none = {"lines": [], "letters": None, "changed": False}
+    none = {"lines": [], "letters": None, "changed": False, "reworded": {}}
     if not key_path.is_file() or not inv_path.is_file():
         return none
     stamp = tuple(p.stat().st_mtime_ns for p in (key_path, inv_path, project / "config.json") if p.is_file())
@@ -81,9 +99,9 @@ def scan_changes(project, cfg=None):
     rows = [r for r in read_csv(key_path) if not r.get("repeat_of") and (r["local_path"], r["location_in_file"]) in images]
     pairs = [(r, images[(r["local_path"], r["location_in_file"])]) for r in rows]
     out = dict(none)
-    # 1.26.13: settings that only read differently (same_reading) are not a change
-    out["changed"] = any((r["system"], same_reading(r["system"], r["settings"]))
-                         != (s["system"], same_reading(s["system"], s["settings"])) for r, s in pairs)
+    # 1.26.13: settings that are only worded differently (reworded) are not a change
+    out["reworded"] = reworded(pairs)
+    out["changed"] = out["reworded"] is None
     if pairs:      # also when nothing changed: a rebuild that keeps the codes takes its letters from the key (1.26.10)
         members = {}
         for r, s in pairs:

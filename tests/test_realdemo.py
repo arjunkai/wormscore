@@ -71,3 +71,16 @@ def test_download_checks_md5_and_reuses_the_cache(tmp_path, monkeypatch):
     assert path.read_bytes() == body and "a%20b.czi" in calls[-1]
     realdemo.download("a b.czi", good, len(body), tmp_path, log)
     assert len(calls) == 2                                    # second call used the cache
+
+
+def test_a_download_that_ends_early_is_tried_again(tmp_path, monkeypatch):
+    """Found by review: a connection that closed early without an error was not tried again."""
+    body, calls = b"real worms" * 10, []
+
+    def short_once(url, timeout):
+        calls.append(url)
+        return io.BytesIO(body[:20] if len(calls) == 1 else body)
+
+    monkeypatch.setattr(realdemo.urllib.request, "urlopen", short_once)
+    path = realdemo.download("a.czi", hashlib.md5(body).hexdigest(), len(body), tmp_path, lambda *a: None)
+    assert path.read_bytes() == body and len(calls) == 2

@@ -59,6 +59,8 @@ def download(name, md5, size, cache, log=print):
         try:
             with urllib.request.urlopen(url, timeout=60, **https_kwargs()) as r, open(part, "wb") as fh:
                 shutil.copyfileobj(r, fh, 1 << 20)
+            if part.stat().st_size != size:     # the connection closed early without an error (1.26.16)
+                raise OSError(f"{part.stat().st_size / 1e6:.0f} of {size / 1e6:.0f} MB arrived")
             break
         except OSError as exc:          # no connection, a timeout, a dropped download
             part.unlink(missing_ok=True)

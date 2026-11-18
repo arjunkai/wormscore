@@ -650,6 +650,12 @@ def volume_shims(tmp_path):
                           f'exec "{real_mv}" "$@"\n', newline="\n")
     for f in d.iterdir():
         f.chmod(0o755)
+    # GitHub's Windows machines have an sh that puts its own commands first, whatever PATH says: the
+    # stand-ins are then not used and the test would move real folders. It runs wherever sh uses them.
+    env = dict(os.environ, PATH=str(d) + os.pathsep + os.environ["PATH"])
+    probe = subprocess.run([SH, "-c", "stat -c %d /x/volB"], env=env, capture_output=True, text=True, timeout=60)
+    if probe.stdout.strip() != "2":
+        pytest.skip("this sh does not use stand-in commands from PATH")
     return d
 
 

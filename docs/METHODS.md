@@ -189,7 +189,10 @@ when all are made; the key and the tables are written after that. If it fails mi
 be read, a full disk), the blind set, the key, the scores and the drafts are left as they were, the Build
 log says so, and the build can be run again; the same holds for **Add new images**, which then adds
 nothing. A build cut off by the computer shutting down leaves `blind_building/`, which the next build
-removes. There is no resume: a build that failed is run again from the start. A rebuild therefore needs
+removes. Cut off in the moment of the exchange, it can leave the blind set as `blind_previous/` (the next
+build or the scoring page puts it back), or, for Add new images, codes in the key whose images are not
+yet in `blind/` (Add new images then says so; "Rebuild, keeping the current codes" makes them). A new
+image never gets a code that has a saved score or outlines. There is no resume: a build that failed is run again from the start. A rebuild therefore needs
 free space for a second copy of the blind set while it runs. (Until this was fixed, a rebuild deleted
 `blind/` first, so a failure left only part of the coded images until the next rebuild, and a failed
 Add new images left folders that stopped every later one.)

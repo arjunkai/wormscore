@@ -118,6 +118,15 @@ def imaging_date(acquired):
         return a
 
 
+def _same_record(system, column, now, recorded):
+    """A flat-field column of key.csv against what this build would write. The imaging session's settings
+    may be worded differently since (same_reading); the microscope and the day must be the same text."""
+    if now == recorded or column != "imaging_session":
+        return now == recorded
+    a, b = now.partition(", settings "), recorded.partition(", settings ")
+    return a[0] == b[0] and same_reading(system, a[2]) == same_reading(system, b[2])
+
+
 def session_key(img):
     """(microscope, settings, day) of an image or a slide image. "settings" includes the objective and the
     zoom, which change the light across the field but are not in every format's settings string."""
@@ -321,6 +330,15 @@ def add_sessions(project, folder, log=print):
         raise SystemExit("No slide image could be read. " + ("; ".join(skipped[:3]) if skipped else
                                                             "The folder has no images wormscore can read."))
     old = sm["sessions"]
+    # 1.26.16: slide images of a session the project already has, read now with another wording of its
+    # settings (same_reading), belong to that session: they are named as it is. Found by review: they were
+    # stored as a new microscope setting, with a brightness factor of their own.
+    known = {}
+    for s in old:
+        known.setdefault((s["system"], same_reading(s["system"], s["settings"])), s["settings"])
+    for r in refs:
+        system, settings, day = r["key"]
+        r["key"] = (system, known.get((system, same_reading(system, settings)), settings), day)
     dark = {}
     for s in old:      # the dark image each microscope and settings already uses
         if s["dark"] and (s["system"], s["settings"]) not in dark:
@@ -417,6 +435,7 @@ class Correction:
 
     def __init__(self, project, cfg):
         import numpy as np
+        self.project, self.used_now = Path(project), {}
         self.ff = settings_of(cfg)
         out = Path(project) / "outputs" / FOLDER
         try:
@@ -434,6 +453,8 @@ class Correction:
         self.sessions = self.summary["sessions"]
 
     pins = {}       # image -> the earlier session list it is held to (set per object by keep_coded)
+    used_now = {}   # code -> the session (or sessions) this build corrected it with (set per object by key_columns)
+    kept_changed = False
 
     def _states(self):
         """The session lists this project has had, latest first: all of them, then without each later
@@ -452,21 +473,43 @@ class Correction:
         image again with all sessions, so images already scored changed without a word.
         Returns (images held to earlier slide images, images that cannot be corrected as recorded)."""
         rows = {(r["local_path"], r["location_in_file"]): r for r in key_rows if not r.get("repeat_of")}
+        # 1.26.16 (found by review): the words in key.csv ("nearest day, 2026-03-05 (other settings)") do not
+        # say which session's slide images were used, and a session added later can take that place under
+        # the same words. Each build now records the session per code (key/flat_field_sessions.json), and an
+        # image is held to the session list that gives that session. For a key built before, the words are
+        # all there is: if they fit more than one session, the image is counted as one that may change.
+        recorded = used_record(self.project) if getattr(self, "project", None) else {}
         self.pins = {}
         kept = changed = 0
         for img in images:
             row = rows.get(_ident(img))
             if row is None:
                 continue
+            fits = []
             for sessions in self._states():
                 cols = self.key_columns(img, sessions)
-                if all(str(v) == (row.get(k) or "") for k, v in cols.items()):
-                    if sessions is not self.sessions:
-                        self.pins[_ident(img)] = sessions
-                        kept += 1
-                    break
+                if all(_same_record(img.get("system", ""), k, str(v), row.get(k) or "") for k, v in cols.items()):
+                    ses = self.resolve(img, sessions)
+                    fits.append((sessions, None if ses is None else ses["index"]))
+            code = row.get("code")
+            if code in recorded:
+                fits = [f for f in fits if f[1] == recorded[code]]
             else:
+                # a key from before 1.26.16: slide images added after the image got its code cannot be the
+                # ones it was scored with, so a session list without them comes first
+                digits = lambda t: "".join(ch for ch in str(t or "") if ch.isdigit())[:12]
+                coded = digits(row.get("added_on"))
+                later = lambda s: (s.get("added") and digits(s["added"]) > coded) if coded else s.get("added_after_scoring_began")
+                first = [f for f in fits if not any(later(s) for s in f[0])]
+                fits = first or fits
+                if len({str(f[1]) for f in fits}) > 1:
+                    changed += 1        # the words fit more than one session: the warning says to compare
+            if not fits:
                 changed += 1
+            elif fits[0][0] is not self.sessions:
+                self.pins[_ident(img)] = fits[0][0]
+                kept += 1
+        self.kept_changed = bool(changed)
         return kept, changed
 
     def session_for(self, img, sessions=None):
@@ -553,8 +596,11 @@ class Correction:
         """The dark image of a session (an average stands in with its first session's)."""
         return self.arrays[f"dark_{ses.get('dark_from', ses['index'])}"]
 
-    def key_columns(self, img, sessions=None):
+    def key_columns(self, img, sessions=None, code=None):
+        """code: given by Build for the image it is making, so the session used is recorded for that code."""
         ses = self.resolve(img, sessions)
+        if code:
+            self.used_now[code] = None if ses is None else ses["index"]
         if ses is None:
             return {"imaging_session": _label(session_key(img)),
                     "flat_field": f"not corrected: {self.not_corrected(img, sessions)}", "session_factor": "not corrected"}
@@ -575,13 +621,14 @@ class Correction:
             elif ses["how"] != SAME:
                 other[(_label(session_key(s)), ses["how"])] += 1
         tail = "; brightness between sessions is not corrected for them" if self.ff.get("between_sessions") else ""
-        fully, at_all = (("Coded images stay as they were scored.",) * 2 if fixed else
+        fully, at_all = (("",) * 2 if fixed and self.kept_changed else      # this build changes some: keep_lines says so
+                         ("Coded images stay as they were scored.",) * 2 if fixed else
                          ("Add that session's slide images to correct them fully.",
                           "Add that session's slide images to correct them."))
-        out = [f"Warning: {plural(n, 'image')} from {k} used {_how_words(how)}{tail}. {fully}"
+        out = [f"Warning: {plural(n, 'image')} from {k} used {_how_words(how)}{tail}. {fully}".rstrip()
                for (k, how), n in sorted(other.items())]
         out += [f"Warning: {plural(n, 'image')} from {k} could not be corrected ({why}) and {'is' if n == 1 else 'are'} "
-                f"used as recorded, not comparable in brightness with the others. {at_all}"
+                f"used as recorded, not comparable in brightness with the others. {at_all}".rstrip()
                 for (k, why), n in sorted(none.items())]
         return out
 
@@ -629,7 +676,18 @@ def load(project, cfg):
     return Correction(project, cfg) if settings_of(cfg) else None
 
 
-def record_build(project, key_rows):
+USED = "flat_field_sessions.json"       # in key/: which session corrected each code (it would tell imaging days apart)
+
+
+def used_record(project):
+    try:
+        got = json.loads((Path(project) / "key" / USED).read_text(encoding="utf-8"))
+        return got if isinstance(got, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def record_build(project, key_rows, used=None):
     """outputs/flat_field/build.json: how many coded images were corrected with their own session's slide
     images, with another's, or not at all (for the home page, which never reads key.csv)."""
     rows = [r for r in key_rows if not r.get("repeat_of")]
@@ -638,6 +696,11 @@ def record_build(project, key_rows):
                          for r in rows),
             "none": sum(r.get("flat_field", "").startswith("not corrected") for r in rows)}
     (Path(project) / "outputs" / FOLDER / "build.json").write_text(json.dumps(note), encoding="utf-8")
+    if used is not None:        # codes made by this build, with those an Add new images left as they were
+        before = used_record(project)
+        codes = {r["code"] for r in rows}
+        both = {c: v for c, v in before.items() if c in codes} | {c: v for c, v in used.items() if c in codes}
+        (Path(project) / "key" / USED).write_text(json.dumps(both, indent=1), encoding="utf-8")
 
 
 def _what(ff):

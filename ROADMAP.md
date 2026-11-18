@@ -31,6 +31,33 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.16: **Fixes from an independent review of 1.26.13 to 1.26.15.**
+  - **Add new images** never gives a new image a code that already has a saved score or outlines. An Add new images that failed in an earlier version could leave a coded image without a key row;
+    1.26.15 replaced it with another image under the same code, with its score still saved.
+  - **Rebuild with new codes:** if the new coded images could not be put in place (a file held by another
+    program), the key, seed and drafts that had been set aside stayed aside. They are put back, and the
+    message says to close other programs, not to check the free space.
+  - **Flat-field correction after scoring:** `key.csv` records how an image was corrected in words that
+    can fit two sessions, so slide images added later could take a scored image under the same words.
+    Each build now records the session of each code (`key/flat_field_sessions.json`), and a rebuild holds
+    each coded image to it. For a key built before, slide images added after the image got its code are
+    not used for it; if the words still fit two sessions, the build warns.
+  - **Settings worded anew (1.26.13):**
+    - A PMT and a HyD at the same gain number, once both written "HyD gain", are two settings: the new
+      scan is shown as a change and Add new images warns, where the two could share a group unnoticed.
+    - Add slide images for a session that is only worded anew stored it as a new setting with its own
+      brightness factor; it is now that session. A rebuild after scoring no longer warns of a flat-field
+      change that was wording alone.
+  - **OME-TIFF in the 2008 schema:** the exposure is read (two exposures shared a settings group), and an
+    image with two pixel sets is left unresolved, not read from the first.
+  - Text from a file that would be a spreadsheet formula gets its leading `'` in every reading of the file,
+    so slide images and control images name a microscope as its images do.
+  - **Mac, app on another disk:** of two kept copies, Go back uses the one kept last (1.26.15 could delete
+    the real previous version); a folder that cannot be written gives a plain message.
+  - The real-worm demo also tries again when a download ends early. The Methods draft names an objective
+    once when the key holds it in two wordings.
+  - **Who is affected:** none of 1.26.13 to 1.26.15 was published as a release. A project with flat-field
+    correction gets `key/flat_field_sessions.json` at its next build; nothing else changes for it.
 - 1.26.15: **Rebuilds after scoring, builds that fail, outlines saved from two windows, and the Mac updater on another disk.**
   - **Flat-field correction:** slide images added after scoring began, followed by "Rebuild, keeping the
     current codes", corrected every image again with all sessions. Scored images changed (planes, display

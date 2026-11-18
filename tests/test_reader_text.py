@@ -254,3 +254,99 @@ def test_text_from_a_file_is_never_a_spreadsheet_formula(tmp_path):
     (row,) = inventory(project, log=quiet)
     assert row["system"] == "'=cmd" and row["channel_names"] == "GFP/'=HYPERLINK(1)"
     assert row["channel_roles"].startswith("MARKER")              # the roles are worked out from the file's own text
+
+
+# ------------------------------------------------------------------ 1.26.16: from the independent review
+
+def test_two_detectors_once_written_alike_are_a_change_not_a_wording(tmp_path, monkeypatch):
+    """A PMT and a HyD at the same gain number were both "HyD gain 500.0" in one group. That is two settings,
+    so the new scan is a change: the Build card names the move and Add new images warns. In 1.26.13 it
+    passed as wording, and added images of both detectors joined one group with no warning."""
+    project = make_demo(tmp_path / "p", n_per_group=1, log=quiet)
+    for f in (project / "data").glob("*.tif"):
+        f.unlink()
+    hyd = '<Detector Name="HyD 1" Type="HyD" Channel="1" Gain="500" IsActive="1"/>'
+    for k, det in enumerate((PMT.format(gain=500), PMT.format(gain=500), hyd)):
+        lif(project / "data" / f"demo_{'control' if k % 2 else 'mutant'}_{k:02d}.lif", det, seed=k)
+    with monkeypatch.context() as m:
+        m.setattr(readers, "_leica_detector_kind", lambda d: "HyD")
+        inventory(project, log=quiet)
+    prepare(project, log=quiet)
+    assert {r["settings_group"] for r in read_csv(project / "key" / "key.csv")} == {"A"}
+    lif(project / "data" / "demo_control_09.lif", PMT.format(gain=500), seed=9)
+    inventory(project, log=quiet)
+    ch = scan_changes(project)
+    assert ch["changed"] is True and ch["reworded"] is None and len(ch["lines"]) == 1
+    lines = []
+    prepare(project, add=True, log=lines.append)
+    assert any(x.startswith("Warning:") and "settings groups of their own" in x for x in lines)
+    lines = []
+    prepare(project, log=lines.append)                              # Rebuild, keeping the current codes
+    groups = {r["file"]: r["settings_group"] for r in read_csv(project / "key" / "key.csv")}
+    assert groups["demo_mutant_00.lif"] == groups["demo_control_01.lif"] == groups["demo_control_09.lif"] != groups["demo_mutant_02.lif"]
+
+
+def test_same_reading_leaves_other_numbers_alone():
+    assert same_reading("X", "gain 1.0000001") != same_reading("X", "gain 1.0")
+    assert same_reading("X", "ver 10.0.5") == "ver 10.0.5"
+    assert same_reading("", "40.0x/1.2000000000000002 Water | 2.0") == "40x/1.2 Water | 2.0"
+
+
+def test_slide_images_added_for_a_session_worded_anew_are_that_session(tmp_path, monkeypatch):
+    """Found by review: slide images measured as "HyD gain 600.0", then Add slide images with 1.26.13 for
+    the same microscope, settings and day, were stored as a new setting with a brightness factor of 1."""
+    project = make_demo(tmp_path / "p", n_per_group=1, log=quiet)
+    for f in (project / "data").glob("*.tif"):
+        f.unlink()
+    for k in range(2):
+        lif(project / "data" / f"demo_{'control' if k % 2 else 'mutant'}_{k:02d}.lif", PMT.format(gain=600), seed=k)
+
+    def slides(folder, level, seed):
+        rng = np.random.default_rng(seed)
+        stack = lambda: rng.normal(level, 5, (3, 32, 32)).clip(1, 4000).astype(int)
+        folder.mkdir()
+        write_lif(folder / "slide.lif", [("Series001", (stack(), stack()))], hardware=HARDWARE.replace(HYD, PMT.format(gain=600)))
+        return folder
+
+    with monkeypatch.context() as m:
+        m.setattr(readers, "_leica_detector_kind", lambda d: "HyD")
+        inventory(project, log=quiet)
+        FF.measure(project, slides(tmp_path / "s1", 2000, 50), log=quiet)
+    prepare(project, log=quiet)
+    with pytest.raises(SystemExit, match="already has slide images, kept as it was"):
+        FF.add_sessions(project, slides(tmp_path / "s2", 1000, 51), log=quiet)
+    assert len(FF.summary(project)["sessions"]) == 1
+    # the record of a coded image and what a build would write now differ in wording only
+    old = "Leica TCS SP8, 2026-03-01, settings HyD gain 700.0; 488nm@2.0%; line avg 1 | 63x | 2"
+    assert FF._same_record("Leica TCS SP8", "imaging_session", old.replace("HyD", "PMT"), old)
+    assert not FF._same_record("Leica TCS SP8", "imaging_session", old.replace("HyD", "PMT").replace("03-01", "03-02"), old)
+    assert not FF._same_record("Leica TCS SP8", "flat_field", "same session", "nearest day, 2026-03-01")
+
+
+def test_ome_tiff_2008_exposure_and_an_image_with_two_pixels(tmp_path):
+    cfg = C.merge(C.DEFAULTS, {})
+    # the 2008-09 schema keeps the exposure on PlaneTiming: two exposures read as one setting
+    path, _ = ome_2008(tmp_path / "a.ome.tiff", NAMED)
+    timed = lambda xml: xml.replace("</Pixels>", "".join(
+        f'<Plane TheZ="{z}" TheC="{c}" TheT="0"><PlaneTiming DeltaT="0.0" ExposureTime="0.05"/></Plane>'
+        for z in range(3) for c in range(2)) + "</Pixels>")
+    with tifffile.TiffFile(path) as f:
+        xml, planes = f.pages[0].description, f.asarray()
+    tifffile.imwrite(path, planes.reshape(-1, 24, 18), description=timed(xml), metadata=None, photometric="minisblack")
+    assert readers.ome_images(path, cfg)[0]["settings"] == "gain 2.5; 488nm attenuation 0.5; exposure 0.05"
+    # an Image with two Pixels: which one the planes belong to is not worked out, so nothing is guessed
+    two = xml.replace("<Pixels ", '<Pixels BigEndian="false" DimensionOrder="XYCTZ" ID="Pixels:9:0" PixelType="uint8" '
+                      'SizeC="2" SizeT="1" SizeX="18" SizeY="24" SizeZ="3"/><Pixels ', 1)
+    tifffile.imwrite(path, planes.reshape(-1, 24, 18), description=two, metadata=None, photometric="minisblack")
+    (im,) = readers.ome_images(path, cfg)
+    assert set(im["channel_roles"]) == {"UNRESOLVED"} and any("which channel is which" in x for x in im["flags"])
+
+
+def test_every_reading_of_a_file_names_its_microscope_alike(tmp_path):
+    """The leading ' was added at Scan data only, so slide images of a microscope named "-SD1- spinning
+    disk" were read under another name than its images and could not correct them."""
+    path = write_ome(tmp_path / "a.ome.tif", gain=2, bits=16)
+    rewrite(path, lambda xml: xml.replace(
+        "<Image ", '<Instrument ID="Instrument:0"><Microscope Model="-SD1- spinning disk"/></Instrument><Image ', 1))
+    (im,) = readers.images_in(path, C.merge(C.DEFAULTS, {}))
+    assert im["system"] == "'-SD1- spinning disk" and FF.session_key(im)[0] == "'-SD1- spinning disk"

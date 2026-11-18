@@ -12,6 +12,7 @@ from pathlib import Path
 from . import __version__
 from . import config as C
 from . import ranks, stats
+from .rescan import same_reading
 
 
 def _date(path):
@@ -173,6 +174,8 @@ def images_table(key_rows, excluded_rows, notes):
     rows = ["| Genotype | Microscope | Objective | Source | Included | Excluded |", "|---|---|---|---|---|---|"]
     for g, s in sorted(set(inc) | set(exc)):
         objs = sorted({r["objective"].strip() for r in key_rows if (r["genotype"], r["system"]) == (g, s)}) or ["[see excluded.csv]"]
+        # 1.26.16: one objective the key holds in two wordings (images added after a 1.26.13 scan) is named once
+        objs = [o for o in objs if same_reading("", o) == o or same_reading("", o) not in objs]
         srcs = sorted({r["source"] for r in key_rows if (r["genotype"], r["system"]) == (g, s)})
         src = "; ".join(x + ("*" if x in notes else "") for x in srcs) or "[source]"
         rows.append(f"| {g} | {s} | {'; '.join(' '.join(o.split()) for o in objs)} | {src} | {inc[(g, s)]} | {exc[(g, s)]} |")

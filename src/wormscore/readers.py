@@ -355,7 +355,7 @@ def _no_bits_flag(system, cfg, top):
     """1.26.7: a 16-bit file that does not say how many bits the detector used (a 12- or 14-bit camera
     saves into 16). The top of the range is not guessed: the image is flagged, unless config.json
     states the microscope's saturation_value."""
-    if system in (cfg.get("saturation_value") or {}):
+    if system in (cfg.get("saturation_value") or {}) or _no_formula(system) in (cfg.get("saturation_value") or {}):
         return []
     return [f"{NO_BITS}: saturation is taken as {top}; for a 12- or 14-bit camera set saturation_value in config.json"]
 
@@ -553,10 +553,18 @@ def _ome_logical_channels(md):
         for tag in ("NominalMagnification", "LensNA", "Immersion"):
             if obj.get(tag) is None and (obj.findtext(q(tag)) or "").strip():
                 obj.set(tag, obj.findtext(q(tag)).strip())
+    for plane in md.iter(q("Plane")):       # the exposure is on PlaneTiming (1.26.16)
+        timing = plane.find(q("PlaneTiming"))
+        if plane.get("ExposureTime") is None and timing is not None and timing.get("ExposureTime"):
+            plane.set("ExposureTime", timing.get("ExposureTime"))
     for img in md.iter(q("Image")):
         logical = img.findall(q("LogicalChannel"))
+        several = len(img.findall(q("Pixels"))) > 1
         for px in img.findall(q("Pixels")) if logical else []:
             if px.find(q("Channel")) is not None:
+                continue
+            if several:     # 1.26.16: which Pixels the planes of the file belong to is not worked out
+                px.set("ChannelsNotStated", "1")
                 continue
             owner = {}
             for lc in logical:
@@ -1252,6 +1260,19 @@ def imagej_images(path, cfg, setting):
 
 
 def images_in(path, cfg, source=None):
+    """Every image of one file. Text from the file that a spreadsheet would run as a formula gets a leading '
+    here (1.26.16; 1.26.15 did it at Scan data only, so slide images and control images read the same
+    microscope under another name)."""
+    found = _images_in(path, cfg, source)
+    for img in found:
+        for field in ("system", "objective", "settings", "zoom", "acquired"):
+            img[field] = _no_formula(img.get(field, ""))
+        img["channel_names"] = [_no_formula(n) for n in img["channel_names"]]
+        img["flags"] = [_no_formula(x) for x in img["flags"]]
+    return found
+
+
+def _images_in(path, cfg, source=None):
     low = path.name.lower()
     if low.endswith(".lif"):
         return leica_images(path, cfg)
@@ -1403,7 +1424,7 @@ def scan(cfg, log=print, progress=None):
                 found = images_in(p, cfg, src)
             except Exception as exc:
                 row["role"] = "unreadable image"
-                row["note"] = str(exc)[:200]
+                row["note"] = _no_formula(str(exc)[:200])
                 log(f"  could not read {row['relative_path']}: {exc}")
                 continue
             if not found:
@@ -1413,10 +1434,6 @@ def scan(cfg, log=print, progress=None):
                     log(f"  not used: {row['relative_path']}: {COLOUR_CAMERA}")
                 continue
             for img in found:
-                for field in ("system", "objective", "settings", "zoom", "acquired"):
-                    img[field] = _no_formula(img.get(field, ""))
-                img["channel_names"] = [_no_formula(n) for n in img["channel_names"]]
-                img["flags"] = [_no_formula(x) for x in img["flags"]]
                 img.update({"source": row["source"], "file": p.name, "relative_path": row["relative_path"],
                             "local_path": row["local_path"], "original_path": row["original_path"],
                             "file_sha256": row["sha256"], "genotype": C.genotype_for(src, row["relative_path"])})
