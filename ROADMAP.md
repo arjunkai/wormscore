@@ -31,6 +31,35 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.15: **Rebuilds after scoring, builds that fail, outlines saved from two windows, and the Mac updater on another disk.**
+  - **Flat-field correction:** slide images added after scoring began, followed by "Rebuild, keeping the
+    current codes", corrected every image again with all sessions. Scored images changed (planes, display
+    ranges, `key.csv`) with no warning. Such a rebuild now corrects each coded image as `key.csv` records
+    it; slide images added since are used only for images added after them, and `log.md` says how many
+    images were kept. A correction that cannot be kept (the setting removed by hand, a new scan) is built
+    as set now, with a recorded warning.
+  - **Build:** the coded images are made in `blind_building/` and replace `blind/` in one step when all are
+    made. A rebuild that failed midway (a file that cannot be read, a full disk) used to leave only part of
+    the coded images until the next rebuild, and a failed Add new images stopped every later one. Both now
+    leave the blind set, key, scores and drafts as they were, and the Build log says so. A rebuild needs
+    free space for a second copy of the blind set while it runs. A failed build is started again, not resumed.
+  - **Save outlines:** with two scoring windows on one image, the save clicked first could be written last.
+    The later click now wins, and the other window says its outlines were not saved.
+  - **Mac update with the app on another disk than the home folder:** the swap copied the app between disks
+    and could stop halfway, leaving part of an app while reporting "The previous version was kept". The kept
+    copy and the download now stay in hidden folders next to the app, so every move is one rename. Windows
+    was not affected.
+  - The real-worm demo tries a download that stalls three times, then says to check the connection. One
+    timeout ended it with a Python error.
+  - Text from a microscope file (a channel or microscope name) that a spreadsheet would run as a formula is
+    written to `inventory.csv` and the key with a leading `'`, as answers in `scores.csv` are.
+  - **Who is affected:**
+    - Projects where flat-field slide images were added after scoring began and the blind set was then
+      rebuilt with 1.21.1 to 1.26.12: images scored before that rebuild were scored on the earlier
+      correction (`key.csv`, column `flat_field`, shows the later one). None of those versions was
+      published as a release.
+    - Mac users whose app is not on the home folder's disk.
+    - Everyone else: nothing changes in scores, measurements or reports.
 - 1.26.14: **Olympus `.oir` files are read (FV3000, FV4000, FVMPE-RS).**
   - Read from the file's own metadata with [oirfile](https://github.com/cgohlke/oirfile) (BSD-3-Clause):
     the reporter, identity and brightfield channels (brightfield is the channel on the transmitted

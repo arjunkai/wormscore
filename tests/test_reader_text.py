@@ -238,3 +238,19 @@ def test_a_nikon_colour_camera_file_says_why_it_is_not_used(tmp_path, monkeypatc
     (row,) = [r for r in read_csv(project / "outputs" / "manifest.csv") if r["relative_path"] == "HE_002.nd2"]
     assert row["role"] == readers.NOT_USED and "colour camera" in row["note"]
     assert any("HE_002.nd2" in x and "colour camera" in x for x in said)
+
+
+def test_text_from_a_file_is_never_a_spreadsheet_formula(tmp_path):
+    """Channel names, the microscope's name and the like come from the file and are written to
+    inventory.csv and the key. Text a spreadsheet would run as a formula gets a leading '."""
+    assert [readers._no_formula(x) for x in ("=1+1", "+GFP", "@x", "-cmd", "-12.5", "GFP", "", 3)] \
+        == ["'=1+1", "'+GFP", "'@x", "'-cmd", "-12.5", "GFP", "", 3]
+    project = make_demo(tmp_path / "p", n_per_group=1, log=quiet)
+    for f in (project / "data").glob("*.tif"):
+        f.unlink()
+    path = write_ome(project / "data" / "demo_control_01.ome.tif", gain=2, bits=16)
+    rewrite(path, lambda xml: xml.replace('Name="Brightfield"', 'Name="=HYPERLINK(1)"').replace(
+        "<Image ", '<Instrument ID="Instrument:0"><Microscope Model="=cmd"/></Instrument><Image ', 1))
+    (row,) = inventory(project, log=quiet)
+    assert row["system"] == "'=cmd" and row["channel_names"] == "GFP/'=HYPERLINK(1)"
+    assert row["channel_roles"].startswith("MARKER")              # the roles are worked out from the file's own text

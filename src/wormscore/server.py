@@ -183,6 +183,12 @@ class Project:
         self.blind = self.path / "blind"
         self.scoring = self.path / "scoring"
         self.lock = threading.Lock()
+        # The order in which requests to save outlines arrived, and per code the latest one written.
+        # Outlines are measured outside the lock, so two saves of one code (two scoring windows) can
+        # finish in the other order; the one that arrived earlier is then not written over the later one.
+        self.roi_arrived = 0
+        self.roi_written = {}
+        self.roi_order = threading.Lock()
         self.last_seen = time.time()   # the desktop app closes only after the page has gone quiet
         # Sent back by the page with every request, so a scoring window left open from another
         # project can never save into this one (both would use the same port).
@@ -294,6 +300,23 @@ class Project:
         return measure_regions(code, raw, np.load(d / "candidates.npz"), meta, rois, self.cfg, saturated_mask(d))
 
     ROI_FILES = ("rois.json", "roi_measurements.json", "roi_measurements.csv")
+
+    def roi_ticket(self):
+        """A number for a request to save outlines, in the order the requests arrive."""
+        with self.roi_order:
+            self.roi_arrived += 1
+            return self.roi_arrived
+
+    def save_rois_in_order(self, code, rois, rows, ticket):
+        """Write the outlines unless a request that arrived later has already written this code's
+        (call with the lock held). Returns whether they were written. The last click wins whatever
+        order the measuring finishes in; a later request that fails writes nothing, so an earlier
+        one is still saved."""
+        if self.roi_written.get(code, 0) > ticket:
+            return False
+        self.save_rois(code, rois, rows)
+        self.roi_written[code] = ticket
+        return True
 
     def save_rois(self, code, rois, rows=None):
         """rows: the regions' measurements if they were already made (the server measures before it
@@ -465,10 +488,14 @@ def make_handler(project):
                 # 1.26.9: measured before the lock is taken (reading and measuring a large stack takes
                 # seconds), so saving a score or a draft never waits for it. Only the writing is locked.
                 rois = body.get("rois", [])
+                ticket = project.roi_ticket()       # before measuring: the order of the clicks
                 check_writable(*(project.scoring / n for n in project.ROI_FILES))
                 rows = project.measure_rois(code, rois) if rois else []
                 with project.lock:
-                    project.save_rois(code, rois, rows)
+                    written = project.save_rois_in_order(code, rois, rows, ticket)
+                if not written:
+                    # another window saved this code's outlines after this click, and finished first
+                    return self.send_json({"ok": False, "superseded": True})
                 # Only confirm the save; the numbers stay in the CSV, not on screen.
                 return self.send_json({"ok": True, "n_regions": len(rois)})
             with project.lock:

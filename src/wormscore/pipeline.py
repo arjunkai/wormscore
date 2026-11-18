@@ -294,11 +294,15 @@ def missing_files(images):
     return sorted({s["local_path"] for s in images if not Path(s["local_path"]).is_file()})
 
 
-def assign_codes(project, images, reassign, add=False, cfg=None):
+def assign_codes(project, images, reassign, add=False, cfg=None, later=None):
     """Random codes. An existing key is reused so codes never change while scoring.
     add: images not yet in the key get new codes after the highest existing one, shuffled
     among themselves with a new seed; existing codes are kept. Returns the images to render,
-    with hidden repeats (records with "_orig", the image they repeat) after the images."""
+    with hidden repeats (records with "_orig", the image they repeat) after the images.
+    later: a list that collects what this would change in the project (the old key set aside, the new
+    seed, drafts set aside) as calls to make once the images are rendered, so a build that fails midway
+    leaves the key as it was. Without it they are made here, as before."""
+    do = later.append if later is not None else (lambda f: f())
     key_dir = project / "key"
     key_path = key_dir / "key.csv"
     if not key_path.exists():
@@ -330,7 +334,7 @@ def assign_codes(project, images, reassign, add=False, cfg=None):
             s["code"] = old.get(ident(s))
         seed = secrets.randbits(32)
         stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-        (key_dir / f"seed_added_{stamp}.txt").write_text(f"{seed}\n")
+        do(lambda: (key_dir / f"seed_added_{stamp}.txt").write_text(f"{seed}\n"))
         random.Random(seed).shuffle(new)
         prefix, width = all_codes[0][0], len(all_codes[0]) - 1
         start = max(int(c[1:]) for c in all_codes) + 1
@@ -356,18 +360,22 @@ def assign_codes(project, images, reassign, add=False, cfg=None):
     scoring = project / "scoring"
     if reassign and scoring.exists() and any(scoring.iterdir()):
         raise SystemExit("scoring/ already has saved scores. Refusing to reassign codes.")
-    if key_path.exists():
-        old_dir = key_dir / f"superseded_{dt.datetime.now():%Y%m%d_%H%M%S}"
-        old_dir.mkdir()
-        for f in ("key.csv", "seed.txt", "settings_groups.csv"):
-            if (key_dir / f).exists():
-                (key_dir / f).rename(old_dir / f)
-    # Unsaved answers belong to the old codes; with new codes they would open on other images.
-    drafts = project / "scoring_drafts" / "drafts.json"
-    if drafts.exists():
-        drafts.rename(drafts.with_name(f"superseded_{dt.datetime.now():%Y%m%d_%H%M%S}.json"))
+    stamp = f"{dt.datetime.now():%Y%m%d_%H%M%S}"
+
+    def set_aside():
+        if key_path.exists():
+            old_dir = key_dir / f"superseded_{stamp}"
+            old_dir.mkdir()
+            for f in ("key.csv", "seed.txt", "settings_groups.csv"):
+                if (key_dir / f).exists():
+                    (key_dir / f).rename(old_dir / f)
+        # Unsaved answers belong to the old codes; with new codes they would open on other images.
+        drafts = project / "scoring_drafts" / "drafts.json"
+        if drafts.exists():
+            drafts.rename(drafts.with_name(f"superseded_{stamp}.json"))
+    do(set_aside)
     seed = secrets.randbits(32)
-    (key_dir / "seed.txt").write_text(f"{seed}\n")
+    do(lambda: (key_dir / "seed.txt").write_text(f"{seed}\n"))
     fraction = C.repeat_fraction(cfg) if cfg else 0
     if not fraction:
         order = list(range(len(images)))
@@ -472,16 +480,90 @@ def read_for_viewer(s, cfg, corr=None):
             "id_planes": id_planes, "id_mip": id_mip, "cands": cands, "sat_mask": sat_mask, "extra": extra}
 
 
+BUILDING = "blind_building"     # the coded images of a build under way; moved into blind/ when all are made
+PREVIOUS = "blind_previous"     # the blind set a rebuild replaces, for the moment of the exchange
+
+
+def tidy_unfinished_build(project, log=lambda *a: None):
+    """What a build that was cut off left behind (the computer shut down, the app was closed): its
+    unfinished images are removed, and a blind set caught in the moment of the exchange is put back."""
+    building, previous, blind = project / BUILDING, project / PREVIOUS, project / "blind"
+    if previous.is_dir():
+        if blind.is_dir():
+            shutil.rmtree(previous, ignore_errors=True)     # the exchange was made; only the old copy was left
+        else:
+            previous.rename(blind)
+            log("An earlier build did not finish. The blind set it was replacing is back in place.")
+    if building.is_dir():
+        shutil.rmtree(building)
+        log("An earlier build did not finish. Its unfinished images were removed.")
+
+
+def _rename(src, dst, tries=10):
+    """One rename of a whole folder. On Windows a virus scanner can hold a file for a moment."""
+    import time
+    for n in range(tries):
+        try:
+            return src.rename(dst)
+        except PermissionError:
+            if n == tries - 1:
+                raise
+            time.sleep(0.3)
+
+
+def _stopped(exc, run, add):
+    """What to tell the user when a build fails after it began to make the coded images. The file is not
+    named: next to the progress lines it would show which image a code is. Scan data names it."""
+    if isinstance(exc, OSError) and exc.strerror:
+        why = exc.strerror
+    else:
+        why = type(exc).__name__ if isinstance(exc, Exception) else str(exc)
+    name = getattr(exc, "filename", None)
+    if run["phase"] == "saving":
+        return (f"The build stopped while its results were being saved ({why}). Close other programs that have the "
+                "project's files open, then build again.")
+    kept = ("No image was added: the blind set, key and scores are as they were." if add else
+            "The blind set, key and scores are as they were." if run["had_blind"] else "No blind set was made.")
+    if isinstance(exc, SystemExit):
+        return f"{why} {kept}"
+    if name and (BUILDING in Path(str(name)).parts or getattr(exc, "errno", None) == 28):
+        return (f"The build did not finish: the coded images could not be written ({why}). {kept} Check the free "
+                "space on the project's drive, then build again.")
+    return (f"The build did not finish: an image could not be read ({why}). {kept} Scan data again to see which "
+            "file, then build again.")
+
+
 def prepare(project, reassign=False, add=False, log=print):
     """Build the blind set. add=True codes and renders only images not yet in the key, keeping
-    every existing code, image, settings-group letter and display range."""
+    every existing code, image, settings-group letter and display range.
+
+    The coded images are made in blind_building/ and take the place of blind/ in one step when all are
+    made; the key and the tables are written after that. A build that fails midway (a file that cannot
+    be read, a full disk) used to leave a rebuilt project with part of its coded images, or an added
+    batch that could not be added again; it now leaves the blind set, the key and the scores as they
+    were, and says so. There is no resume: a failed build is run again from the start."""
     project = Path(project)
+    run = {"phase": "", "had_blind": (project / "blind").is_dir()}
+    try:
+        return _build(project, reassign, add, log, run)
+    except BaseException as exc:
+        if run["phase"] in ("", "done"):
+            raise                     # stopped by a check before anything was made: as before
+        if run["phase"] == "making":
+            shutil.rmtree(project / BUILDING, ignore_errors=True)
+        if isinstance(exc, (Exception, SystemExit)):
+            raise SystemExit(_stopped(exc, run, add)) from exc
+        raise
+
+
+def _build(project, reassign, add, log, run):
     if add and reassign:
         raise SystemExit("Use either --add-new-images or --reassign-codes, not both.")
     from .scorers import refuse_in_package
     refuse_in_package(project, "Building the blind set")
     cfg = C.load(project)
     C.check(cfg)
+    tidy_unfinished_build(project, log)
     images, excluded = [], []
     for img in load_images(project):
         reason = include_reason(img, cfg)
@@ -508,14 +590,27 @@ def prepare(project, reassign=False, add=False, log=print):
                          "settings, then build again.")
     from . import flatfield as FF
     corr = FF.load(project, cfg)          # None unless the project turned the correction on (1.21.0)
+    # A rebuild that keeps the codes once scoring has begun (or a second-scorer package exists) leaves
+    # every coded image corrected as key.csv records it: slide images added since are used only for
+    # images added after them. It used to correct every image again with all sessions, so images already
+    # scored changed without a word. What cannot be kept (the setting or the measurements changed by hand)
+    # is built as the setting now says, with a warning here and in log.md.
+    ff_lines, ff_fixed = [], False
+    key_file = project / "key" / "key.csv"
+    if not add and not reassign and key_file.is_file() and FF.lock_reason(project):
+        old_rows = [r for r in read_csv(key_file) if not r.get("repeat_of")]
+        if corr is not None:
+            ff_fixed = True
+            ff_lines = FF.keep_lines(*corr.keep_coded(images, old_rows))
+        else:
+            ff_lines = FF.keep_lines(0, sum(1 for r in old_rows if (r.get("flat_field") or "not corrected")
+                                            .startswith("not corrected") is False))
     if corr is not None:
         # never stops the build: images without their own session's slide images use another's, or are
         # used as recorded, each with a warning here, in log.md and in key.csv (column flat_field)
-        ff_lines = corr.warnings(render)
-        for line in ff_lines:
-            log(line)
-    else:
-        ff_lines = []
+        ff_lines = corr.warnings(render, fixed=ff_fixed) + ff_lines
+    for line in ff_lines:
+        log(line)
 
     # 1.26.4: a genotype named in the analysis settings that no included image has (a typing mistake in
     # config.json) used to show only at unblinding, as "no comparison possible"
@@ -595,7 +690,8 @@ def prepare(project, reassign=False, add=False, log=print):
                           "within the new settings groups."]
         for line in scan_lines:
             log(line)
-    todo = assign_codes(project, images, reassign, add, cfg)
+    key_changes = []          # the old key set aside, the new seed: made once the images are rendered
+    todo = assign_codes(project, images, reassign, add, cfg, later=key_changes)
     repeats = [s for s in todo if "_orig" in s]
     todo = [s for s in todo if "_orig" not in s]
     by_field = {}
@@ -608,10 +704,11 @@ def prepare(project, reassign=False, add=False, log=print):
             if s["field_group"] in old_fields:
                 s["counted_by_default"] = False
 
-    blind = project / "blind"
-    if blind.exists() and not add:
-        shutil.rmtree(blind)
-    blind.mkdir(exist_ok=True)
+    # The coded images are made in blind_building/ (named "blind" below). blind/ itself is not touched
+    # until every image is made.
+    blind = project / BUILDING
+    blind.mkdir()
+    run["phase"] = "making"
     mc = cfg["measurement"]
     ident = cfg.get("identity")
     auto_rows, key_rows, stats, pending = [], [], {}, []
@@ -763,10 +860,60 @@ def prepare(project, reassign=False, add=False, log=print):
         key_rows.sort(key=lambda r: r["code"])
 
     out = project / "outputs"
+    real, key_file = project / "blind", project / "key" / "key.csv"
     if add:
-        key_rows = read_csv(project / "key" / "key.csv") + key_rows
+        key_before = key_file.read_bytes()
+        key_rows = read_csv(key_file) + key_rows
         auto_rows = [r for r in read_csv(out / "auto_measurements.csv") if r.get("code") != "none"] + auto_rows
-    write_csv(project / "key" / "key.csv", key_rows)
+    for f in (key_file, project / "key" / "settings_groups.csv", out / "auto_measurements.csv", out / "display_ranges.csv"):
+        if f.exists():       # a table open in Excel is found before anything changes
+            try:
+                with open(f, "r+b"):
+                    pass
+            except PermissionError:
+                raise SystemExit(f"{f.name} is open in another program (Excel?). Close it, then build again.")
+    # Every image is made. Only now does the project change, in an order that never leaves a code that
+    # can be scored without its key row, also if the computer stops between two steps.
+    if add:
+        # the key first: a new code in blind/ without a key row could be scored, and the next Add new
+        # images would give that code to another image
+        moved = []
+        try:
+            for change in key_changes:
+                change()
+            write_csv(key_file, key_rows)
+            for d in sorted(blind.iterdir()):
+                if (real / d.name).exists():      # left by a failed Add new images of an earlier version; never in the key
+                    shutil.rmtree(real / d.name)
+                _rename(d, real / d.name)
+                moved.append(real / d.name)
+        except BaseException:
+            for d in moved:
+                shutil.rmtree(d, ignore_errors=True)
+            key_file.write_bytes(key_before)
+            raise
+        run["phase"] = "saving"
+        blind.rmdir()
+    else:
+        previous = project / PREVIOUS
+        if real.exists():
+            try:
+                _rename(real, previous)
+            except OSError:
+                raise SystemExit("The blind folder could not be replaced: a file in it is open in another program. "
+                                 "Close it, then build again.") from None
+        try:
+            for change in key_changes:       # new codes: the old key is set aside before the new images are in place
+                change()
+            _rename(blind, real)
+        except BaseException:
+            if previous.exists() and not real.exists():
+                _rename(previous, real)
+            run["phase"] = "saving" if key_changes else "making"
+            raise
+        run["phase"] = "saving"
+        shutil.rmtree(previous, ignore_errors=True)
+        write_csv(key_file, key_rows)
     if corr is not None:
         FF.record_build(project, key_rows)
     write_csv(project / "key" / "settings_groups.csv",

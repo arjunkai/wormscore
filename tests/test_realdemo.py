@@ -27,6 +27,32 @@ def test_real_demo_project_from_cache(tmp_path):
     assert all(any(n.startswith(r["match"].rstrip("*")) for r in rules) for n in realdemo.FILES)
 
 
+def test_a_download_that_stalls_is_tried_again_then_reported_plainly(tmp_path, monkeypatch):
+    """One read timeout ended the real-worm demo with a Python error (GitHub's Mac check of 1.26.14)."""
+    import hashlib
+    import io as _io
+    body, calls = b"real worms" * 10, []
+
+    def flaky(url, timeout):
+        calls.append(url)
+        if len(calls) < 3:
+            raise TimeoutError("The read operation timed out")
+        return _io.BytesIO(body)
+
+    monkeypatch.setattr(realdemo.urllib.request, "urlopen", flaky)
+    said = []
+    path = realdemo.download("a.czi", hashlib.md5(body).hexdigest(), len(body), tmp_path, said.append)
+    assert path.read_bytes() == body and len(calls) == 3 and sum("trying again" in x for x in said) == 2
+
+    def down(url, timeout):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr(realdemo.urllib.request, "urlopen", down)
+    with pytest.raises(SystemExit, match="Could not download b.czi from Zenodo .*try the demo again"):
+        realdemo.download("b.czi", "0" * 32, 5, tmp_path, said.append)
+    assert not list(tmp_path.glob("*.part"))
+
+
 def test_download_checks_md5_and_reuses_the_cache(tmp_path, monkeypatch):
     body = b"pretend image"
     good = hashlib.md5(body).hexdigest()

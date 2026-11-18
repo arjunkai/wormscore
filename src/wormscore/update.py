@@ -10,6 +10,7 @@ If any move fails it puts the old copy back. pip installs are told to use pip in
 
 Updates never touch projects, codes, scores or settings files.
 """
+import errno
 import hashlib
 import json
 import os
@@ -77,9 +78,33 @@ def install_kind():
     return "other"
 
 
+def same_volume(a, b):
+    """Whether two paths are on one volume, so a folder can go from one to the other in one rename.
+    A path that does not exist yet is judged by the nearest folder above it that does."""
+    def device(p):
+        p = Path(p)
+        while not p.exists() and p != p.parent:
+            p = p.parent
+        return os.stat(p).st_dev
+    try:
+        return device(a) == device(b)
+    except OSError:
+        return True         # cannot tell: as before
+
+
+NEAR_PREVIOUS, NEAR_STAGE = ".wormscore-previous", ".wormscore-update"     # hidden folders next to the Mac app
+
+
 def app_paths(kind=None):
     """Where the app is, where the previous version is kept and where a new one is unpacked.
-    Windows keeps them next to the app folder, so every move is a rename on one drive."""
+    Windows keeps them next to the app folder, so every move is a rename on one drive.
+
+    macOS keeps them in the app's data folder (~/Library/Application Support/wormscore), which is on
+    the app's volume on most Macs. Where it is not (the app on an external disk, or /Applications on
+    another volume than the home folder), a move between the two is a copy: it can stop halfway and
+    leave a part of an app in the app's place, and the kept copy as a part too. There the previous
+    version and the new copy are kept in two hidden folders next to the app instead, so every move of
+    the exchange is one rename on the app's volume, which happens whole or not at all."""
     kind = kind or install_kind()
     if kind == "windows":
         cur = Path(sys.executable).resolve().parent
@@ -88,9 +113,54 @@ def app_paths(kind=None):
     if kind == "mac":
         cur = Path(sys.executable).resolve().parents[2]            # wormscore.app/Contents/MacOS/wormscore
         d = data_dir()
-        return {"current": cur, "previous": d / "previous" / cur.name, "stage": d / "update-stage",
-                "app": "wormscore.app", "check": "Contents/MacOS/wormscore"}
+        if same_volume(cur.parent, d):
+            return {"current": cur, "previous": d / "previous" / cur.name, "stage": d / "update-stage",
+                    "app": "wormscore.app", "check": "Contents/MacOS/wormscore"}
+        return {"current": cur, "previous": cur.parent / NEAR_PREVIOUS / cur.name, "stage": cur.parent / NEAR_STAGE,
+                "app": "wormscore.app", "check": "Contents/MacOS/wormscore",
+                # where an earlier version kept the previous copy on such a Mac: Go back still finds it
+                "previous_before": d / "previous" / cur.name}
     return {}
+
+
+def kept_copy(paths):
+    """The folder that holds the previous version, or None."""
+    for key in ("previous", "previous_before"):
+        if paths.get(key) and paths[key].exists():
+            return paths[key]
+    return None
+
+
+def copy_whole(src, dst):
+    """A copy of an app folder with its links and permissions (ditto on macOS, as unpack uses)."""
+    if sys.platform == "darwin":
+        r = subprocess.run(["ditto", str(src), str(dst)], capture_output=True, text=True)
+        if r.returncode:
+            raise OSError(errno.EIO, r.stderr.strip() or "ditto failed", str(src))
+    else:
+        shutil.copytree(src, dst, symlinks=True)
+
+
+def move_whole(src, dst):
+    """Move a folder so that dst is either not there or whole. On one volume this is one rename.
+    Across volumes a rename is refused (EXDEV), and a plain move would copy file by file straight into
+    dst: here the copy is made next to dst under another name and renamed into place when it is
+    complete; only then is src removed. If the copy fails, the part of it is removed and src is whole."""
+    try:
+        os.rename(src, dst)
+        return
+    except OSError as exc:
+        if exc.errno != errno.EXDEV:
+            raise
+    part = dst.with_name(dst.name + ".part")
+    shutil.rmtree(part, ignore_errors=True)
+    try:
+        copy_whole(src, part)
+        os.rename(part, dst)
+    except BaseException:
+        shutil.rmtree(part, ignore_errors=True)
+        raise
+    shutil.rmtree(src, ignore_errors=True)
 
 
 def previous_version():
@@ -100,7 +170,7 @@ def previous_version():
         info = json.loads((data_dir() / "previous.json").read_text(encoding="utf-8-sig"))
     except (OSError, ValueError):
         return None
-    if p and p["previous"].exists() and parse_version(info.get("version", "")):
+    if p and kept_copy(p) and parse_version(info.get("version", "")):
         return info["version"]
     return None
 
@@ -113,7 +183,14 @@ def last_result():
         f.unlink()
     except OSError:
         return None
-    return {"ok": bool(lines) and lines[0].strip() == "ok", "message": " ".join(lines[1:]).strip()}
+    ok = bool(lines) and lines[0].strip() == "ok"
+    if ok:
+        # a kept copy an earlier version left in the data folder of a Mac whose app is on another
+        # volume: the exchange that just worked keeps its copy next to the app, so that one is spare
+        p = app_paths()
+        if p.get("previous_before") and p["previous"].exists():
+            shutil.rmtree(p["previous_before"], ignore_errors=True)
+    return {"ok": ok, "message": " ".join(lines[1:]).strip()}
 
 
 # ------------------------------------------------------------------ check
@@ -312,18 +389,25 @@ if ($Launch) { Start-Process -FilePath (Join-Path $Current $Launch) -WorkingDire
 
 POSIX_HELPER = r"""#!/bin/sh
 # Written by wormscore: swaps in a new app after wormscore has closed.
-# Arguments: wait_pid current new previous result launch(1 or empty) prev_json prev_version restore check
+# Arguments: wait_pid current new previous result launch(1 or empty) prev_json prev_version restore check stage
 pid="$1"; current="$2"; new="$3"; previous="$4"; result="$5"; launch="$6"
-prev_json="$7"; prev_version="$8"; restore="$9"; shift 9; check="$1"
+prev_json="$7"; prev_version="$8"; restore="$9"; shift 9; check="$1"; stage="$2"
 i=0
 while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 240 ]; do sleep 0.5; i=$((i+1)); done
 # never onto something that is already there: mv would put the folder inside it
 retry() { n=0; until [ ! -e "$2" ] && mv "$1" "$2" 2>/dev/null; do n=$((n+1)); [ "$n" -ge 60 ] && return 1; sleep 1; done; }
+# Every move below must be one rename. Between two volumes mv copies file by file instead, and a copy
+# that stops halfway leaves a part of an app in the app's place. wormscore keeps the copies on the
+# app's volume (update.app_paths); if they are not, nothing is moved.
+dev() { stat -c %d "$1" 2>/dev/null || stat -f %d "$1" 2>/dev/null; }
+one_volume() { [ "$(dev "$1")" = "$(dev "$2")" ]; }
 old="$previous.old"
 status="ok"; msg=""
 rm -rf "$old"
 mkdir -p "$(dirname "$previous")"
-if [ -e "$previous" ] && ! retry "$previous" "$old"; then
+if [ -e "$current" ] && [ -e "$new" ] && { ! one_volume "$current" "$new" || ! one_volume "$current" "$(dirname "$previous")"; }; then
+  status="failed"; msg="The app and the copy to put in its place are on different disks, so nothing was moved."
+elif [ -e "$previous" ] && ! retry "$previous" "$old"; then
   status="failed"; msg="Could not move the previous copy aside."
 elif ! retry "$current" "$previous"; then
   [ -e "$old" ] && retry "$old" "$previous"
@@ -339,6 +423,8 @@ else
   [ -n "$prev_json" ] && printf '{"version": "%s"}' "$prev_version" > "$prev_json"
   rm -rf "$old"
   rmdir "$(dirname "$new")" 2>/dev/null
+  # the rest of the unpacked download (licence, README): only a folder wormscore made for it
+  case "$stage" in */update-stage|*/.wormscore-update) rm -rf "$stage";; esac
 fi
 if [ "$status" = "failed" ]; then
   msg="$msg The previous version was kept."
@@ -381,7 +467,8 @@ def start_helper(paths, new, pid=None, relaunch=True, prev_version=None, restore
     script.write_text(POSIX_HELPER, encoding="utf-8")
     return subprocess.Popen(["/bin/sh", str(script), str(pid), str(paths["current"]), str(new),
                              str(paths["previous"]), str(result), "1" if relaunch else "",
-                             prev_json, prev_version or "", str(restore or ""), paths.get("check") or ""],
+                             prev_json, prev_version or "", str(restore or ""), paths.get("check") or "",
+                             str(paths.get("stage") or "")],
                             cwd=str(Path.home()), start_new_session=True, close_fds=True)
 
 
@@ -434,7 +521,8 @@ def rollback(relaunch=True):
     # 1.26.10: the kept copy is checked before anything is touched, and moved with one rename or not at
     # all. A copy-and-delete (the fallback until 1.26.9) could stop halfway when a file of the kept copy
     # was open in another program; the next Go back then put a folder with one file in the app's place.
-    if paths.get("check") and not (paths["previous"] / paths["check"]).exists():
+    kept = kept_copy(paths)
+    if paths.get("check") and not (kept / paths["check"]).exists():
         raise UpdateError("The kept copy of the previous version is not complete, so nothing was changed. "
                           "To use another version, download it from the Releases page.")
     if paths["stage"].exists():
@@ -442,10 +530,13 @@ def rollback(relaunch=True):
     paths["stage"].mkdir(parents=True)
     new = paths["stage"] / paths["previous"].name
     try:
-        os.rename(paths["previous"], new)
+        # one rename; from another volume (a copy an earlier version kept there on a Mac) a whole copy
+        # is made beside the target first, so the stage never holds a part of an app
+        move_whole(kept, new)
     except OSError:
         raise UpdateError("The kept copy of the previous version could not be moved: a file in it may be open in "
-                          "another program. Nothing was changed. Close other programs and try again.") from None
+                          "another program, or the disk is full. Nothing was changed. Close other programs and "
+                          "try again.") from None
     # if the swap fails, the helper puts the kept copy back where it was, so Go back can be tried again
     start_helper(paths, new, relaunch=relaunch, prev_version=__version__, restore=paths["previous"])
     return back

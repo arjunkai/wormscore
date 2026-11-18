@@ -31,6 +31,10 @@ Pixels at the detector's maximum are found before correction and still counted a
 Slide images for later sessions can be added at any time, also after scoring began: the sessions in
 use are not changed, so every coded image keeps the planes it was scored on. Starting again or turning
 the correction off would change images already scored, so those are only possible before scoring.
+For the same reason a rebuild that keeps the codes, once scoring has begun, corrects each coded image
+as key.csv records it was corrected: slide images added since are used only for images added after
+them. A coded image that cannot be corrected as recorded is built as the setting now says, with a
+warning in the Build log and log.md.
 
 Raw files are never changed, and the scores are never read. A project without "flat_field" in
 config.json is built, shown and measured exactly as before.
@@ -429,14 +433,51 @@ class Correction:
             self.arrays = {k: z[k] for k in z.files}
         self.sessions = self.summary["sessions"]
 
-    def session_for(self, img):
+    pins = {}       # image -> the earlier session list it is held to (set per object by keep_coded)
+
+    def _states(self):
+        """The session lists this project has had, latest first: all of them, then without each later
+        addition (add_sessions stamps the sessions it adds; the sessions before them never change)."""
+        stamps = []
+        for s in self.sessions:
+            if s.get("added") and s["added"] not in stamps:
+                stamps.append(s["added"])
+        return [self.sessions] + [[s for s in self.sessions if not s.get("added") or s["added"] in stamps[:i]]
+                                  for i in range(len(stamps) - 1, -1, -1)]
+
+    def keep_coded(self, images, key_rows):
+        """For a rebuild that keeps the codes once scoring has begun: each coded image is corrected as
+        key.csv records it was (columns imaging_session, flat_field, session_factor), with the slide
+        images the project had then, not with sessions added since. Such a rebuild used to correct every
+        image again with all sessions, so images already scored changed without a word.
+        Returns (images held to earlier slide images, images that cannot be corrected as recorded)."""
+        rows = {(r["local_path"], r["location_in_file"]): r for r in key_rows if not r.get("repeat_of")}
+        self.pins = {}
+        kept = changed = 0
+        for img in images:
+            row = rows.get(_ident(img))
+            if row is None:
+                continue
+            for sessions in self._states():
+                cols = self.key_columns(img, sessions)
+                if all(str(v) == (row.get(k) or "") for k, v in cols.items()):
+                    if sessions is not self.sessions:
+                        self.pins[_ident(img)] = sessions
+                        kept += 1
+                    break
+            else:
+                changed += 1
+        return kept, changed
+
+    def session_for(self, img, sessions=None):
         """The image's own session, or None: same microscope and settings, and the same day, or the only
         session of that microscope and settings when either has no date."""
         system, settings, day = session_key(img)
+        sessions = self.sessions if sessions is None else sessions
         # 1.26.13: settings that this version only words differently than the one that measured the slide
         # images (same_reading: a Leica detector's name, an OME-TIFF objective's numbers) are the same session
-        same = [s for s in self.sessions if s["system"] == system and s["settings"] == settings] \
-            or [s for s in self.sessions if s["system"] == system
+        same = [s for s in sessions if s["system"] == system and s["settings"] == settings] \
+            or [s for s in sessions if s["system"] == system
                 and same_reading(system, s["settings"]) == same_reading(system, settings)]
         hit = [s for s in same if s["day"] == day] if day else []
         if hit:
@@ -445,20 +486,23 @@ class Correction:
             return same[0]
         return None
 
-    def resolve(self, img):
+    def resolve(self, img, sessions=None):
         """How this image is corrected: a session (its own, or one standing in for it, with "how" saying
-        which), or None (used as recorded; "why" from not_corrected)."""
+        which), or None (used as recorded; "why" from not_corrected). sessions: the sessions to choose
+        from; by default all of them, or the earlier list keep_coded holds this image to."""
         import numpy as np
         size = (int(img["height"]), int(img["width"])) if "height" in img else None
         fits = lambda s: size is None or (s["height"], s["width"]) == size
-        own = self.session_for(img)
+        if sessions is None:
+            sessions = self.pins.get(_ident(img), self.sessions)
+        own = self.session_for(img, sessions)
         if own is not None and fits(own):
             return {**own, "how": SAME}
         system, settings, day = session_key(img)
-        group = [s for s in self.sessions if s["system"] == system and s["settings"] == settings and fits(s)] \
-            or [s for s in self.sessions if s["system"] == system and fits(s)
+        group = [s for s in sessions if s["system"] == system and s["settings"] == settings and fits(s)] \
+            or [s for s in sessions if s["system"] == system and fits(s)
                 and same_reading(system, s["settings"]) == same_reading(system, settings)]
-        others = [s for s in self.sessions if s["system"] == system and fits(s)]
+        others = [s for s in sessions if s["system"] == system and fits(s)]
         # 1.26.12: among sessions with other settings, those with the image's objective and zoom come first.
         # The light across the field depends on the objective; a session's settings end with them
         # (session_key). Since 1.26.7 reads more of the settings for Zeiss, Nikon and OME-TIFF, images
@@ -479,14 +523,16 @@ class Correction:
             return {**near, "how": f"nearest day, {near['day']}{where}"}
         if len(pool) == 1:
             return {**pool[0], "how": f"slide images of {pool[0]['day'] or 'no date'}{where}"}
-        key = f"avg:{system}:{settings if group else '*'}"
+        key = "avg:" + "+".join(str(s["index"]) for s in pool)      # named by its sessions: lists can differ per image
         if f"flat_{key}" not in self.arrays:
             self.arrays[f"flat_{key}"] = np.mean([self.arrays[f"flat_{s['index']}"] for s in pool], axis=0)
         return {**pool[0], "index": key, "dark_from": pool[0]["index"], "how": f"average of {len(pool)} sessions{where}"}
 
-    def not_corrected(self, img):
+    def not_corrected(self, img, sessions=None):
         system = session_key(img)[0]
-        if any(s["system"] == system for s in self.sessions):
+        if sessions is None:
+            sessions = self.pins.get(_ident(img), self.sessions)
+        if any(s["system"] == system for s in sessions):
             return "slide images of another size"
         return "no slide images from this microscope"
 
@@ -507,18 +553,20 @@ class Correction:
         """The dark image of a session (an average stands in with its first session's)."""
         return self.arrays[f"dark_{ses.get('dark_from', ses['index'])}"]
 
-    def key_columns(self, img):
-        ses = self.resolve(img)
+    def key_columns(self, img, sessions=None):
+        ses = self.resolve(img, sessions)
         if ses is None:
-            return {"imaging_session": _label(session_key(img)), "flat_field": f"not corrected: {self.not_corrected(img)}",
-                    "session_factor": "not corrected"}
+            return {"imaging_session": _label(session_key(img)),
+                    "flat_field": f"not corrected: {self.not_corrected(img, sessions)}", "session_factor": "not corrected"}
         same = ses["how"] == SAME
         return {"imaging_session": _label(session_key(img) if not same else (ses["system"], ses["settings"], ses["day"])),
                 "flat_field": ses["how"],
                 "session_factor": (ses["factor"] if same else "not corrected") if self.ff.get("between_sessions") else 1.0}
 
-    def warnings(self, images):
-        """For the Build log and log.md: images corrected with another session's slide images, or not at all."""
+    def warnings(self, images, fixed=False):
+        """For the Build log and log.md: images corrected with another session's slide images, or not at all.
+        fixed: a rebuild that keeps the codes once scoring has begun. Coded images then stay as they are,
+        so the advice to add slide images is left out."""
         other, none = defaultdict(int), defaultdict(int)
         for s in images:
             ses = self.resolve(s)
@@ -527,12 +575,34 @@ class Correction:
             elif ses["how"] != SAME:
                 other[(_label(session_key(s)), ses["how"])] += 1
         tail = "; brightness between sessions is not corrected for them" if self.ff.get("between_sessions") else ""
-        out = [f"Warning: {plural(n, 'image')} from {k} used {_how_words(how)}{tail}. Add that session's slide "
-               "images to correct them fully." for (k, how), n in sorted(other.items())]
+        fully, at_all = (("Coded images stay as they were scored.",) * 2 if fixed else
+                         ("Add that session's slide images to correct them fully.",
+                          "Add that session's slide images to correct them."))
+        out = [f"Warning: {plural(n, 'image')} from {k} used {_how_words(how)}{tail}. {fully}"
+               for (k, how), n in sorted(other.items())]
         out += [f"Warning: {plural(n, 'image')} from {k} could not be corrected ({why}) and {'is' if n == 1 else 'are'} "
-                "used as recorded, not comparable in brightness with the others. Add that session's slide images "
-                "to correct them." for (k, why), n in sorted(none.items())]
+                f"used as recorded, not comparable in brightness with the others. {at_all}"
+                for (k, why), n in sorted(none.items())]
         return out
+
+
+def _ident(img):
+    return (img.get("local_path"), img.get("location_in_file"))
+
+
+def keep_lines(kept, changed):
+    """For the Build log and log.md, from keep_coded's counts. changed also counts coded images built with
+    the correction when it is now off, or the other way round (config.json edited by hand)."""
+    out = []
+    if kept:
+        out.append(f"{plural(kept, 'coded image')} {'keeps' if kept == 1 else 'keep'} the flat-field correction "
+                   f"{'it was' if kept == 1 else 'they were'} scored with. Slide images added after scoring began are "
+                   "used only for images added after them.")
+    if changed:
+        out.append(f"Warning: this build changes the flat-field correction of {plural(changed, 'coded image')}: the "
+                   "setting, the slide images or the scan are not as when key.csv recorded it. Images already "
+                   "scored were scored before the change. Compare the flat_field column of key.csv before unblinding.")
+    return out
 
 
 def _how_words(how):

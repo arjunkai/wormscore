@@ -53,8 +53,20 @@ def download(name, md5, size, cache, log=print):
     log(f"Downloading {name} ({size / 1e6:.0f} MB)")
     part = dst.with_name(dst.name + ".part")
     from .update import https_kwargs
-    with urllib.request.urlopen(url, timeout=60, **https_kwargs()) as r, open(part, "wb") as fh:
-        shutil.copyfileobj(r, fh, 1 << 20)
+    # 1.26.15: a connection that stalls or drops is tried three times, then reported in plain words. One
+    # timeout used to end the demo with a Python error (seen on GitHub's Mac while fetching the fourth file).
+    for attempt in (1, 2, 3):
+        try:
+            with urllib.request.urlopen(url, timeout=60, **https_kwargs()) as r, open(part, "wb") as fh:
+                shutil.copyfileobj(r, fh, 1 << 20)
+            break
+        except OSError as exc:          # no connection, a timeout, a dropped download
+            part.unlink(missing_ok=True)
+            if attempt == 3:
+                raise SystemExit(f"Could not download {name} from Zenodo ({getattr(exc, 'reason', None) or exc}). "
+                                 "Check the internet connection and try the demo again; files already "
+                                 "downloaded are kept.") from None
+            log(f"  the download stopped ({getattr(exc, 'reason', None) or exc}); trying again")
     if _md5(part) != md5:
         part.unlink()
         raise RuntimeError(f"{name}: download does not match the MD5 on the Zenodo record; try again")

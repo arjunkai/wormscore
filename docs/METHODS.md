@@ -184,6 +184,15 @@ number. Re-running `prepare` keeps the same codes; new codes are refused once an
 Since 1.26.3 a build also stops, before anything is changed, if scores or a second-scorer package exist
 but `key.csv` is not in the key folder (without the key it would assign new codes, and the saved scores
 would belong to other images), or if an image file it has to read cannot be found.
+A build makes its coded images in `blind_building/` and puts them in the place of `blind/` in one step
+when all are made; the key and the tables are written after that. If it fails midway (an image that cannot
+be read, a full disk), the blind set, the key, the scores and the drafts are left as they were, the Build
+log says so, and the build can be run again; the same holds for **Add new images**, which then adds
+nothing. A build cut off by the computer shutting down leaves `blind_building/`, which the next build
+removes. There is no resume: a build that failed is run again from the start. A rebuild therefore needs
+free space for a second copy of the blind set while it runs. (Until this was fixed, a rebuild deleted
+`blind/` first, so a failure left only part of the coded images until the next rebuild, and a failed
+Add new images left folders that stopped every later one.)
 Unsaved answers are kept per code in `scoring_drafts/` (the same fields as a score, no genotype or
 file name) and deleted when the score is saved; drafts are never read as scores and do not lock the
 codes. New codes set any drafts aside (`scoring_drafts/superseded_<time>.json`), so answers typed for an
@@ -366,6 +375,19 @@ again or turning the correction off would change images already scored, so those
 scored (and no second-scorer package to exist). Projects without the correction are built exactly as
 before.
 
+Once scoring has begun (or a second-scorer package exists), a rebuild that keeps the codes corrects each
+coded image as `key.csv` records it was corrected (`imaging_session`, `flat_field`, `session_factor`):
+with the slide images the project had when the image was coded. Slide images added since are used only
+for images added after them (**Add new images**), so an image scored with the nearest day's slide images
+stays so, and `log.md` says how many images were kept this way. Before scoring, the same rebuild uses
+every session. If a coded image cannot be corrected as recorded (the setting was removed from
+`config.json` by hand, `key.csv` has no record, or a new scan reads the image's settings or day
+differently), the build uses the setting as it now is and writes a
+warning with the number of images to the Build log and `log.md`; it is not stopped. Until this was fixed,
+such a rebuild corrected every image again with all sessions and recorded no warning: in a project where
+slide images were added after scoring began and the blind set was then rebuilt, images scored before the
+rebuild were scored on the earlier correction, while the measurements use the later one.
+
 ## 6. Measurements
 
 Before measuring, each plane is median-filtered (3 x 3 pixels by default), so a single hot pixel or a
@@ -392,6 +414,10 @@ taken brightest first, and each is grown to every connected pixel at or above ha
 of its height above the local background (median of a ring 6 to 10 um away), within 8 um, keeping
 regions of at least 4 um^2 (full width at half maximum). Suggestions are measured too
 (`outputs/auto_measurements.csv`); they only point at places to look.
+
+Saving outlines replaces the image's saved outlines and their measurements. If two scoring windows of
+one project save outlines for the same image at nearly the same time, the click that reached the app
+later is the one kept, whichever is measured first; the other window says its outlines were not saved.
 
 With an identity channel (`identity.spots_from`, default `identity`), suggestions are found the same way
 on the identity channel's median-filtered projection, and the reporter is measured in those regions

@@ -41,7 +41,8 @@ def read_scores(path):
     return rows
 
 
-APP_FOLDERS = ("key", "blind", "scoring", "outputs", "practice", "scorers", "config_backups")
+APP_FOLDERS = ("key", "blind", "scoring", "outputs", "practice", "scorers", "config_backups",
+               "blind_building", "blind_previous")       # the last two exist only while a build runs
 
 
 def refuse_app_folder(project, destination, what):

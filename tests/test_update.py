@@ -484,3 +484,202 @@ def test_last_update_result_is_shown_once(tmp_path, monkeypatch):
     app = home.HomeApp(open_windows=False, check_updates=True)
     assert app.upd["result"] == {"ok": False, "message": "Access denied. The previous version was kept."}
     assert U.last_result() is None
+
+
+# ------------------------------------------------------------------ the app on another volume than the data folder (macOS)
+
+import errno
+import os
+import shutil
+
+
+def two_volumes(monkeypatch, a, b):
+    """Folders a and b behave as two volumes: a rename between them is refused, as the system does."""
+    real = os.rename
+    side = lambda p: "a" if a in Path(p).parents or Path(p) == a else "b" if b in Path(p).parents or Path(p) == b else ""
+
+    def rename(src, dst, **kw):
+        if side(src) and side(dst) and side(src) != side(dst):
+            raise OSError(errno.EXDEV, "Invalid cross-device link", str(src))
+        return real(src, dst, **kw)
+    monkeypatch.setattr(os, "rename", rename)
+    monkeypatch.setattr(U, "same_volume", lambda x, y: side(x) == side(y))
+
+
+def mac_paths(monkeypatch, app_volume, data):
+    app = app_volume / "Applications" / "wormscore.app"
+    monkeypatch.setattr(U, "data_dir", lambda: data)
+    monkeypatch.setattr(sys, "executable", str(app / "Contents" / "MacOS" / "wormscore"))
+    return U.app_paths("mac")
+
+
+def mac_app(folder, version):
+    (folder / "Contents" / "MacOS").mkdir(parents=True)
+    (folder / "Contents" / "Resources").mkdir()
+    for name in ("Contents/MacOS/wormscore", "Contents/Info.plist", "Contents/Resources/lib.dylib"):
+        (folder / name).write_text(version)
+
+
+def test_the_mac_copies_stay_in_the_data_folder_when_it_is_on_the_apps_volume(tmp_path, monkeypatch):
+    vol = tmp_path / "volA"
+    two_volumes(monkeypatch, vol, tmp_path / "volB")
+    data = vol / "Users" / "me" / "Library" / "Application Support" / "wormscore"
+    p = mac_paths(monkeypatch, vol, data)
+    assert p["previous"] == data / "previous" / "wormscore.app" and p["stage"] == data / "update-stage"   # as before
+    assert "previous_before" not in p
+
+
+def test_the_mac_copies_are_kept_next_to_the_app_when_the_data_folder_is_on_another_volume(tmp_path, monkeypatch):
+    """~/Library/Application Support on one volume, the app on another: every move of the exchange was a
+    copy there, which can stop halfway. The copies now stay on the app's volume."""
+    a, b = tmp_path / "volA", tmp_path / "volB"
+    two_volumes(monkeypatch, a, b)
+    data = b / "Users" / "me" / "Library" / "Application Support" / "wormscore"
+    p = mac_paths(monkeypatch, a, data)
+    apps = a / "Applications"
+    assert p["current"] == apps / "wormscore.app"
+    assert p["previous"] == apps / ".wormscore-previous" / "wormscore.app" and p["stage"] == apps / ".wormscore-update"
+    assert all(U.same_volume(p["current"], p[k]) for k in ("previous", "stage"))
+    assert p["previous_before"] == data / "previous" / "wormscore.app"
+
+
+def test_same_volume_reads_the_device_of_the_nearest_folder_that_exists(tmp_path):
+    assert U.same_volume(tmp_path, tmp_path / "not" / "made" / "yet")
+
+
+def test_a_move_across_volumes_is_whole_or_not_at_all(tmp_path, monkeypatch):
+    a, b = tmp_path / "volA", tmp_path / "volB"
+    two_volumes(monkeypatch, a, b)
+    src, dst = b / "kept" / "wormscore.app", a / "stage" / "wormscore.app"
+    mac_app(src, "1")
+    dst.parent.mkdir(parents=True)
+    whole = contents(src)
+
+    def half_copy(s, d):                    # the disk fills after the first file
+        d.mkdir()
+        shutil.copy(next(p for p in sorted(s.rglob("*")) if p.is_file()), d / "first")
+        raise OSError(errno.ENOSPC, "No space left on device", str(d))
+    with monkeypatch.context() as m:
+        m.setattr(U, "copy_whole", half_copy)
+        with pytest.raises(OSError):
+            U.move_whole(src, dst)
+    assert contents(src) == whole and list(dst.parent.iterdir()) == []          # nothing half-made is left
+    U.move_whole(src, dst)
+    assert contents(dst) == whole and not src.exists() and [p.name for p in dst.parent.iterdir()] == ["wormscore.app"]
+
+
+def test_go_back_brings_a_copy_kept_on_the_other_volume_over_whole(tmp_path, monkeypatch):
+    """A previous version kept by 1.26.12 or earlier in the data folder, on another volume than the app."""
+    a, b = tmp_path / "volA", tmp_path / "volB"
+    two_volumes(monkeypatch, a, b)
+    data = b / "Users" / "me" / "Library" / "Application Support" / "wormscore"
+    paths = mac_paths(monkeypatch, a, data)
+    monkeypatch.setattr(U, "install_kind", lambda: "mac")
+    monkeypatch.setattr(U, "app_paths", lambda kind=None: paths)
+    mac_app(paths["current"], "2")
+    mac_app(paths["previous_before"], "1")
+    U._remember_previous("1.26.12")
+    assert U.previous_version() == "1.26.12"
+    whole = contents(paths["previous_before"])
+    started = []
+    monkeypatch.setattr(U, "start_helper", lambda p, new, **kw: started.append((new, kw)))
+
+    def half_copy(s, d):
+        d.mkdir()
+        raise OSError(errno.ENOSPC, "No space left on device", str(d))
+    with monkeypatch.context() as m:
+        m.setattr(U, "copy_whole", half_copy)
+        with pytest.raises(U.UpdateError, match="Nothing was changed"):
+            U.rollback()
+    assert not started and contents(paths["previous_before"]) == whole
+    assert contents(paths["current"])["Contents/Info.plist"] == "2"
+    assert list(paths["stage"].iterdir()) == [] and U.previous_version() == "1.26.12"
+
+    assert U.rollback() == "1.26.12"
+    new, kw = started[0]
+    assert new == paths["stage"] / "wormscore.app" and contents(new) == whole
+    # the helper now moves only on the app's volume, and a failed exchange puts the copy back next to the app
+    assert U.same_volume(new, paths["current"]) and kw["restore"] == paths["previous"]
+
+
+def test_a_spare_copy_in_the_data_folder_is_removed_after_an_exchange_that_worked(tmp_path, monkeypatch):
+    a, b = tmp_path / "volA", tmp_path / "volB"
+    two_volumes(monkeypatch, a, b)
+    data = b / "Users" / "me" / "Library" / "Application Support" / "wormscore"
+    paths = mac_paths(monkeypatch, a, data)
+    monkeypatch.setattr(U, "app_paths", lambda kind=None: paths)
+    mac_app(paths["previous_before"], "0")
+    (data / "update-result.txt").write_text("failed\nThe previous version was kept.\n")
+    assert U.last_result()["ok"] is False and paths["previous_before"].exists()
+    (data / "update-result.txt").write_text("ok\n\n")
+    assert U.last_result()["ok"] is True and paths["previous_before"].exists()     # no copy next to the app yet: kept
+    mac_app(paths["previous"], "1")
+    (data / "update-result.txt").write_text("ok\n\n")
+    assert U.last_result()["ok"] is True and not paths["previous_before"].exists() and paths["previous"].exists()
+
+
+SH = shutil.which("sh")
+
+
+def posix_helper(tmp_path, helper, cur, new, prev, stage="", shims=None):
+    """Run the macOS helper text with sh (Git's sh on Windows). shims: a folder of stand-in commands."""
+    script = tmp_path / "helper.sh"
+    script.write_text(helper.replace("-ge 60", "-ge 1"), encoding="utf-8", newline="\n")
+    result = tmp_path / "result.txt"
+    result.unlink(missing_ok=True)
+    env = dict(os.environ)
+    if shims:
+        env["PATH"] = str(shims) + os.pathsep + env["PATH"]
+    px = lambda p: Path(p).as_posix() if p else ""
+    subprocess.run([SH, px(script), str(finished_pid()), px(cur), px(new), px(prev), px(result), "", "", "", "",
+                    "Contents/MacOS/wormscore", px(stage)], env=env, timeout=180, check=True)
+    lines = result.read_text(encoding="utf-8").splitlines()
+    return lines[0] == "ok", " ".join(lines[1:])
+
+
+def volume_shims(tmp_path):
+    """Stand-ins that make .../volB another volume for the helper: stat reports another device for it, and
+    mv between the two copies one file and then fails, as a copy to a full disk does."""
+    d = tmp_path / "shims"
+    d.mkdir()
+    real_mv = Path(shutil.which("mv")).as_posix()
+    (d / "stat").write_text('#!/bin/sh\ncase "$3" in */volB|*/volB/*) echo 2;; *) echo 1;; esac\n', newline="\n")
+    (d / "mv").write_text('#!/bin/sh\nside() { case "$1" in */volB|*/volB/*) echo 2;; *) echo 1;; esac; }\n'
+                          'if [ "$(side "$1")" != "$(side "$2")" ]; then\n'
+                          '  mkdir -p "$2/Contents"; cp "$1/Contents/Info.plist" "$2/Contents/"; exit 1\nfi\n'
+                          f'exec "{real_mv}" "$@"\n', newline="\n")
+    for f in d.iterdir():
+        f.chmod(0o755)
+    return d
+
+
+@pytest.mark.skipif(not SH, reason="needs sh")
+def test_the_mac_helper_moves_nothing_between_volumes(tmp_path):
+    """The layout up to 1.26.12 with the app on another volume: mv copied file by file, so a copy that
+    stopped left a part of an app as the kept copy, or in the app's place."""
+    a, b = tmp_path / "volA", tmp_path / "volB"
+    cur, prev, new = a / "wormscore.app", b / "previous" / "wormscore.app", b / "update-stage" / "wormscore.app"
+    mac_app(cur, "1")
+    mac_app(prev, "0")
+    mac_app(new, "2")
+    before = [contents(x) for x in (cur, prev, new)]
+    ok, message = posix_helper(tmp_path, U.POSIX_HELPER, cur, new, prev, shims=volume_shims(tmp_path))
+    assert not ok and "different disks" in message and "previous version was kept" in message
+    assert [contents(x) for x in (cur, prev, new)] == before
+    assert not Path(str(prev) + ".old").exists()
+
+
+@pytest.mark.skipif(not SH, reason="needs sh")
+def test_the_mac_helper_exchanges_copies_kept_next_to_the_app(tmp_path):
+    a = tmp_path / "volA"
+    cur, prev = a / "wormscore.app", a / ".wormscore-previous" / "wormscore.app"
+    stage = a / ".wormscore-update"
+    new = stage / "wormscore" / "wormscore.app"                # as the release zip unpacks
+    mac_app(cur, "1")
+    mac_app(prev, "0")
+    mac_app(new, "2")
+    (stage / "wormscore" / "README.txt").write_text("read me")
+    ok, message = posix_helper(tmp_path, U.POSIX_HELPER, cur, new, prev, stage, shims=volume_shims(tmp_path))
+    assert ok, message
+    assert contents(cur)["Contents/MacOS/wormscore"] == "2" and contents(prev)["Contents/MacOS/wormscore"] == "1"
+    assert sorted(p.name for p in a.iterdir()) == [".wormscore-previous", "wormscore.app"]     # the unpack folder is gone

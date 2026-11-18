@@ -6,7 +6,9 @@ then goes back (`wormscore update --rollback`). After each step it checks which 
 `wormscore --version` reports and that the app and the kept copy hold every file of their build.
 It then repeats both steps with the app folder held (Windows: a file in it kept open, as a virus
 scanner or a second copy of the app does; macOS: the app marked unchangeable) and checks that a
-swap that fails leaves every copy whole and that Go back works afterwards.
+swap that fails leaves every copy whole and that Go back works afterwards. With --other-volume
+(macOS) it does all of that a second time with the app on another volume than the home folder, where
+the kept copy must be next to the app, so that no move of the exchange is a copy between volumes.
 
 No release is involved: the updater reads the "latest release" from a local file
 (WORMSCORE_UPDATE_FILE, see update.latest_url), and the app's data folder and home folder are
@@ -105,14 +107,23 @@ def listing(app):
 
 
 class Check:
-    def __init__(self, work, first, second, v1, v2):
-        self.home = work / "home"
-        self.install = work / "install" / APP
+    def __init__(self, work, first, second, v1, v2, other_volume=None):
+        """other_volume (macOS): a folder on another volume than `work`. The app is installed there and
+        the home folder stays in `work`, as on a Mac whose app is on an external disk."""
+        self.home = work / ("home-other-volume" if other_volume else "home")
+        self.install = (Path(other_volume) / "Applications" if other_volume else work / "install") / APP
         self.v = {"first": v1, "second": v2}
         self.files = {"first": listing(first), "second": listing(second)}
         if MAC:
             self.data = self.home / "Library" / "Application Support" / "wormscore"
             self.previous = self.data / "previous" / APP
+            if other_volume:
+                # the kept copy is then next to the app, so that every move is a rename on its volume
+                self.install.parent.mkdir(parents=True)
+                self.home.mkdir(parents=True)
+                if os.stat(self.install.parent).st_dev == os.stat(self.home).st_dev:
+                    fail(f"{other_volume} is on the same volume as {work}, so this case would test nothing")
+                self.previous = self.install.parent / ".wormscore-previous" / APP
             self.exe = self.install / "Contents" / "MacOS" / "wormscore"
             self.env = dict(os.environ, HOME=str(self.home))
         else:
@@ -120,10 +131,28 @@ class Check:
             self.previous = self.install.with_name(APP + "-previous")
             self.exe = self.install / "wormscore.exe"
             self.env = dict(os.environ, USERPROFILE=str(self.home), LOCALAPPDATA=str(self.home / "AppData" / "Local"))
-        self.data.parent.mkdir(parents=True)
+        self.data.parent.mkdir(parents=True, exist_ok=True)
         self.env["WORMSCORE_UPDATE_FILE"] = str(work / "release" / "latest.json")
         self.env.pop("WORMSCORE_UPDATE_URL", None)
         copy_app(first, self.install)
+
+    def clear_stage(self):
+        """After a swap that failed, the new copy is still where it was unpacked. Remove it."""
+        for name in (APP + "-update", ".wormscore-update"):
+            if (self.install.parent / name).exists():
+                shutil.rmtree(self.install.parent / name)
+
+    def on_one_volume(self, what):
+        """macOS, the app on another volume: nothing of the exchange may be in the data folder (a move
+        from there would be a copy), and nothing half-made may be next to the app."""
+        if not MAC or self.previous.parent.name != ".wormscore-previous":
+            return
+        for p in (self.data / "previous", self.data / "update-stage"):
+            if p.exists():
+                fail(f"{what}: {p} exists, on another volume than the app")
+        if os.stat(self.previous).st_dev != os.stat(self.install).st_dev:
+            fail(f"{what}: the kept copy is not on the app's volume")
+        say(f"  OK: {what}: the kept copy is next to the app, on its volume")
 
     def run(self, *args):
         r = subprocess.run([str(self.exe), *args], capture_output=True, text=True, timeout=900, env=self.env,
@@ -186,13 +215,59 @@ class Check:
         return fh.close
 
 
+def sequence(c):
+    """Update, Go back, both again with the app folder held, then Go back with it free."""
+    c.expect("before the update", "first", None)
+
+    say("Update")
+    c.run("update", "--install")
+    if not c.swap_result():
+        fail("the update did not go through")
+    c.expect("after the update", "second", "first")
+    c.on_one_volume("after the update")
+
+    say("Go back")
+    c.run("update", "--rollback")
+    if not c.swap_result():
+        fail("Go back did not go through")
+    c.expect("after Go back", "first", "second")
+
+    say("Update with the app folder held: the swap must fail and change nothing")
+    release_hold = c.hold()
+    try:
+        c.run("update", "--install")
+        if c.swap_result():
+            fail("the swap went through although the app folder was held, so this case tested nothing")
+        c.clear_stage()
+        c.expect("after the failed update", "first", "second")
+        say("Go back with the app folder still held: it must fail and keep the kept copy")
+        c.run("update", "--rollback")
+        if c.swap_result():
+            fail("Go back went through although the app folder was held, so this case tested nothing")
+        c.clear_stage()
+        c.expect("after the failed Go back", "first", "second")
+    finally:
+        release_hold()
+
+    say("Go back once the app folder is free again")
+    c.run("update", "--rollback")
+    if not c.swap_result():
+        fail("Go back did not go through after the failed update")
+    c.expect("after Go back following the failed update", "second", "first")
+    c.on_one_volume("after Go back following the failed update")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--first", help="an existing build of this source to use as the installed app")
     ap.add_argument("--work", help="scratch folder (default: a new temporary folder)")
+    ap.add_argument("--other-volume", help="macOS: an empty folder on another volume; the checks are repeated with "
+                    "the app installed there and the home folder on the first volume")
     a = ap.parse_args()
     if not (MAC or WIN):
         fail("the downloaded app exists for Windows and macOS only")
+    if a.other_volume and not MAC:
+        fail("--other-volume is for macOS: on Windows the copies are always next to the app folder")
     work = Path(a.work).resolve() if a.work else Path(tempfile.mkdtemp(prefix="wormscore-update-check-"))
     if work.exists() and any(work.iterdir()):
         fail(f"{work} is not empty")
@@ -220,43 +295,10 @@ def main():
         "assets": [{"name": ASSET, "browser_download_url": zip_path.as_uri(), "size": zip_path.stat().st_size,
                     "digest": "sha256:" + hashlib.sha256(zip_path.read_bytes()).hexdigest()}]}), encoding="utf-8")
 
-    c = Check(work, first, second, v1, v2)
-    c.expect("before the update", "first", None)
-
-    say("Update")
-    c.run("update", "--install")
-    if not c.swap_result():
-        fail("the update did not go through")
-    c.expect("after the update", "second", "first")
-
-    say("Go back")
-    c.run("update", "--rollback")
-    if not c.swap_result():
-        fail("Go back did not go through")
-    c.expect("after Go back", "first", "second")
-
-    say("Update with the app folder held: the swap must fail and change nothing")
-    release_hold = c.hold()
-    try:
-        c.run("update", "--install")
-        if c.swap_result():
-            fail("the swap went through although the app folder was held, so this case tested nothing")
-        (c.install.parent / (APP + "-update")).exists() and shutil.rmtree(c.install.parent / (APP + "-update"))
-        c.expect("after the failed update", "first", "second")
-        say("Go back with the app folder still held: it must fail and keep the kept copy")
-        c.run("update", "--rollback")
-        if c.swap_result():
-            fail("Go back went through although the app folder was held, so this case tested nothing")
-        (c.install.parent / (APP + "-update")).exists() and shutil.rmtree(c.install.parent / (APP + "-update"))
-        c.expect("after the failed Go back", "first", "second")
-    finally:
-        release_hold()
-
-    say("Go back once the app folder is free again")
-    c.run("update", "--rollback")
-    if not c.swap_result():
-        fail("Go back did not go through after the failed update")
-    c.expect("after Go back following the failed update", "second", "first")
+    sequence(Check(work, first, second, v1, v2))
+    if a.other_volume:
+        say(f"The same with the app on another volume than the home folder ({a.other_volume})")
+        sequence(Check(work, first, second, v1, v2, other_volume=a.other_volume))
     say("Update and Go back: all checks passed.")
 
 

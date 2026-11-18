@@ -1167,7 +1167,10 @@ $("#saveRois").onclick = () => {
   btn.disabled = true;
   st.roisSaving = (async () => {
     try {
-      await api(`/api/worm/${code}/rois`, { rois: JSON.parse(sent) });
+      const r = await api(`/api/worm/${code}/rois`, { rois: JSON.parse(sent) });
+      // Two scoring windows saved this image's outlines and the other click came later: its outlines
+      // are the saved ones, whichever finished first. These stay unsaved, and the message says so.
+      if (r.superseded) throw new Error("another window saved outlines for this image after this click.");
       if (st.code === code) {
         // outlines changed while it was saving are still unsaved
         if (JSON.stringify(st.rois) === sent) {

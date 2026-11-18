@@ -133,3 +133,80 @@ def test_a_score_is_saved_while_outlines_are_being_measured(fresh_project):
     assert result["rois"][0] == 200
     assert read_csv(fresh_project / "scoring" / "roi_measurements.csv")[0]["region"] == "Neuron 1"
     assert json.loads((fresh_project / "scoring" / "rois.json").read_text(encoding="utf-8"))["W0001"] == rois
+
+
+# ------------------------------------------------------------------ two windows, one code
+
+def held_server(project):
+    """A scoring server whose first measurement waits until the test lets it go."""
+    srv = server.make_server(project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    measuring, go, real, calls = threading.Event(), threading.Event(), srv.project.measure_rois, []
+
+    def slow(code, rois):
+        calls.append(code)
+        if len(calls) == 1:
+            measuring.set()
+            assert go.wait(60)
+        return real(code, rois)
+    srv.project.measure_rois = slow
+    return srv, measuring, go
+
+
+FIRST = [{"type": "candidate", "rank": 1, "label": "Neuron 1", "source": "suggestion S1"}]
+LATER = [{"type": "ellipse", "label": "Neuron 2", "cx": 190, "cy": 190, "rx": 5, "ry": 4}]
+
+
+def test_the_later_click_wins_when_two_windows_save_outlines_for_one_code(fresh_project):
+    """Outlines are measured without holding the lock (1.26.9), so the save clicked first could be written
+    last, over the outlines of the later click, and both windows said "Saved"."""
+    srv, measuring, go = held_server(fresh_project)
+    port, result = srv.server_address[1], {}
+    t = threading.Thread(target=lambda: result.update(first=post(port, "/api/worm/W0001/rois", {"rois": FIRST})))
+    t.start()
+    try:
+        assert measuring.wait(30)
+        status, data = post(port, "/api/worm/W0001/rois", {"rois": LATER})      # clicked later, finished first
+        assert status == 200 and json.loads(data) == {"ok": True, "n_regions": 1}
+        # another code's outlines and a score are not held up or refused meanwhile
+        assert json.loads(post(port, "/api/worm/W0002/rois", {"rois": FIRST})[1])["ok"] is True
+        assert post(port, "/api/worm/W0003/score", {"usable": "no", "unusable_reason": "x", "flag_answers": {}})[0] == 200
+    finally:
+        go.set()
+        t.join(60)
+        srv.shutdown()
+        srv.server_close()
+    assert result["first"][0] == 200 and json.loads(result["first"][1]) == {"ok": False, "superseded": True}
+    saved = json.loads((fresh_project / "scoring" / "rois.json").read_text(encoding="utf-8"))
+    assert saved["W0001"] == LATER and saved["W0002"] == FIRST
+    # the numbers written are those of the later click's outlines, exactly as a save on its own writes them
+    rows = json.loads((fresh_project / "scoring" / "roi_measurements.json").read_text(encoding="utf-8"))["W0001"]
+    alone = server.Project(fresh_project).measure_rois("W0001", LATER)
+    assert json.dumps(rows, sort_keys=True) == json.dumps(alone, sort_keys=True)
+    assert [r["region"] for r in read_csv(fresh_project / "scoring" / "roi_measurements.csv") if r["code"] == "W0001"] == ["Neuron 2"]
+
+
+def test_an_earlier_save_is_kept_when_the_later_one_fails(fresh_project):
+    srv, measuring, go = held_server(fresh_project)
+    port, result = srv.server_address[1], {}
+    t = threading.Thread(target=lambda: result.update(first=post(port, "/api/worm/W0001/rois", {"rois": FIRST})))
+    t.start()
+    try:
+        assert measuring.wait(30)
+        bad = [{"type": "candidate", "rank": 99, "label": "Neuron 1"}]          # no such suggestion: this save fails
+        assert post(port, "/api/worm/W0001/rois", {"rois": bad})[0] == 500
+    finally:
+        go.set()
+        t.join(60)
+        srv.shutdown()
+        srv.server_close()
+    assert json.loads(result["first"][1]) == {"ok": True, "n_regions": 1}
+    assert json.loads((fresh_project / "scoring" / "rois.json").read_text(encoding="utf-8"))["W0001"] == FIRST
+
+
+def test_saves_one_after_the_other_are_each_written(fresh_project):
+    p = server.Project(fresh_project)
+    for rois in (FIRST, LATER, FIRST):
+        with p.lock:
+            assert p.save_rois_in_order("W0001", rois, None, p.roi_ticket()) is True
+        assert p.load("rois.json", {})["W0001"] == rois

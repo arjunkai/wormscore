@@ -1327,6 +1327,15 @@ def read(img, channel):
     return arr
 
 
+def _no_formula(text):
+    """Text taken from a microscope file goes into inventory.csv and the key, which people open in a
+    spreadsheet. Text that would be run as a formula there (it starts with = + @, or with - and is not
+    a number) gets a leading ' (1.26.15), as answers in scores.csv do. Other text is unchanged."""
+    if isinstance(text, str) and (text[:1] in ("=", "+", "@", "\t", "\r") or (text[:1] == "-" and _num(text) is None)):
+        return "'" + text
+    return text
+
+
 def scan(cfg, log=print, progress=None):
     """Walk every source folder. Returns (manifest rows for every file, image records).
     progress, if given, is called with (bytes checksummed so far, total bytes)."""
@@ -1404,6 +1413,10 @@ def scan(cfg, log=print, progress=None):
                     log(f"  not used: {row['relative_path']}: {COLOUR_CAMERA}")
                 continue
             for img in found:
+                for field in ("system", "objective", "settings", "zoom", "acquired"):
+                    img[field] = _no_formula(img.get(field, ""))
+                img["channel_names"] = [_no_formula(n) for n in img["channel_names"]]
+                img["flags"] = [_no_formula(x) for x in img["flags"]]
                 img.update({"source": row["source"], "file": p.name, "relative_path": row["relative_path"],
                             "local_path": row["local_path"], "original_path": row["original_path"],
                             "file_sha256": row["sha256"], "genotype": C.genotype_for(src, row["relative_path"])})

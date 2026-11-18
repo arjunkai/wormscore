@@ -173,3 +173,50 @@ def test_browse_fits_a_laptop_screen_at_125_percent(browser, scheme, tmp_path):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ------------------------------------------------------------------ two scoring windows, one image
+
+def test_the_window_whose_outlines_were_not_saved_says_so(browser, fresh_project):
+    """Two windows save outlines for one image; the first click is still being measured when the second
+    is saved. The later click's outlines are the saved ones, and the first window says its own were not
+    saved (it used to say "Saved 1 outline" while the file held the other window's, or the other way round)."""
+    srv = make_server(fresh_project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}/"
+    measuring, go, real, calls = threading.Event(), threading.Event(), srv.project.measure_rois, []
+
+    def slow(code, rois):
+        calls.append(code)
+        if len(calls) == 1:
+            measuring.set()
+            assert go.wait(60)
+        return real(code, rois)
+    srv.project.measure_rois = slow
+    try:
+        one = open_page(browser, url)
+        one.evaluate("api(`/api/worm/${st.code}/score`, {usable: 'no', unusable_reason: 'x', flag_answers: {}})"
+                     ".then(() => openWorm(st.code))")
+        one.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
+        two = open_page(browser, url)
+        two.evaluate("code => openWorm(code)", one.evaluate("st.code"))      # it opened on the next unscored image
+        two.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
+        assert one.evaluate("st.code") == two.evaluate("st.code")
+        for page, nth in ((one, 0), (two, 1)):
+            page.locator("#markTab").click()
+            page.locator("#sugList button").nth(nth).click()
+        one.locator("#saveRois").click()
+        assert measuring.wait(30)
+        two.locator("#saveRois").click()
+        two.wait_for_function("document.querySelector('#roiMsg').textContent === 'Saved 1 outline'")
+        go.set()
+        one.wait_for_function("document.querySelector('#roiMsg').textContent.startsWith('Not saved')")
+        assert one.locator("#roiMsg").inner_text() == "Not saved: another window saved outlines for this image after this click."
+        assert one.evaluate("st.roisDirty") is True and two.evaluate("st.roisDirty") is False
+        one.wait_for_function("!document.querySelector('#saveRois').disabled")
+        saved = srv.project.load("rois.json", {})[two.evaluate("st.code")]
+        assert saved == two.evaluate("st.rois") and saved != one.evaluate("st.rois")
+    finally:
+        go.set()
+        srv.shutdown()
+        srv.server_close()

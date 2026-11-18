@@ -565,7 +565,8 @@ function flatFieldCard(p, busy) {
   const b = on && ff.build, warn = b && (b.other || b.none) ? [
     b.other ? `${plural(b.other, "image")} used another day's slide images` : null,
     b.none ? `${plural(b.none, "image")} could not be corrected` : null,
-  ].filter(Boolean).join(", ") + ". Add slide images for those days to correct them fully." : null;
+  ].filter(Boolean).join(", ") + (ff.locked ? ". Coded images stay as they were scored."
+    : ". Add slide images for those days to correct them fully.") : null;
   return h("section", { class: "extra" },
     h("div", { class: "x-head" },
       h("div", {},
@@ -587,7 +588,8 @@ function flatFieldCard(p, busy) {
 async function flatFieldSessions(p) {
   const ff = p.flat_field;
   const choices = [{ value: "add", label: "Add slide images...",
-    desc: "For days imaged since. Sessions already in use do not change." }];
+    desc: ff.locked ? "For images you add later. Coded images stay as they were scored."
+      : "For days imaged since. Sessions already in use do not change." }];
   if (!ff.locked) choices.push(
     { value: "change", label: "Start again with new slide images...", desc: "Replaces every session. The blind set is rebuilt with the same codes." },
     { value: "off", label: "Turn off", desc: "Images are used as recorded." });

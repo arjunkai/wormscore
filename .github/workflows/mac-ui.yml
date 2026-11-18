@@ -92,7 +92,21 @@ jobs:
         # over the first build through the app's own updater, then goes back; then the same with the app
         # marked unchangeable, so the swap fails and must leave every copy whole. No release is involved:
         # the updater reads the "latest release" from a local file (update.latest_url).
-        run: python packaging/update_check.py --first dist/wormscore.app --work "$RUNNER_TEMP/update-check"
+        # Then all of it once more with the app on another volume than the home folder (a disk image, which
+        # costs nothing on the runner), as with the app on an external disk: the kept copy must then be next
+        # to the app, so that no move of the exchange is a copy between volumes. If the disk image cannot be
+        # made, that part is left out with a warning.
+        run: |
+          OTHER=""
+          if hdiutil create -size 3g -type SPARSE -fs APFS -volname wormscore-other "$RUNNER_TEMP/other-volume" \
+             && mkdir "$RUNNER_TEMP/other" \
+             && hdiutil attach "$RUNNER_TEMP/other-volume.sparseimage" -mountpoint "$RUNNER_TEMP/other" -nobrowse; then
+            OTHER="$RUNNER_TEMP/other"
+          else
+            echo "::warning::no second volume could be made, so the update across volumes was not checked"
+          fi
+          python packaging/update_check.py --first dist/wormscore.app --work "$RUNNER_TEMP/update-check" ${OTHER:+--other-volume "$OTHER"}
+          if [ -n "$OTHER" ]; then hdiutil detach "$OTHER" || true; fi
       - name: What Gatekeeper says about a downloaded copy
         # A copy built here has no quarantine mark and opens without a question. A downloaded one has it.
         # This records the verdict (the app is not signed with a paid certificate, so "rejected" is

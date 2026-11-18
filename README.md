@@ -117,7 +117,9 @@ Update downloads the zip for your computer, checks it against the SHA-256 checks
 it, runs the new copy once to confirm its version, and swaps it in after the app closes. The previous
 version is kept: **Settings > Go back to ...** swaps it back. If the swap cannot be done (for example a
 file in the app folder is open in another program), nothing is changed: the app and the kept copy
-stay as they were, and you can try again. Projects, codes and scores are never touched. From the command line: `wormscore update`, `wormscore update --install`,
+stay as they were, and you can try again. On a Mac whose app is on another disk than your home folder
+(an external disk, for example), the kept copy is in a hidden folder next to the app
+(`.wormscore-previous`), so the swap never copies an app between disks. Projects, codes and scores are never touched. From the command line: `wormscore update`, `wormscore update --install`,
 `wormscore update --rollback`.
 
 If a project has a blind set built but is not unblinded yet, the update window warns that updating
@@ -246,7 +248,8 @@ field is not judged dimmer than one in the middle. It is recorded in `log.md` an
 blind set already built is rebuilt with the same codes. A day without slide images uses the nearest
 day's, with a warning (the build never stops for it), and slide images for later days can be added with
 **Sessions... > Add slide images** at any time, also after scoring began, without changing images
-already coded.
+already coded: once scoring has begun they are used only for images you add later, and a rebuild keeps
+every coded image as it was scored.
 
 **Looking at images: Browse images** (`wormscore browse my_project`). After scanning, **Browse images**
 (next to Open folder and Project settings, at the top of the project) opens the scoring viewer with each image's file name and genotype, for checking
