@@ -24,7 +24,8 @@ The settings are those of the reporter channel, read from that channel's own par
 - Zeiss: detector gain (or voltage), each laser line with the share of its power let through
   (1 - attenuation), lamp intensity and exposure for cameras, and averaging.
 - Nikon: camera exposure, gain and multiplier, each laser line that is on with its power, and the
-  fluorescence lamp.
+  fluorescence lamp. For the A1 and AX point-scanning confocals (1.26.11): the laser power and detector
+  voltage (HV) of the detector channel with the reporter's excitation wavelength, and line averaging.
 - OME-TIFF: detector gain and voltage, each light source's wavelength and attenuation as the file
   states them, and exposure.
 - Olympus: detector voltage, each laser with its transmissivity, and integration.

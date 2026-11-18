@@ -620,7 +620,29 @@ def _nikon_block(description, name, n_channels):
     return text if n_channels == 1 and text.strip() else None
 
 
-def _nikon_settings(description, capturing, name, n_channels):
+A1_CHANNEL = re.compile(r"CH(\d+)\s*\{Laser Wavelength\}:\s*([\d.]+)\s*\{Laser Power\}:\s*([\d.]+)"
+                        r"(?:\s*\{PMT HV\}:\s*(-?[\d.]+))?")
+
+
+def _nikon_confocal(block, excitation):
+    """The A1 and AX point-scanning confocals (1.26.11) list every detector channel in each channel's part:
+    "CH2 {Laser Wavelength}: 488.0 {Laser Power}: 1.5 / {PMT HV}: 114". The reporter's is the one line
+    with its excitation wavelength; if that does not single one out, all of them are kept, so images
+    that differ in any of them are never put in one settings group. Checked against a real A1 file
+    (Zenodo 10814759)."""
+    found = [(float(w), float(pw), hv) for _, w, pw, hv in A1_CHANNEL.findall(block)]
+    if not found:
+        return []
+    mine = [x for x in found if excitation and abs(x[0] - float(excitation)) < 1]
+    parts = [f"{w:g}nm@{pw:g}" + (f" HV {float(hv):g}" if hv else "") for w, pw, hv in (mine if len(mine) == 1 else found)]
+    avg = re.search(r"\{Line Average/Integrate Count\}:\s*(\d+)", block)
+    mode = re.search(r"\{Line Average Mode\}:\s*(\w+)", block)
+    if avg:
+        parts.append(f"line {mode.group(1).lower() if mode else 'average'} {avg.group(1)}")
+    return parts
+
+
+def _nikon_settings(description, capturing, name, n_channels, excitation=None):
     """Camera and light settings of the reporter channel (1.26.7), from that channel's own part of the
     description: exposure, gain and multiplier as before, and now each laser line that is on with its
     power, the fluorescence lamp, and a confocal detector's voltage. Before 1.26.7 only the camera text
@@ -639,7 +661,9 @@ def _nikon_settings(description, capturing, name, n_channels):
         parts.append(";".join(lasers))
     parts += [f"lamp {k.lower()} {v.strip()}" for k, v in re.findall(r"Light \(EPI\)[^:\n]*?(voltage|intensity):\s*([^\n]+)", block, re.I)
               if v.strip().upper() != "NA"]
-    parts += [f"{k.strip()} {v}" for k, v in re.findall(r"((?:[A-Za-z]+ )?HV(?:\([A-Za-z]+\))?|Laser Power)\s*:\s*([\d.]+)", block)]
+    confocal = _nikon_confocal(block, excitation)
+    parts += confocal or [f"{k.strip()} {v}" for k, v in
+                          re.findall(r"((?:[A-Za-z]+ )?HV(?:\([A-Za-z]+\))?|Laser Power)\s*:\s*([\d.]+)", block)]
     return "; ".join(parts)
 
 
@@ -678,7 +702,8 @@ def nikon_images(path, cfg):
     roles = named_extras(prefer_named_dye(roles, [None] * len(roles), cfg), cfg, names, None,
                          [c.channel.excitationLambdaNm for c in chans], [c.channel.emissionLambdaNm for c in chans])
     mi = pick(roles, "MARKER")
-    settings = _nikon_settings(text.get("description") or "", capturing, names[mi] if mi is not None else None, len(chans))
+    settings = _nikon_settings(text.get("description") or "", capturing, names[mi] if mi is not None else None, len(chans),
+                               chans[mi].channel.excitationLambdaNm if mi is not None else None)
     dims = "".join(sizes)
     out = []
     for p, stage in enumerate(positions):

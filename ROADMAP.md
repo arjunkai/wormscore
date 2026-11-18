@@ -32,6 +32,12 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.11: **Nikon A1 and AX confocal files: laser power and detector voltage are read.** These microscopes
+  write them in a form of their own, so every such image had empty settings and one settings group,
+  whatever its laser power or detector voltage. The reporter channel's laser power, detector voltage (HV)
+  and line averaging are now read. Checked against a real A1 file (Zenodo 10814759).
+  **Who is affected:** projects with `.nd2` files from an A1 or AX confocal. As with 1.26.7, nothing
+  changes until Scan data runs again; the Build card then says which coded images would change group.
 - 1.26.10: **Fixes from an independent review of 1.26.7 to 1.26.9, and faster Build and Browse on large images.**
   - **Go back** with a file of the kept copy open in another program (a virus scanner) could leave the
     kept copy with one file; the next Go back then put that folder in the app's place and said it had
