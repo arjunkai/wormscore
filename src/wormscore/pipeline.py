@@ -71,9 +71,13 @@ def inventory(project, log=print, progress=None):
     refuse_in_package(project, "Scanning")
     cfg = C.load(project)
     ident = cfg.get("identity")
-    manifest, images = R.scan(cfg, log=log, progress=progress)
+    # 1.26.8: progress covers both halves of the scan, the file checksums and then the pixel checksum of
+    # each image. It used to cover the first only and stood at 100% for most of the run.
+    manifest, images = R.scan(cfg, log=log, progress=(lambda done, total: progress(done, 2 * total)) if progress else None)
     rows, by_pixels = [], {}
-    for img in images:
+    weights = [max(1, int(img.get("n_z") or 1) * int(img.get("width") or 1) * int(img.get("height") or 1)) for img in images]
+    read_so_far, to_read = 0, sum(weights) or 1
+    for img, weight in zip(images, weights):
         roles = img["channel_roles"]
         mi, bi = R.pick(roles, "MARKER"), R.pick(roles, "BF")
         ii = R.pick(roles, "IDENTITY") if ident else None
@@ -93,6 +97,9 @@ def inventory(project, log=print, progress=None):
             flags.append(f"identical pixels to {by_pixels[pixels]}")
         elif pixels:
             by_pixels[pixels] = f"{img['relative_path']} {img['location_in_file']}"
+        read_so_far += weight
+        if progress:
+            progress(to_read + read_so_far, 2 * to_read)
         rk = img["_reader"]
         rows.append({**{k: img.get(k, "") for k in INVENTORY_FIELDS},
                      "channel_names": "/".join(img["channel_names"]), "channel_roles": "/".join(roles),
@@ -521,6 +528,16 @@ def prepare(project, reassign=False, add=False, log=print):
                   "before scoring." for g in sorted(x for x in named if x and x not in have)]
     for line in plan_lines:
         log(line)
+
+    # 1.26.8: included images that Scan data flagged as read only in part, or with a placeholder pixel size
+    for what, text in ((R.FIRST_ONLY, "have a dimension wormscore does not use (a tile scan, a lambda scan): only its "
+                        "first entry is in the blind set. To score the others, export each as its own image."),
+                       (R.NOT_CALIBRATED, "have no pixel size in the file and are read as 1 um per pixel, so the display "
+                        "scale and the suggested cells are not reliable. Calibrate them in NIS-Elements and scan again.")):
+        n = sum(what in str(s.get("flags") or "") for s in images)
+        if n:
+            plan_lines.append(f"Warning: {n} image{'s' if n != 1 else ''} {text}")
+            log(plan_lines[-1])
 
     groups = same_field_groups(images, cfg["inclusion"]["same_field_tolerance_um"])
     for s in images:

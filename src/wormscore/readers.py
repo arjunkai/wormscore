@@ -103,10 +103,27 @@ def _fluor_name(name, cfg):
                for p in m.get("channel_name_prefixes", []) if isinstance(p, str) and len(p) >= 3)
 
 
+TRANSMITTED_NAMES = ("TD", "TPMT")      # 1.26.8: transmitted-light detectors, whatever config.json lists
+
+
+def _brightfield_name(name, cfg):
+    """True if the channel name is a brightfield name. A short name (BF, TL, TD, DIC) must be the whole
+    word (1.26.8): "BFP" and "TLR-4" begin like "BF" and "TL" and were read as brightfield. "TL DIC",
+    "BF 2" and "TLDIC" still are."""
+    names = [p.upper() for p in list(cfg["brightfield_channel_names"]) + list(TRANSMITTED_NAMES) if p]
+    up = name.upper().strip()
+    for p in names:
+        if not up.startswith(p):
+            continue
+        rest = up[len(p):]
+        if len(p) > 4 or not rest[:1].isalpha() or any(rest.startswith(q) for q in names):
+            return True
+    return False
+
+
 def marker_from_named(name, fluor, excitation, transmitted, cfg, emission=None):
     """emission (nm) is used only if the marker settings give an emission_nm range."""
-    if transmitted or (any(name.upper().startswith(p.upper()) for p in cfg["brightfield_channel_names"])
-                       and not _fluor_name(name, cfg)):
+    if transmitted or (_brightfield_name(name, cfg) and not _fluor_name(name, cfg)):
         return "BF"
     if _named_match(name, fluor, excitation, emission, cfg["marker"]):
         return "MARKER"
@@ -168,6 +185,22 @@ def pick(roles, role):
     return roles.index(role) if roles.count(role) == 1 else None
 
 
+FIRST_ONLY = "only the first is read"
+AXIS_NAMES = {"M": "tile scan ({n} tiles)", "H": "phases ({n})", "R": "rotations ({n})", "I": "illuminations ({n})",
+              "V": "views ({n})", "B": "blocks ({n})", "S": "colour samples ({n})", "L": "lambda scan ({n} wavelengths)",
+              "Q": "extra dimension ({n})"}
+
+
+def _extra_axes_flags(axes, shape, known="CZYXT"):
+    """1.26.8: an image with a dimension wormscore does not use (the tiles of a tile scan, the wavelengths
+    of a lambda scan, Airyscan phases). Only its first entry is read, as before, and now a flag says so."""
+    return [f"{AXIS_NAMES.get(a, 'extra dimension ' + a + ' ({n})').format(n=n)}: {FIRST_ONLY}"
+            for a, n in zip(axes, shape) if a not in known and n > 1]
+
+
+LEICA_DIMS = {5: "L", 9: "L", 10: "M"}      # DimID: lambda, excitation lambda, mosaic (tiles)
+
+
 # ------------------------------------------------------------------ Leica LIF
 
 @lru_cache(maxsize=None)
@@ -202,6 +235,7 @@ def _lif_series(lf):
                     "name": "/".join(f"{path}/{item.attrib['Name']}".split("/")[1:]),
                     "x": n.get(1, 1), "y": n.get(2, 1), "z": n.get(3, 1), "t": n.get(4, 1),
                     "scale_x": scale.get(1), "scale_z": scale.get(3),
+                    "extra": [(LEICA_DIMS.get(k, "Q"), v) for k, v in sorted(n.items()) if k not in (1, 2, 3, 4)],
                     "bit_depth": [int(c.get("Resolution")) for c in chans], "channels": len(chans),
                     "settings": dict(st.attrib) if st is not None else {},
                     "element": item, "image": pixels.get(id(item)),
@@ -218,18 +252,36 @@ def _leica_channels(elem):
     steps = seq.findall(".//ATLConfocalSettingDefinition") if seq is not None else []
     if not steps:
         steps = elem.findall(".//ATLConfocalSettingDefinition")[:1]
+    # 1.26.8: current LAS X (SP8 3.5, Stellaris 4.4) writes for each step of a sequential scan only what
+    # differs from the image's master setting: the step names its active detectors and its laser lines,
+    # the master holds the detection bands, the averaging and often the gain. A step's missing values are
+    # taken from the master. Before, such a step had no detection band, so its reporter was never found.
+    master = elem.find("./Data/Image/Attachment/ATLConfocalSettingDefinition")
+    if master is None:
+        master = elem.find(".//LDM_Block_Sequential_Master//ATLConfocalSettingDefinition")
+    if master is None or any(s is master for s in steps):
+        master = None
+    m_bands = {b.get("Channel"): b for b in master.iter("MultiBand")} if master is not None else {}
+    m_dets = {d.get("Channel"): d for d in master.iter("Detector")} if master is not None else {}
+    lines = lambda s: [(l.get("LaserLine"), float(l.get("IntensityDev") or 0))
+                       for l in s.iter("LaserLineSetting") if float(l.get("IntensityDev") or 0) > 0]
     chans = []
     for s in steps:
-        lasers = [(l.get("LaserLine"), float(l.get("IntensityDev") or 0))
-                  for l in s.iter("LaserLineSetting") if float(l.get("IntensityDev") or 0) > 0]
+        lasers = lines(s)
+        if master is not None and next(s.iter("LaserLineSetting"), None) is None:
+            lasers = lines(master)                  # a step that lists no laser lines at all
         bands = {b.get("Channel"): b for b in s.iter("MultiBand")}
         for d in s.iter("Detector"):
             if d.get("IsActive") != "1":
                 continue
-            band = bands.get(d.get("Channel"))
-            chans.append({"detector": d.get("Name"), "gain": float(d.get("Gain") or 0),
+            band = bands.get(d.get("Channel"), m_bands.get(d.get("Channel")))
+            gain = d.get("Gain")
+            if gain is None and d.get("Channel") in m_dets:
+                gain = m_dets[d.get("Channel")].get("Gain")
+            line_avg = s.get("LineAverage") or (master.get("LineAverage") if master is not None else None)
+            chans.append({"detector": d.get("Name"), "gain": float(gain or 0),
                           "band": f"{band.get('LeftWorld')}-{band.get('RightWorld')}" if band is not None else "",
-                          "lasers": lasers, "line_avg": s.get("LineAverage")})
+                          "lasers": lasers, "line_avg": line_avg})
     return chans
 
 
@@ -241,7 +293,7 @@ def leica_images(path, cfg):
         st, elem = im["settings"], im["element"]
         luts = [c.get("LUTName") for c in elem.iter("ChannelDescription")]
         chans = _leica_channels(elem)
-        flags = []
+        flags = _extra_axes_flags([a for a, _ in im["extra"]], [v for _, v in im["extra"]])
         if len(chans) == im["channels"]:
             roles = [marker_from_leica(c, l, cfg) for c, l in zip(chans, luts)]
             roles = with_extras(roles, cfg, lambda i, m: _leica_match(chans[i], luts[i], m))
@@ -389,7 +441,8 @@ def zeiss_images(path, cfg):
             "pixel_um": meta["pixel_um"], "z_step_um": meta["z_step_um"],
             "bits": meta["bits"], "channel_roles": meta["channel_roles"], "channel_names": meta["channel_names"],
             "settings": meta["settings"], "zoom": meta["zoom"], "acquired": meta["acquired"],
-            "stage_x": None, "stage_y": None, "flags": list(meta["flags"]), "_reader": ("czi", str(path), i, dims),
+            "stage_x": None, "stage_y": None, "flags": list(meta["flags"]) + _extra_axes_flags(dims.replace("0", ""), [n for a, n in zip(dims, shape) if a != "0"]),
+            "_reader": ("czi", str(path), i, dims),
         })
     return out
 
@@ -421,6 +474,33 @@ def _ome_settings(chan):
     return parts
 
 
+OME_SCHEMA = re.compile(r"http://www\.openmicroscopy\.org/Schemas/OME/\d{4}-\d{2}")
+MICROMETRES = {"\u00b5m": 1, "\u03bcm": 1, "um": 1, "micron": 1, "nm": 1e-3, "pm": 1e-6, "\u00c5": 1e-4, "mm": 1e3, "cm": 1e4, "m": 1e6}
+
+
+def _ome_root(md):
+    """Files written to an older OME schema (2008 to 2015) keep the same names for everything read here,
+    under another namespace (1.26.8). They were listed as "no microscope metadata"."""
+    old = OME_SCHEMA.match(md.tag[1:]) if md.tag.startswith("{") else None
+    if old and old.group(0) != OME_NS["o"]:
+        for el in md.iter():
+            if el.tag.startswith("{" + old.group(0) + "}"):
+                el.tag = "{" + OME_NS["o"] + "}" + el.tag.split("}", 1)[1]
+    return md
+
+
+def _ome_um(px, axis, flags):
+    """A physical size in micrometres. The unit defaults to micrometres; other units are converted (1.26.8,
+    they were read as micrometres), and a size in a unit that is not a length is flagged and not used."""
+    value, unit = _num(px.get(f"PhysicalSize{axis}", "") or ""), px.get(f"PhysicalSize{axis}Unit", "\u00b5m")
+    if value is None:
+        return 0.0
+    if unit not in MICROMETRES:
+        flags.append(f"pixel size is given in '{unit}', not a length")
+        return 0.0
+    return value if MICROMETRES[unit] == 1 else round(value * MICROMETRES[unit], 6)
+
+
 def ome_images(path, cfg):
     with tifffile.TiffFile(str(path)) as f:
         series = [(s.axes, s.shape, s.dtype) for s in f.series]
@@ -439,12 +519,22 @@ def ome_images(path, cfg):
                 if any(o + n > size for o, n in zip(page.dataoffsets, page.databytecounts)):
                     cut.add(k)
                     break
-    md = ET.fromstring(xml) if xml else None
+    md = _ome_root(ET.fromstring(xml)) if xml else None
     if md is None or md.find(".//o:Pixels", OME_NS) is None:
+        # the metadata is in another file: the one the file names (1.26.8), or <name>.companion.ome next to it
+        named = md.find("o:BinaryOnly", OME_NS).get("MetadataFile") if md is not None and md.find("o:BinaryOnly", OME_NS) is not None else None
         companion = Path(re.sub(r"(_t\d+_p\d+)?\.ome\.tiff?$", ".companion.ome", str(path)))
+        if named and (Path(path).parent / named).is_file():
+            companion = Path(path).parent / named
         if not companion.exists():
             return []
-        md = ET.parse(str(companion)).getroot()
+        if companion.name.lower().endswith((".tif", ".tiff")):      # the set's metadata is inside one of its TIFFs
+            with tifffile.TiffFile(str(companion)) as cf:
+                md = _ome_root(ET.fromstring(cf.ome_metadata or "<none/>"))
+        else:
+            md = _ome_root(ET.parse(str(companion)).getroot())
+        if md.find(".//o:Pixels", OME_NS) is None:
+            return []
     obj = md.find(".//o:Objective", OME_NS)
     objective = (f"{obj.get('NominalMagnification')}x/{obj.get('LensNA')} {obj.get('Immersion', '')}".strip()
                  if obj is not None and obj.get("NominalMagnification") else "")
@@ -471,6 +561,13 @@ def ome_images(path, cfg):
         if not px.get("SignificantBits") and bits == 16:
             flags += _no_bits_flag(system, cfg, 65535)
         chan = px.findall("o:Channel", OME_NS)[mi] if mi is not None else None
+        flags += _extra_axes_flags(axes, shape)
+        n_z = shape[axes.index("Z")] if "Z" in axes else 1
+        if len(flags) == len([INCOMPLETE] if i in cut else []) + (1 if any(NO_BITS in x for x in flags) else 0) \
+                and (px.get("SizeZ") or "").isdigit() and int(px.get("SizeZ")) != n_z:
+            # 1.26.8: one file of a set that stores each plane in its own file
+            flags.append(f"the metadata lists {px.get('SizeZ')} planes, this file holds {n_z} (one file of a multi-file set)")
+        pixel_um, z_step_um = _ome_um(px, "X", flags), _ome_um(px, "Z", flags)
         out.append({
             "format": "OME-TIFF", "system": system,
             "location_in_file": "whole file (series 0)" if len(series) == 1 else f"series {i}",
@@ -478,10 +575,10 @@ def ome_images(path, cfg):
             "n_z": shape[axes.index("Z")] if "Z" in axes else 1,
             "n_t": shape[axes.index("T")] if "T" in axes else 1,
             "width": shape[axes.index("X")], "height": shape[axes.index("Y")],
-            "pixel_um": float(px.get("PhysicalSizeX", 0) or 0), "z_step_um": float(px.get("PhysicalSizeZ", 0) or 0),
+            "pixel_um": pixel_um, "z_step_um": z_step_um,
             "bits": bits, "channel_roles": roles, "channel_names": names,
             "settings": "; ".join(_ome_settings(chan) + (["exposure " + ",".join(exposures)] if exposures else [])),
-            "zoom": "", "acquired": (img.findtext("o:AcquisitionDate", namespaces=OME_NS) or "")[:19].replace("T", " "),
+            "zoom": "", "acquired": (img.findtext("o:AcquisitionDate", namespaces=OME_NS) or img.findtext("o:AcquiredDate", namespaces=OME_NS) or "")[:19].replace("T", " "),
             "stage_x": None, "stage_y": None, "flags": flags,
             "_reader": ("ome", str(path), i, axes),
         })
@@ -499,6 +596,7 @@ def _nd2():
     return nd2
 
 
+NOT_CALIBRATED = "is not calibrated in the file"
 CAMERA_LINE = r"(Exposure|Gain|Multiplier):\s*([^\n]+)"
 
 
@@ -543,8 +641,17 @@ def nikon_images(path, cfg):
         sizes = dict(f.sizes)
         if f.is_rgb:
             return []          # a colour camera picture, not a fluorescence stack
-        chans = f.metadata.channels
+        if f.is_legacy:
+            # files from NIS-Elements before 2010 (JPEG2000 inside); they gave a Python error naming no cause
+            raise ValueError("an old Nikon .nd2 format that wormscore does not read. "
+                             "Open it in NIS-Elements and save it again, or export to OME-TIFF")
+        if any(n <= 0 for n in sizes.values()) or not 1 <= f.attributes.bitsPerComponentSignificant <= 32:
+            raise ValueError("the file's header is damaged (image size or bit depth is not possible)")
+        chans = getattr(f.metadata, "channels", None)
+        if not chans:
+            raise ValueError("the file records no channel information")
         vox = f.voxel_size()
+        calibrated = bool(chans[0].volume.axesCalibrated[0])
         text = f.text_info
         bits = f.attributes.bitsPerComponentSignificant
         positions = []
@@ -577,7 +684,11 @@ def nikon_images(path, cfg):
             "bits": bits, "channel_roles": list(roles), "channel_names": names,
             "settings": settings, "zoom": f"{mic.zoomMagnification:g}" if mic.zoomMagnification else "",
             "acquired": " ".join((text.get("date") or "").split()),
-            "stage_x": stage.x, "stage_y": stage.y, "flags": [], "_reader": ("nd2", str(path), p, dims),
+            "stage_x": stage.x, "stage_y": stage.y,
+            # 1.26.8: an uncalibrated file reads as 1 um per pixel, which sets the display scale and the cell search
+            "flags": ([] if calibrated else [f"pixel size {NOT_CALIBRATED} (1 um per pixel is a placeholder)"])
+            + _extra_axes_flags(dims.replace("P", ""), [n for a, n in sizes.items() if a != "P"]),
+            "_reader": ("nd2", str(path), p, dims),
         })
     return out
 
@@ -644,7 +755,7 @@ def olympus_images(path, cfg):
         "pixel_um": round(_olympus_number(ref.get("WidthConvertValue", 0)), 4), "z_step_um": round(z_step, 3),
         "bits": int(ref.get("ValidBitCounts") or 16), "channel_roles": roles, "channel_names": names,
         "settings": settings, "zoom": "", "acquired": str(acq.get("ImageCaputreDate", "")),
-        "stage_x": None, "stage_y": None, "flags": [], "_reader": ("oif", str(path), 0, axes),
+        "stage_x": None, "stage_y": None, "flags": _extra_axes_flags(axes, shape), "_reader": ("oif", str(path), 0, axes),
     }]
 
 

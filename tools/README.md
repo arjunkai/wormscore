@@ -1,0 +1,45 @@
+# Tools
+
+Helpers for checking wormscore. They are not part of the app or of the test suite.
+
+## bioformats_referee.py
+
+Compares what wormscore reads from microscope files with what [Bio-Formats](https://www.openmicroscopy.org/bio-formats/)
+reads from the same files: image size, bit depth, pixel size, z-step, channel names and, for the reporter
+channel wormscore picked, detector gain or voltage, laser attenuation and exposure. It prints every
+difference. No pixels are read and nothing is written next to the files.
+
+It needs, once:
+
+- Java on `PATH`: version 8 or later for Bio-Formats 8, 11 or later for Bio-Formats 9
+  (free: [Temurin](https://adoptium.net)).
+- The Bio-Formats command-line tools: download `bftools.zip` from the `artifacts` folder of a release at
+  <https://downloads.openmicroscopy.org/bio-formats/> and unzip it anywhere outside this repository.
+
+Run it from the repository folder:
+
+```
+python -I -X utf8 tools/bioformats_referee.py FOLDER [FOLDER ...] --bftools PATH\TO\bftools --out report.txt
+```
+
+- `FOLDER`: folders with real `.lif`, `.czi`, `.nd2`, `.oib`, `.oif` or `.ome.tif` files, searched in depth.
+- `--bftools`: the unzipped folder (or set `BFTOOLS`, or put it on `PATH`). The script says what to install
+  if Java or Bio-Formats is missing.
+- `--src`: the wormscore source to check. Default: this checkout's `src`. (`-I` makes Python ignore
+  `PYTHONPATH`, so nothing lying next to the sample files is imported.)
+- `--project`: a project folder whose `config.json` sets the markers. Default: a GFP reporter. Gain, laser
+  and exposure are compared for the reporter channel only, so use a project whose markers fit the files;
+  for images without a reporter the report lists Bio-Formats' values per channel.
+- `--cache`: where Bio-Formats' output is kept, so a second run takes seconds. Default:
+  `~/.cache/wormscore-referee`. A file is read again when its size or date changes.
+
+Reading the report: each image has one line with wormscore's reading, then `DIFF` lines (the two disagree,
+or Bio-Formats reads a brightness setting whose number is not in wormscore's settings text) and `note`
+lines (Bio-Formats has nothing to compare with, or what the file's own metadata says). The summary counts
+differences per format.
+
+Bio-Formats is a second opinion, not the truth. Known cases where it is the one that is off: Zeiss camera
+files written as 12-bit are reported as 16 significant bits, and Leica channel names are detector or dye
+names where wormscore lists the colour table. Check a difference against the microscope software.
+
+Real images are never committed to this repository; keep sample files and the cache outside it.

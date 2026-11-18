@@ -74,6 +74,10 @@ def scan_changes(project, cfg=None):
             continue
         if was != _saturation(s, cfg):
             levels[(was, _saturation(s, cfg))] += 1
+    sizes = Counter((float(r["pixel_um"]), float(s["pixel_um"] or 0)) for r, s in pairs
+                    if r.get("pixel_um") not in (None, "") and abs(float(r["pixel_um"]) - float(s["pixel_um"] or 0)) > 1e-9)
+    out["lines"] += [f"the pixel size of {n} coded image{'s' if n != 1 else ''} changes from {a:g} to {b:g} um"
+                     for (a, b), n in sorted(sizes.items())]
     out["lines"] += [f"the saturation level of {n} coded image{'s' if n != 1 else ''} changes from {a} to {b}"
                      for (a, b), n in sorted(levels.items())]
     _scan_changes[str(project)] = (stamp, out)

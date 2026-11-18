@@ -12,7 +12,20 @@ def _utf16(text):
     return text.encode("utf-16-le")
 
 
-def _series_xml(name, block, shape, pixel_um, z_um):
+HARDWARE = """ <Attachment Name="HardwareSetting" SystemTypeName="TCS TEST">
+  <ATLConfocalSettingDefinition ObjectiveName="HC PL APO 63x/1.40 OIL" Zoom="2" StagePosX="0.001" StagePosY="0.002" LineAverage="3">
+   <Spectro><MultiBand Channel="1" LeftWorld="500" RightWorld="550"/></Spectro>
+   <AotfList><Aotf><LaserLineSetting LaserLine="488" IntensityDev="20"/><LaserLineSetting LaserLine="561" IntensityDev="0"/></Aotf></AotfList>
+   <DetectorList>
+    <Detector Name="HyD 1" Channel="1" Gain="100" IsActive="1"/>
+    <Detector Name="Trans PMT" Channel="2" Gain="200" IsActive="1"/>
+    <Detector Name="HyD 3" Channel="3" Gain="0" IsActive="0"/>
+   </DetectorList>
+  </ATLConfocalSettingDefinition>
+ </Attachment>"""
+
+
+def _series_xml(name, block, shape, pixel_um, z_um, hardware=None):
     """XML for one 2-channel series: a GFP channel (488 nm, HyD) and a transmitted-light channel."""
     nz, ny, nx = shape
     plane = 2 * nx * ny
@@ -29,21 +42,11 @@ def _series_xml(name, block, shape, pixel_um, z_um):
    <DimensionDescription DimID="3" Unit="m" BitInc="0" Origin="0" NumberOfElements="{nz}" Length="{z_um * (nz - 1) * 1e-6}" BytesInc="{2 * plane}"/>
   </Dimensions>
  </ImageDescription>
- <Attachment Name="HardwareSetting" SystemTypeName="TCS TEST">
-  <ATLConfocalSettingDefinition ObjectiveName="HC PL APO 63x/1.40 OIL" Zoom="2" StagePosX="0.001" StagePosY="0.002" LineAverage="3">
-   <Spectro><MultiBand Channel="1" LeftWorld="500" RightWorld="550"/></Spectro>
-   <AotfList><Aotf><LaserLineSetting LaserLine="488" IntensityDev="20"/><LaserLineSetting LaserLine="561" IntensityDev="0"/></Aotf></AotfList>
-   <DetectorList>
-    <Detector Name="HyD 1" Channel="1" Gain="100" IsActive="1"/>
-    <Detector Name="Trans PMT" Channel="2" Gain="200" IsActive="1"/>
-    <Detector Name="HyD 3" Channel="3" Gain="0" IsActive="0"/>
-   </DetectorList>
-  </ATLConfocalSettingDefinition>
- </Attachment>
+{hardware or HARDWARE}
 </Image></Data><Memory Size="{shape[0] * 2 * plane}" MemoryBlockID="{block}"/><Children/></Element>"""
 
 
-def write_lif(path, stacks):
+def write_lif(path, stacks, hardware=None):
     """A minimal Leica .lif with one series per (name, (gfp, bf)) pair, both uint16 (z, y, x).
     A name with a slash is put inside a folder of that name."""
     series, blocks, folders = [], [], {}
@@ -52,7 +55,7 @@ def write_lif(path, stacks):
         data = np.stack([gfp, bf], axis=1).astype("<u2")      # z, c, y, x
         blocks.append((block, data.tobytes()))
         folder, _, leaf = name.rpartition("/")
-        xml = _series_xml(leaf, block, gfp.shape, 0.25, 0.8)
+        xml = _series_xml(leaf, block, gfp.shape, 0.25, 0.8, hardware)
         (folders.setdefault(folder, []) if folder else series).append(xml)
     for folder, children in folders.items():
         series.append(f'<Element Name="{folder}"><Data/><Memory Size="0" MemoryBlockID="MemBlock_0"/>'
@@ -126,7 +129,7 @@ def test_a_bfp_channel_is_not_brightfield_when_the_project_uses_bfp():
     from wormscore import config as C
     from wormscore.readers import marker_from_named
     base = C.merge(C.DEFAULTS, {})
-    assert marker_from_named("BFP", None, None, False, base) == "BF"          # as before without BFP
+    assert marker_from_named("BFP", None, None, False, base) == "OTHER"       # 1.26.8: "BF" must be the whole word
     with_bfp = C.apply_identity(dict(base), [{"preset": "mCherry"}, {"preset": "BFP"}])
     assert marker_from_named("BFP", None, None, False, with_bfp) == "OTHER"   # then claimed as IDENTITY2
     assert marker_from_named("Brightfield", None, None, False, with_bfp) == "BF"

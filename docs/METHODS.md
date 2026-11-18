@@ -47,10 +47,13 @@ From metadata only:
 - **Leica:** the active detectors of each sequential-scan step, in order, are the image channels.
   The marker is the channel whose detector had a configured excitation laser on (default 488 nm), an
   emission band starting in the configured range (default 490 to 530 nm), and, if set, the configured
-  lookup-table color. Brightfield is the transmitted-light detector.
+  lookup-table color. Brightfield is the transmitted-light detector. Current LAS X (SP8 3.5,
+  Stellaris 4.4) writes for each step only what differs from the image's master setting, so a step's
+  detection band, averaging and (where the step gives none) gain are taken from the master (1.26.8).
 - **Zeiss and OME-TIFF:** the marker is the channel whose fluorophore, channel name or excitation
   wavelength matches the configuration; brightfield is the channel recorded with transmitted light
-  (or named BF, Brightfield, DIC, Trans, T-PMT, T PMT). If several channels match, for example a
+  (or named BF, Brightfield, DIC, Trans, T-PMT, T PMT, TL, TD, TPMT). A short name must be the whole
+  word: "BFP" and "TLR-4" are not brightfield (they were before 1.26.8). If several channels match, for example a
   second fluorophore excited by the same 488 nm laser, and exactly one of them names a configured dye
   (EGFP, GFP), that one is the marker. If the file gives no objective name, the objective is written
   from its magnification, NA and immersion.
@@ -66,6 +69,20 @@ From metadata only:
   image is UNRESOLVED. Projections made later (names starting `MAX_`, `SUM_` and so on) are never used.
 
 If not exactly one channel matches, the marker is UNRESOLVED and the image is excluded.
+
+**What is flagged instead of guessed** (1.26.8). Each of these is a flag in `outputs/inventory.csv`:
+
+- A dimension wormscore does not use (the tiles of a tile scan, the wavelengths of a lambda scan,
+  Airyscan phases): only its first entry is read, as before, and Build warns how many such images are
+  in the blind set.
+- A Nikon file with no pixel calibration reads as 1 um per pixel, which sets the display scale and the
+  search for suggested cells. Build warns.
+- An OME-TIFF pixel size or z-step in another unit (nm, mm) is converted to micrometres; one in a unit
+  that is not a length is not used, and the image is left out for having no pixel size.
+- One file of an OME-TIFF set that keeps each plane in its own file ("the metadata lists 5 planes, this
+  file holds 1").
+- OME-TIFF files written to the 2010 to 2015 schemas are read like current ones. Nikon `.nd2` files from
+  before 2010 are listed as unreadable, with the way to convert them.
 
 **Other fluorescent proteins** (since 1.0.0). `"marker": {"preset": "mCherry"}` replaces the GFP
 settings with those of another protein: GFP, mNeonGreen, YFP, mCherry, TagRFP, mScarlet, mKate2 or BFP.

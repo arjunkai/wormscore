@@ -32,6 +32,24 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.8: **Leica sequential scans from current LAS X, and files that are flagged instead of guessed** (independent audit).
+  - Sequential scans from LAS X 3.5 (SP8) and 4.4 (Stellaris) never gave a reporter channel, so none of
+    their images could be used. Each step records only what differs from the master setting; its
+    detection band, averaging and gain are now taken from the master where the step has none. Checked
+    against real Stellaris and SP8 files.
+  - Tile scans, lambda scans and other extra dimensions were read as their first entry with no word. They
+    are now flagged at Scan data, and Build warns. The same for a Nikon file with no pixel calibration
+    (read as 1 um per pixel).
+  - OME-TIFF: pixel sizes in nm or mm are converted (they were read as micrometres); files in the 2010 to
+    2015 schemas and sets whose metadata is in another file are read; one file of a plane-per-file set is flagged.
+  - A channel named "BFP" or "TLR-4" is no longer read as brightfield; "TD" and "TPMT" are.
+  - Nikon `.nd2` files from before 2010, and one with a damaged header, say why they cannot be read.
+  - Scan data's progress covers the whole scan. It used to reach 100% after the file checksums and stay there.
+  - `tools/bioformats_referee.py` compares what wormscore reads from a folder of files with Bio-Formats
+    (gain, laser, bit depth, pixel size, z-step, channels). It is how these readers were checked.
+  - **Who is affected:** nothing changes until Scan data runs again. After it, a project with a channel
+    named like "BFP" loses that channel as brightfield, and one with OME-TIFF sizes in nm gets the true
+    pixel size; the Build card names a pixel size that would change for coded images.
 - 1.26.7: **Detector gain, laser power and bit depth are read for Zeiss, Nikon and OME-TIFF** (independent audit).
   - Images taken at different gain or laser power shared a settings group, so their brightness could be
     compared. Zeiss files now give the reporter channel's gain and laser share (and exposure and lamp
