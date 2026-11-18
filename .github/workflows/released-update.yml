@@ -32,7 +32,10 @@ jobs:
           ls
           echo "LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName | sed 's/^v//')" >> "$GITHUB_ENV"
           echo "OLD=${FROM#v}" >> "$GITHUB_ENV"
-          echo "APP=$RUNNER_TEMP/apps/wormscore.app/Contents/MacOS/wormscore" >> "$GITHUB_ENV"
+          BUNDLE=$(find "$RUNNER_TEMP/apps" -maxdepth 3 -name wormscore.app | head -1)
+          echo "the app is at: $BUNDLE"
+          echo "BUNDLE=$BUNDLE" >> "$GITHUB_ENV"
+          echo "APP=$BUNDLE/Contents/MacOS/wormscore" >> "$GITHUB_ENV"
       - name: The older app starts
         run: |
           "$APP" --version
@@ -42,7 +45,7 @@ jobs:
         # folder exists on GitHub's Macs and not on a user's, so it is moved away for this step. The
         # outcome is reported, not failed: it says whether users of the older app can update from inside it.
         run: |
-          LIB=$(find "$RUNNER_TEMP/apps/wormscore.app" -name 'libcrypto*.dylib' | head -1)
+          LIB=$(find "$BUNDLE" -name 'libcrypto*.dylib' | head -1)
           DIR=$(strings "$LIB" | grep -m1 '^OPENSSLDIR: ' | sed 's/OPENSSLDIR: "\(.*\)"/\1/')
           echo "the older app's OpenSSL looks for certificates in: $DIR"
           hidden=""
@@ -66,7 +69,7 @@ jobs:
           ls -la "$D" || true
           cat "$D/update-result.txt" 2>/dev/null || true
           cat "$D/previous.json" 2>/dev/null || true
-          ls -la "$RUNNER_TEMP/apps" "$D/previous" 2>/dev/null || true
+          ls -la "$(dirname "$BUNDLE")" "$D/previous" 2>/dev/null || true
           case "$v" in *"$LATEST"*) ;; *) echo "::error::the update from $OLD did not give $LATEST"; exit 1;; esac
           test -x "$APP"
       - name: The new version works
@@ -84,7 +87,7 @@ jobs:
           D="$HOME/Library/Application Support/wormscore"
           cat "$D/update-result.txt" 2>/dev/null || true
           cat "$D/previous.json" 2>/dev/null || true
-          ls -la "$RUNNER_TEMP/apps" "$D/previous" 2>/dev/null || true
+          ls -la "$(dirname "$BUNDLE")" "$D/previous" 2>/dev/null || true
           case "$v" in *"$OLD"*) ;; *) echo "::error::Go back did not give $OLD"; exit 1;; esac
           test -x "$APP"
 
@@ -107,6 +110,7 @@ jobs:
           "APP=$env:RUNNER_TEMP\apps\wormscore\wormscore.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Update with the older app's own updater, then go back
         run: |
+          # the app has no console of its own: without "| Out-Host" PowerShell would not wait for a command to end
           function Wait-Version($want) {
             $v = ""
             foreach ($i in 1..60) {
@@ -117,17 +121,17 @@ jobs:
             return $v
           }
           & $env:APP --version
-          & $env:APP update
-          & $env:APP update --install
+          & $env:APP update | Out-Host
+          & $env:APP update --install | Out-Host
           $v = Wait-Version $env:LATEST
           "after the update: $v (latest release: $env:LATEST)"
           Get-ChildItem "$env:RUNNER_TEMP\apps" | ForEach-Object { $_.Name }
           if ($v -notlike "*$env:LATEST*") { Write-Output "::error::the update from $env:OLD did not give $env:LATEST"; exit 1 }
-          & $env:APP demo "$env:RUNNER_TEMP\demo"
-          & $env:APP inventory "$env:RUNNER_TEMP\demo"
-          & $env:APP prepare "$env:RUNNER_TEMP\demo"
+          & $env:APP demo "$env:RUNNER_TEMP\demo" | Out-Host
+          & $env:APP inventory "$env:RUNNER_TEMP\demo" | Out-Host
+          & $env:APP prepare "$env:RUNNER_TEMP\demo" | Out-Host
           if (-not (Test-Path "$env:RUNNER_TEMP\demo\blind")) { exit 1 }
-          & $env:APP update --rollback
+          & $env:APP update --rollback | Out-Host
           $v = Wait-Version $env:OLD
           "after Go back: $v"
           if ($v -notlike "*$env:OLD*") { Write-Output "::error::Go back did not give $env:OLD"; exit 1 }
