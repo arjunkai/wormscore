@@ -64,7 +64,8 @@ package exists). See
 **Windows, no Python needed:** click **Download for Windows** above (or get `wormscore-windows.zip`
 from the [Releases page](https://github.com/arjunkai/wormscore/releases)), unzip it, and double-click
 `wormscore.exe`. The app is not signed with a paid code-signing certificate, so the first time Windows
-may show "Windows protected your PC": click **More info**, then **Run anyway**. It opens in its own window (drawn by WebView2, the web engine built into Windows 10 and
+may ask before it runs. If it shows "Windows protected your PC", click **More info**, then **Run anyway**; if it shows
+"The publisher could not be verified", click **Run**. It opens in its own window (drawn by WebView2, the web engine built into Windows 10 and
 11), so it behaves like any other app: one taskbar button, and it closes when you close its window. Your
 projects are on the left, and the five steps (Scan data, Set scoring criteria, Build blind set, Score, Unblind) are
 a guided list on the right. The older launcher window is still available: `wormscore.exe --classic`.

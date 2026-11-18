@@ -1,0 +1,134 @@
+name: released-update
+
+# Updates a published older app to the latest release with the older app's own updater, then goes
+# back, on a Mac and on Windows. This is the path a user of an older version takes, and nothing else
+# checks it: mac-ui and win-app update between two builds of the same source.
+# Started by hand only (Actions > released-update > Run workflow). It downloads release files and
+# reads the latest release; it never creates, changes or publishes anything.
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: "Release tag of the older app to start from"
+        required: true
+        default: "v1.8.1"
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FROM: ${{ inputs.from }}
+    steps:
+      - name: Download and unpack the older app
+        run: |
+          mkdir -p "$RUNNER_TEMP/apps" && cd "$RUNNER_TEMP/apps"
+          gh release download "$FROM" --repo "$GITHUB_REPOSITORY" -p wormscore-mac.zip
+          ditto -x -k wormscore-mac.zip .
+          ls
+          echo "LATEST=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName | sed 's/^v//')" >> "$GITHUB_ENV"
+          echo "OLD=${FROM#v}" >> "$GITHUB_ENV"
+          echo "APP=$RUNNER_TEMP/apps/wormscore.app/Contents/MacOS/wormscore" >> "$GITHUB_ENV"
+      - name: The older app starts
+        run: |
+          "$APP" --version
+          "$APP" update --help || true
+      - name: Check for updates as on a user's Mac (the build machine's certificates hidden)
+        # An app built before 1.26.5 looks for HTTPS certificates where its build Python kept them. That
+        # folder exists on GitHub's Macs and not on a user's, so it is moved away for this step. The
+        # outcome is reported, not failed: it says whether users of the older app can update from inside it.
+        run: |
+          LIB=$(find "$RUNNER_TEMP/apps/wormscore.app" -name 'libcrypto*.dylib' | head -1)
+          DIR=$(strings "$LIB" | grep -m1 '^OPENSSLDIR: ' | sed 's/OPENSSLDIR: "\(.*\)"/\1/')
+          echo "the older app's OpenSSL looks for certificates in: $DIR"
+          hidden=""
+          for f in "$DIR/cert.pem" "$DIR/certs"; do if [ -e "$f" ]; then sudo mv "$f" "$f.hidden"; hidden="$hidden $f"; fi; done
+          echo "moved away:${hidden:- nothing was there}"
+          unset SSL_CERT_FILE SSL_CERT_DIR
+          out=$("$APP" update 2>&1) || true
+          for f in $hidden; do sudo mv "$f.hidden" "$f"; done
+          echo "$out"
+          if echo "$out" | grep -q "is available"; then
+            echo "::notice::Mac, as on a user's Mac: the $OLD app finds the update by itself"
+          else
+            echo "::warning::Mac, as on a user's Mac: the $OLD app could not check for updates ($(echo "$out" | tail -1)). Its users must download the new version from the Releases page."
+          fi
+      - name: Update with the older app's own updater
+        run: |
+          "$APP" update --install
+          for i in $(seq 1 60); do v=$("$APP" --version 2>/dev/null || true); case "$v" in *"$LATEST"*) break;; esac; sleep 3; done
+          echo "after the update: $v (latest release: $LATEST)"
+          D="$HOME/Library/Application Support/wormscore"
+          ls -la "$D" || true
+          cat "$D/update-result.txt" 2>/dev/null || true
+          cat "$D/previous.json" 2>/dev/null || true
+          ls -la "$RUNNER_TEMP/apps" "$D/previous" 2>/dev/null || true
+          case "$v" in *"$LATEST"*) ;; *) echo "::error::the update from $OLD did not give $LATEST"; exit 1;; esac
+          test -x "$APP"
+      - name: The new version works
+        run: |
+          "$APP" demo "$RUNNER_TEMP/demo"
+          "$APP" inventory "$RUNNER_TEMP/demo"
+          "$APP" prepare "$RUNNER_TEMP/demo"
+          test "$(ls "$RUNNER_TEMP/demo/blind" | wc -l)" -ge 1
+          "$APP" update
+      - name: Go back
+        run: |
+          "$APP" update --rollback
+          for i in $(seq 1 60); do v=$("$APP" --version 2>/dev/null || true); case "$v" in *"$OLD"*) break;; esac; sleep 3; done
+          echo "after Go back: $v"
+          D="$HOME/Library/Application Support/wormscore"
+          cat "$D/update-result.txt" 2>/dev/null || true
+          cat "$D/previous.json" 2>/dev/null || true
+          ls -la "$RUNNER_TEMP/apps" "$D/previous" 2>/dev/null || true
+          case "$v" in *"$OLD"*) ;; *) echo "::error::Go back did not give $OLD"; exit 1;; esac
+          test -x "$APP"
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      FROM: ${{ inputs.from }}
+    steps:
+      - name: Download and unpack the older app
+        run: |
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\apps" | Out-Null
+          Set-Location "$env:RUNNER_TEMP\apps"
+          gh release download $env:FROM --repo $env:GITHUB_REPOSITORY -p wormscore-windows.zip
+          Expand-Archive wormscore-windows.zip -DestinationPath .
+          $latest = (gh release view --repo $env:GITHUB_REPOSITORY --json tagName -q .tagName).TrimStart("v")
+          "LATEST=$latest" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "OLD=$($env:FROM.TrimStart('v'))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "APP=$env:RUNNER_TEMP\apps\wormscore\wormscore.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Update with the older app's own updater, then go back
+        run: |
+          function Wait-Version($want) {
+            $v = ""
+            foreach ($i in 1..60) {
+              try { $v = (& $env:APP --version 2>$null | Out-String).Trim() } catch { $v = "" }
+              if ($v -like "*$want*") { break }
+              Start-Sleep -Seconds 3
+            }
+            return $v
+          }
+          & $env:APP --version
+          & $env:APP update
+          & $env:APP update --install
+          $v = Wait-Version $env:LATEST
+          "after the update: $v (latest release: $env:LATEST)"
+          Get-ChildItem "$env:RUNNER_TEMP\apps" | ForEach-Object { $_.Name }
+          if ($v -notlike "*$env:LATEST*") { Write-Output "::error::the update from $env:OLD did not give $env:LATEST"; exit 1 }
+          & $env:APP demo "$env:RUNNER_TEMP\demo"
+          & $env:APP inventory "$env:RUNNER_TEMP\demo"
+          & $env:APP prepare "$env:RUNNER_TEMP\demo"
+          if (-not (Test-Path "$env:RUNNER_TEMP\demo\blind")) { exit 1 }
+          & $env:APP update --rollback
+          $v = Wait-Version $env:OLD
+          "after Go back: $v"
+          if ($v -notlike "*$env:OLD*") { Write-Output "::error::Go back did not give $env:OLD"; exit 1 }
+          if (-not (Test-Path $env:APP)) { exit 1 }
