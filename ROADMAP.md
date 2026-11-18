@@ -32,6 +32,11 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.6: **Build blind set is much faster on large images with few cells.** Suggested cells are found
+  in a square around each bright point, not with passes over the whole image; the regions and numbers
+  are exactly the same (a test compares them with the earlier method). A 2048 x 2048 image with one or
+  two cells took about 3 minutes for this step and now takes about 2 seconds. Found in the audit's check
+  with large stacks.
 - 1.26.5: **Fixes from an independent audit: files that cannot be read, and the Mac app.**
   - An OME-TIFF cut short (a copy that did not finish, or a set with a file missing) was coded with black
     planes, so a cell that was there looked missing. It is now flagged at Scan data and left out at Build.

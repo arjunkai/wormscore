@@ -78,22 +78,32 @@ def candidate_spots(mip_filtered, px_um, cfg):
     peaks = (smooth == ndimage.maximum_filter(smooth, size=size)) & (smooth > 0)
     ys, xs = np.nonzero(peaks)
     order = np.argsort(-smooth[ys, xs], kind="stable")
-    yy, xx = np.mgrid[: img.shape[0], : img.shape[1]]
     r_in, r_out = mc["spot_ring_um"]
     min_px = mc["min_object_area_um2"] / px_um ** 2
+    # 1.26.6: each maximum is worked out in the square that holds everything it uses (the ring, the
+    # 1 um peak disc and max_radius_um), not over the whole image. The numbers and regions are exactly
+    # the same; a 2048 x 2048 field with few cells took minutes because every local maximum was tried
+    # with whole-image passes.
+    reach = int(np.ceil(max(r_out, mc["max_radius_um"], 1.0) / px_um)) + 1
+    h, w = img.shape
     found = []
     for k in order:
         y, x = int(ys[k]), int(xs[k])
+        y0, y1, x0, x1 = max(0, y - reach), min(h, y + reach + 1), max(0, x - reach), min(w, x + reach + 1)
+        yy, xx = np.mgrid[y0:y1, x0:x1]
         d_um = np.hypot(yy - y, xx - x) * px_um
-        bg = float(np.median(img[(d_um > r_in) & (d_um <= r_out)]))
-        peak = float(img[d_um <= 1.0].max())
+        part = img[y0:y1, x0:x1]
+        bg = float(np.median(part[(d_um > r_in) & (d_um <= r_out)]))
+        peak = float(part[d_um <= 1.0].max())
         half = bg + 0.5 * (peak - bg)
-        labels, _ = ndimage.label((img >= half) & (d_um <= mc["max_radius_um"]))
-        lab = labels[y, x]
+        labels, _ = ndimage.label((part >= half) & (d_um <= mc["max_radius_um"]))
+        lab = labels[y - y0, x - x0]
         if not lab or (labels == lab).sum() < min_px:
             continue
+        mask = np.zeros(img.shape, bool)
+        mask[y0:y1, x0:x1] = labels == lab
         found.append({"y": y, "x": x, "peak": peak, "local_bg": bg,
-                      "prominence": peak - bg, "mask": labels == lab})
+                      "prominence": peak - bg, "mask": mask})
         if len(found) == mc["n_candidates"]:
             break
     return found

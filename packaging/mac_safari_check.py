@@ -44,7 +44,16 @@ def until(driver, script, what, seconds=30):
 
 def main(project):
     post("select", {"path": str(Path(project).resolve())})
-    driver = webdriver.Safari()
+    driver = None
+    for attempt in range(3):        # the first session after "safaridriver --enable" often times out
+        try:
+            driver = webdriver.Safari()
+            break
+        except Exception as exc:
+            print(f"Safari did not start (attempt {attempt + 1}): {str(exc).splitlines()[0]}")
+            time.sleep(10)
+    if driver is None:
+        sys.exit("Safari: no automation session could be started on this machine")
     try:
         print("Safari", driver.capabilities.get("browserVersion"))
         driver.get(HOME)
