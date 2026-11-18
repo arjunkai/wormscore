@@ -126,17 +126,27 @@ def test_brightness_correction_along_z_gives_the_range_and_a_flag():
     assert (meta["system"], meta["bits"], meta["pixel_um"], meta["z_step_um"]) == ("Olympus FluoView Software", 12, 0.9944, 1.49)
 
 
-def test_two_records_of_the_laser_power_are_both_written_and_flagged():
+def test_two_records_of_the_laser_power_are_settled_by_the_files_second_record():
     """In 10 of 23 real files the first plane's record of a laser's share is not the image's (here 1%
-    against 0.1%). The image's value is the one Bio-Formats reports; which one the scan used cannot be
-    told from the file, so both are in the settings text and the image is flagged."""
+    against 0.1%). The file records the share a second time in both places (the value set in the
+    software), and there the plane agrees with the image (0.1 and 0.1): the image's share stands. In
+    1.26.14 both were written and the image flagged, which put this series in another settings group than
+    the series taken just before it at the same settings."""
     meta = R._oir_meta(xml("sequence.image"), [xml("sequence.plane0")], GFP)
     # only the two channels that were scanned are in the file: CH1 (DAPI) and CH4 (Cy5) were switched off
     assert meta["channel_names"] == ["CH2 FITC", "CH3 TRITC"] and meta["channel_roles"] == ["MARKER", "OTHER"]
-    assert meta["settings"] == "488nm@0.1% (first plane: 1%)"           # FV4000 detectors: no voltage, gain 1
-    assert meta["flags"] == ["the file records two values: 488 nm laser 0.1% in the image's settings, 1% in the "
-                             "first plane's record (check in the Olympus software)"]
+    assert meta["settings"] == "488nm@0.1%" and meta["flags"] == []     # FV4000 detectors: no voltage, gain 1
     assert (meta["system"], meta["bits"]) == ("Olympus FV4000", 16)
+    # without a second record in the plane, or with one that does not agree, nothing settles it:
+    # both shares are written and the image is flagged, never guessed
+    second = "<commonparam:optionalTransmissivity>0.1</commonparam:optionalTransmissivity>"
+    plane = xml("sequence.plane0")
+    assert plane.count(second) == 1
+    for other in (second.replace("0.1", "1.0"), ""):
+        meta = R._oir_meta(xml("sequence.image"), [plane.replace(second, other)], GFP)
+        assert meta["settings"] == "488nm@0.1% (first plane: 1%)"
+        assert meta["flags"] == ["the file records two values: 488 nm laser 0.1% in the image's settings, 1% in the "
+                                 "first plane's record (check in the Olympus software)"]
     alone = R._oir_meta(xml("sequence.image"), [], GFP)
     assert alone["settings"] == "488nm@0.1%" and alone["flags"] == []
 

@@ -951,6 +951,7 @@ def _oir_channels(root):
             "transmitted": bool(TRANSMITTED_NAME.fullmatch(device) or OIR_TRANSMITTED.search(detector)),
             # its own laser lines that are on; "lit" is every line that is on in its phase
             **{key: [{"id": i, "nm": lit[i], "share": _num(_said(shares.get(i), "transmissivity")),
+                      "set": _num(_said(shares.get(i), "optionalTransmissivity")),
                       "power": _num(_said(shares.get(i), "power"))} for i in ids]
                for key, ids in (("lasers", mine), ("lit", list(lit)))},
             "emission": _num(_said(ch, "dyeData/emissionWavelength")),
@@ -966,7 +967,8 @@ def _oir_channels(root):
 def _oir_planes(frames, ch):
     """What each plane's own block records for one channel: detector voltage, offset and gain, and the
     share of each of its lasers."""
-    seen = {"voltage": [], "offset": [], "gain": [], **{l["id"]: [] for l in ch["lasers"]}}
+    seen = {"voltage": [], "offset": [], "gain": [], **{l["id"]: [] for l in ch["lasers"]},
+            **{("set", l["id"]): [] for l in ch["lasers"]}}
     for xml in frames:
         value = next(iter(_at(ET.fromstring(xml), "acquisitionValue")), None)
         for p in _at(value, "pmt"):
@@ -976,6 +978,7 @@ def _oir_planes(frames, ch):
         for l in _at(value, "laser"):
             if l.get("laserDataId") in seen:
                 seen[l.get("laserDataId")].append(_num(_said(l, "transmissivity")))
+                seen[("set", l.get("laserDataId"))].append(_num(_said(l, "optionalTransmissivity")))
     return {k: sorted({v for v in vs if v is not None}) for k, vs in seen.items()}
 
 
@@ -988,20 +991,31 @@ def _oir_settings(ch, root, frames):
     The values are those of the image's settings block, which is also what Bio-Formats reports. Each
     plane has a record of its own. With brightness correction along z the planes differ, and the text
     gives the range over the planes. Without it, 10 of 23 real files have a first plane whose laser share
-    is another number than the image's (for example 1% against 0.1%); which one the scan used cannot be
-    told from the file, so both are written and the image is flagged. Two images therefore share a
-    settings text only if both records are equal."""
+    ("transmissivity") is another number than the image's (for example 1% against 0.1%).
+
+    1.26.17: the file settles most of these itself. The share is recorded a second time in both places, as
+    the value set in the software before a neutral density filter ("optionalTransmissivity"), and that
+    record is the same in the image and in the plane in every one of the 23 files; it also fits the image's
+    share (equal to it, or ten times it with the 10% filter in). So the image's share has three of the
+    four records behind it, and the plane's own "transmissivity" is the one left over. In four series of
+    one session, two of them with a plane that says 1% where the image says 0.1%, the pixels are equally
+    bright, not ten times brighter. The image's share is therefore used alone when the plane's second
+    record agrees with the image's. Where a file has no second record, or it does not agree, both shares
+    are written and the image is flagged, as in 1.26.14."""
     ch = {**ch, "lasers": ch["lasers"] or ch["lit"]}
     corrected = _said(root, "acquisition/imagingParam/brightnessAdjustmentParam/enable") == "true"
     planes = _oir_planes(frames if corrected else frames[:1], ch)
     parts, varies, differs = [], [], []
 
-    def value(key, stated, what, unit=""):
-        """(every value recorded, its text): one value, the range over the planes, or both records."""
+    def value(key, stated, what, unit="", settled=False):
+        """(every value recorded, its text): one value, the range over the planes, or both records.
+        settled: the file's second record of this value agrees between the image and the plane."""
         seen = planes.get(key, [])
         every = sorted(set(seen + ([stated] if stated is not None else [])))
         if corrected and len(every) > 1:
             varies.append(what)
+        elif stated is not None and seen and seen != [stated] and settled:
+            return [stated], f"{stated:g}{unit}"
         elif stated is not None and seen and seen != [stated]:
             differs.append(f"{what} {stated:g}{unit} in the image's settings, {_span(seen, unit)} in the first plane's record")
             return every, f"{stated:g}{unit} (first plane: {_span(seen, unit)})"
@@ -1018,7 +1032,8 @@ def _oir_settings(ch, root, frames):
         parts.append(f"offset {offset_text}")
     lasers = []
     for l in ch["lasers"]:
-        share, share_text = value(l["id"], l["share"], f"{l['nm']:g} nm laser" if l["nm"] is not None else "laser", "%")
+        share, share_text = value(l["id"], l["share"], f"{l['nm']:g} nm laser" if l["nm"] is not None else "laser", "%",
+                                  settled=l.get("set") is not None and planes.get(("set", l["id"])) == [l["set"]])
         if l["nm"] is None or not share:
             continue
         lasers.append(f"{l['nm']:g}nm@{share_text}" + (f" of {l['power']:g}%" if l["power"] not in (None, 100.0) else ""))

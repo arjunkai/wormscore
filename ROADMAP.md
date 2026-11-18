@@ -31,6 +31,18 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.17: **Olympus `.oir`: a laser's power that the file records twice is settled from the file.**
+  - In 10 of 23 real files the first plane's record of a laser's share differs from the image's (1% against
+    0.1%). 1.26.14 wrote both and flagged the image, which also put it in another settings group than
+    images taken at the same settings.
+  - The file records the share a second time in both places, as the value set in the software. That
+    record agreed between the image and the plane in all 23 files and fits the image's share, and in four
+    series of one session the pixels follow the image's share (equally bright, where the plane's value
+    would mean ten times brighter). The image's share is now used alone when that second record agrees.
+  - A file without the second record, or where it does not agree, still gets both values and the flag.
+  - **Who is affected:** projects with `.oir` files scanned with 1.26.14 to 1.26.16. After the next Scan data
+    the settings text of such images loses "(first plane: ...)"; the Build card says if coded images
+    change settings group.
 - 1.26.16: **Fixes from an independent review of 1.26.13 to 1.26.15.**
   - **Add new images** never gives a new image a code that already has a saved score or outlines. An Add new images that failed in an earlier version could leave a coded image without a key row;
     1.26.15 replaced it with another image under the same code, with its score still saved.

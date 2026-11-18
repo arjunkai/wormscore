@@ -114,8 +114,12 @@ If not exactly one channel matches, the marker is UNRESOLVED and the image is ex
   were set. An image the Olympus software made from another (system name ending in "(Modified)", for
   example a projection) is flagged, and so is one whose size is not the scanned size, because its pixel
   size may not apply. Some files record two values for a laser's share, one in the image's settings and
-  another in the first plane's record: the image's value is used (it is the one Bio-Formats reports), both
-  are written in the settings, and the image is flagged so it can be checked in the Olympus software.
+  another in the first plane's record. The file records the share a second time in both places (the value
+  set in the software, before a neutral density filter). Where that second record agrees between the
+  image and the plane, the image's share is used alone (1.26.17): it is then backed by three of the four
+  records, it is the one Bio-Formats reports, and in series of one session the pixels follow it. This
+  held in all 23 files checked. Where a file has no second record or it does not agree, both shares are
+  written in the settings and the image is flagged so it can be checked in the Olympus software.
   A file with planes missing elsewhere is flagged incomplete and left out at Build. A file cut short, a
   line scan and an overview map without pixels are listed as unreadable with the reason. `.poir`
   archives are not read.
