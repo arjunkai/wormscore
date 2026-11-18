@@ -103,7 +103,8 @@ def imaging_date(acquired):
     a = " ".join(raw.split())
     m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})(?!\d)", a)
     if not m:
-        return acquired_day(a) or a
+        # text from the file that is no date: kept whole, but never as a formula in a spreadsheet
+        return acquired_day(a) or (("'" + a) if a[:1] in ("=", "+", "-", "@") else a)
     p, q, year = (int(x) for x in m.groups())
     if p != q and p <= 12 and q <= 12:
         return f"{m.group(0)} ({UNCLEAR_DATE})"

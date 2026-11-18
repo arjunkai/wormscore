@@ -12,8 +12,8 @@ recognized by Fiji-style names such as `MAX_`, `Projections of`, `C1-`); metadat
 without microscope metadata; reference document; or hidden system file (for example macOS `._` files).
 
 Each raw image (each series of a `.lif`, each scene of a `.czi`, each series of an OME-TIFF, each stage
-position of a Nikon `.nd2`, each Olympus FluoView `.oib` or `.oif`, and each ImageJ hyperstack TIFF in a
-source that turns ImageJ reading on) is listed
+position of a Nikon `.nd2`, each Olympus FluoView `.oib` or `.oif`, each Olympus `.oir`, and each ImageJ
+hyperstack TIFF in a source that turns ImageJ reading on) is listed
 in `outputs/inventory.csv` with objective, planes, pixel size, z-step, bit depth, channels and the
 acquisition settings that affect brightness (detector gain or voltage, laser power, averaging, exposure).
 Images whose settings differ from the most common value on the same microscope are flagged.
@@ -32,6 +32,11 @@ The settings are those of the reporter channel, read from that channel's own par
   states them, and exposure. A value the channel does not give itself is taken from the instrument's
   detector or light source that the channel names (as Bio-Formats writes converted files; 1.26.12).
 - Olympus: detector voltage, each laser with its transmissivity, and integration.
+- Olympus `.oir` (FV3000, FV4000, FVMPE-RS; 1.26.14): the reporter channel's detector voltage (HV), its gain
+  and offset when they are not 1 and 0, its own laser line with the share let through, a neutral density
+  filter in the laser path, and line or frame averaging. The FV4000's detectors have no voltage, so its
+  settings are the laser and the averaging. With brightness correction along z, voltage and laser power
+  change with depth: the settings give the range over the planes and the image is flagged.
 
 Bit depth is the number of bits the detector used, which sets the saturation level (a 12-bit camera
 saved in a 16-bit file saturates at 4095). A 16-bit Zeiss or OME-TIFF file that does not record it is
@@ -74,6 +79,15 @@ From metadata only:
   `marker.emission_nm` gives a range (for example `[500, 550]` for GFP). Olympus numbers written with a
   decimal comma (`0,207`) are read as decimals. Colour (RGB) camera pictures are not used; `manifest.csv`
   says so in the file's note (1.26.13).
+- **Olympus `.oir`** (1.26.14; files of the FV3000, FV4000 and FVMPE-RS, read with
+  [oirfile](https://github.com/cgohlke/oirfile)): one image per file. Each channel that was scanned has
+  its dye name, its laser line and its detector in the file. The marker is found by the same rules from
+  the dye name (or the channel name if no dye was set), the wavelength of the channel's one laser line,
+  and the dye's emission peak if `marker.emission_nm` gives a range. Brightfield is the channel whose
+  detector is the transmitted-light detector (device `TD`), whatever its position. A multiphoton line
+  (for example 940 nm) matches only if `marker.excitation_nm` lists it. The bit depth is the one the file
+  states (10 or 12 in the FV3000 and FVMPE-RS files checked, 16 in the FV4000's); the date is the file's local time.
+  The file does not record the stage position.
 - **ImageJ hyperstack TIFF:** these files record pixel size and z-step but not which channel is which.
   They are used only if their source in `config.json` has `imagej_tiff` with the channel order, for
   example `{"channels": ["marker", "brightfield"]}`, and optionally the objective; that setting is
@@ -93,6 +107,18 @@ If not exactly one channel matches, the marker is UNRESOLVED and the image is ex
   that is not a length is not used, and the image is left out for having no pixel size.
 - One file of an OME-TIFF set that keeps each plane in its own file ("the metadata lists 5 planes, this
   file holds 1").
+- Olympus `.oir` (1.26.14): a time series and a lambda scan are read at the first time point and the
+  first wavelength (the lambda scan is flagged). A file that the list `matl.omp2info` next to it names as
+  one area of several is flagged "one tile of a tile scan"; tiles are not joined. A scan stopped by hand
+  ends inside a plane: that plane is left out and flagged, and so is a z-stack with fewer planes than
+  were set. An image the Olympus software made from another (system name ending in "(Modified)", for
+  example a projection) is flagged, and so is one whose size is not the scanned size, because its pixel
+  size may not apply. Some files record two values for a laser's share, one in the image's settings and
+  another in the first plane's record: the image's value is used (it is the one Bio-Formats reports), both
+  are written in the settings, and the image is flagged so it can be checked in the Olympus software.
+  A file with planes missing elsewhere is flagged incomplete and left out at Build. A file cut short, a
+  line scan and an overview map without pixels are listed as unreadable with the reason. `.poir`
+  archives are not read.
 - OME-TIFF files written to the 2010 to 2015 schemas are read like current ones. Nikon `.nd2` files from
   before 2010 are listed as unreadable, with the way to convert them.
 - OME-TIFF files written to the 2008 schema describe their channels apart from the pixels (1.26.13; they

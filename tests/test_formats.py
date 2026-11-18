@@ -1,4 +1,4 @@
-"""Nikon .nd2, Olympus .oib/.oif and ImageJ hyperstack TIFF.
+"""Nikon .nd2, Olympus .oib/.oif, one Olympus .oir sample, and ImageJ hyperstack TIFF.
 
 The ImageJ tests write their own small files. The Nikon and Olympus tests use public sample files
 from the OME sample image collection (CC BY 4.0, downloaded once and checked by SHA-256, never stored
@@ -27,6 +27,9 @@ SAMPLES = {
     # image.sc topic 71616 (CC BY 4.0): FluoView FV1000, DAPI and Alexa Fluor 594, 6 planes
     "cord.oib": (f"{OME}/Olympus-FluoView/imagesc-71616/20220824_4492_cord_dapi__iba568_60x.oib",
                  "580d36a9d0dcac1c77ccd6780ad988e94e10cf90d065b9da14fe0e1de83c01af"),
+    # image.sc topic 105684, Zenodo record 14417737 (CC BY 4.0): FV4000, FITC and TRITC, 8 time points
+    "sequence.oir": (f"{OME}/Olympus-OIR/imagesc-105684/1202-interval_10sec_sequence_frame.oir",
+                     "3796258be91390c370388fcbccb77cd14f0ed90fc5b53c055aa577c843ce0b1c"),
 }
 
 
@@ -156,6 +159,18 @@ def test_nikon_nd2_sample():
     stack = R.read(img, 0)
     assert stack.shape == (17, 1664, 1750) and stack.dtype == np.uint8
     assert R.images_in(sample("zenodo17186598.nd2"), cfg_with())[0]["channel_roles"] == ["OTHER"]   # no match: never guessed
+
+
+def test_olympus_oir_sample():
+    """1.26.13. The pixels are the ones Bio-Formats 8.5.0 reads (compared once; the checksums hold that)."""
+    img, = R.images_in(sample("sequence.oir"), cfg_with())
+    assert (img["format"], img["system"], img["objective"]) == ("Olympus OIR", "Olympus FV4000", "10x/0.4 (UPLXAPO10X)")
+    assert (img["n_z"], img["n_t"], img["width"], img["height"], img["pixel_um"], img["bits"]) == (1, 8, 512, 512, 2.4859, 16)
+    assert img["channel_names"] == ["CH2 FITC", "CH3 TRITC"] and img["channel_roles"] == ["MARKER", "OTHER"]
+    assert img["settings"] == "488nm@0.1%" and img["acquired"] == "2024-12-02 10:04:24" and img["flags"] == []
+    sums = [hashlib.sha256(R.read(img, c).tobytes()).hexdigest()[:16] for c in (0, 1)]       # first time point
+    assert sums == ["e5f28fd881414dc0", "db98a804b6e3454b"]
+    assert R.read(img, 0).shape == (1, 512, 512) and R.read(img, 0).dtype == np.uint16
 
 
 def test_olympus_oib_and_oif_samples(tmp_path):

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="ASCII"?>
+<lsmframe:frameProperties xmlns:base="http://www.olympus.co.jp/hpf/model/base" xmlns:commonframe="http://www.olympus.co.jp/hpf/model/commonframe" xmlns:commonparam="http://www.olympus.co.jp/hpf/model/commonparam" xmlns:lsmframe="http://www.olympus.co.jp/hpf/model/lsmframe" xmlns:lsmparam="http://www.olympus.co.jp/hpf/model/lsmparam" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="z067_0_1">
+ <!-- From 'venus stack.oir', OME sample images Olympus-OIR/etienne, CC BY 4.0, Etienne Labrie-Dion (FVMPE-RS, FluoView 1.3.1.83). Shortened: elements left out, nothing changed. -->
+ <commonframe:general>
+  <base:name>z067_0_1</base:name>
+ </commonframe:general>
+ <commonframe:imageDefinition>
+  <base:colorType>GlayScale</base:colorType>
+  <base:width>512</base:width>
+  <base:height>512</base:height>
+  <base:depth>2</base:depth>
+  <base:bitCounts>12</base:bitCounts>
+ </commonframe:imageDefinition>
+ <commonframe:channelImageDefinition channelId="2344d1b7-79e9-408e-9bc6-6fca2463e871">
+  <commonframe:bitCounts>12</commonframe:bitCounts>
+ </commonframe:channelImageDefinition>
+ <commonframe:axisValue>
+  <commonframe:axisType>ZSTACK</commonframe:axisType>
+  <commonframe:position>5802.06</commonframe:position>
+ </commonframe:axisValue>
+ <lsmframe:acquisitionValue>
+  <lsmframe:pmt channelId="89b32bea-2149-4552-b6bf-fd31ed44f968" detectorId="__FV30-RXD_D_1__">
+   <lsmparam:voltage>746</lsmparam:voltage>
+   <lsmparam:offset>0</lsmparam:offset>
+   <lsmparam:gain>1.0</lsmparam:gain>
+  </lsmframe:pmt>
+  <lsmframe:pmt channelId="9fbc8dad-e81a-48b8-acc1-c0a652a0c983" detectorId="__FV30-RXD_D_2__">
+   <lsmparam:voltage>596</lsmparam:voltage>
+   <lsmparam:offset>0</lsmparam:offset>
+   <lsmparam:gain>1.0</lsmparam:gain>
+  </lsmframe:pmt>
+  <lsmframe:pmt channelId="3ddbc954-0cb9-4da5-b41e-71adcd2be498" detectorId="__FV30-RXD_D_4__">
+   <lsmparam:voltage>193</lsmparam:voltage>
+   <lsmparam:offset>10</lsmparam:offset>
+   <lsmparam:gain>1.0</lsmparam:gain>
+  </lsmframe:pmt>
+  <lsmframe:pmt channelId="2344d1b7-79e9-408e-9bc6-6fca2463e871" detectorId="__FV30-RXD_D_3__">
+   <lsmparam:voltage>743</lsmparam:voltage>
+   <lsmparam:offset>19</lsmparam:offset>
+   <lsmparam:gain>1.0</lsmparam:gain>
+  </lsmframe:pmt>
+  <lsmframe:laser xsi:type="commonparam:MPELaserParam" laserDataId="INSIGHT DS-OL_65792Imaging_main_phase_1">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>30.1</commonparam:transmissivity>
+  </lsmframe:laser>
+  <lsmframe:zPosition>5802.06</lsmframe:zPosition>
+ </lsmframe:acquisitionValue>
+</lsmframe:frameProperties>

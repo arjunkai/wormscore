@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="ASCII"?>
+<lsmframe:frameProperties xmlns:base="http://www.olympus.co.jp/hpf/model/base" xmlns:commonframe="http://www.olympus.co.jp/hpf/model/commonframe" xmlns:commonparam="http://www.olympus.co.jp/hpf/model/commonparam" xmlns:lsmframe="http://www.olympus.co.jp/hpf/model/lsmframe" xmlns:lsmparam="http://www.olympus.co.jp/hpf/model/lsmparam" id="z001_0_1">
+ <!-- From '110818_hek293_splitSCN1AGFP1to10and11 2D posttrans 20x_hoechst_phal.oir', Zenodo record 1490851, CC BY 4.0 (FV3000, FV31S 2.2.1.114). Shortened: elements left out, nothing changed. -->
+ <commonframe:general>
+  <base:name>z001_0_1</base:name>
+ </commonframe:general>
+ <commonframe:imageDefinition>
+  <base:colorType>GlayScale</base:colorType>
+  <base:width>1024</base:width>
+  <base:height>1024</base:height>
+  <base:depth>2</base:depth>
+  <base:bitCounts>12</base:bitCounts>
+ </commonframe:imageDefinition>
+ <commonframe:channelImageDefinition channelId="37d38e91-17e0-4248-8da0-be8dd89ed920">
+  <commonframe:bitCounts>12</commonframe:bitCounts>
+ </commonframe:channelImageDefinition>
+ <commonframe:channelImageDefinition channelId="6928a7fe-c13b-454a-8adb-8e800003571d">
+  <commonframe:bitCounts>12</commonframe:bitCounts>
+ </commonframe:channelImageDefinition>
+ <commonframe:channelImageDefinition channelId="28b35be3-5b07-47a6-bd90-0fc039ac5d31">
+  <commonframe:bitCounts>12</commonframe:bitCounts>
+ </commonframe:channelImageDefinition>
+ <commonframe:axisValue>
+  <commonframe:axisType>ZSTACK</commonframe:axisType>
+  <commonframe:position>1539.5</commonframe:position>
+ </commonframe:axisValue>
+ <lsmframe:acquisitionValue>
+  <lsmframe:pmt channelId="bae36d02-7572-49de-82ca-fa7479672fab" detectorId="__FV30-HSD_D_1__">
+   <lsmparam:voltage>500</lsmparam:voltage>
+   <lsmparam:offset>0</lsmparam:offset>
+   <lsmparam:gain>1.0</lsmparam:gain>
+  </lsmframe:pmt>
+  <lsmframe:pmt channelId="37d38e91-17e0-4248-8da0-be8dd89ed920" detectorId="__FV30-HSD_D_1__">
+   <lsmparam:voltage>458</lsmparam:voltage>
+   <lsmparam:offset>3</lsmparam:offset>
+   <lsmparam:gain>1.0</lsmparam:gain>
+  </lsmframe:pmt>
+  <lsmframe:pmt channelId="6928a7fe-c13b-454a-8adb-8e800003571d" detectorId="__FV30-HSD_D_2__">
+   <lsmparam:voltage>465</lsmparam:voltage>
+   <lsmparam:offset>0</lsmparam:offset>
+   <lsmparam:gain>1.0</lsmparam:gain>
+  </lsmframe:pmt>
+  <lsmframe:pmt channelId="28b35be3-5b07-47a6-bd90-0fc039ac5d31" detectorId="__FV30-HSD_D_3__">
+   <lsmparam:voltage>552</lsmparam:voltage>
+   <lsmparam:offset>0</lsmparam:offset>
+   <lsmparam:gain>1.0</lsmparam:gain>
+  </lsmframe:pmt>
+  <lsmframe:laser laserDataId="LD405_65792Imaging_main_phase_Lambda">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD445_65793Imaging_main_phase_Lambda">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD488_65794Imaging_main_phase_Lambda">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD514_65795Imaging_main_phase_Lambda">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD561_65796Imaging_main_phase_Lambda">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD594_65797Imaging_main_phase_Lambda">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD640_65798Imaging_main_phase_Lambda">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD405_65792Imaging_main_phase_1">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>1.51</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>10.1</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD445_65793Imaging_main_phase_1">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD488_65794Imaging_main_phase_1">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>1.2</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>12.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD514_65795Imaging_main_phase_1">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD561_65796Imaging_main_phase_1">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>1.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>17.5</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD594_65797Imaging_main_phase_1">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:laser laserDataId="LD640_65798Imaging_main_phase_1">
+   <commonparam:power>100.0</commonparam:power>
+   <commonparam:transmissivity>0.0</commonparam:transmissivity>
+   <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+  </lsmframe:laser>
+  <lsmframe:zPosition>1539.5</lsmframe:zPosition>
+ </lsmframe:acquisitionValue>
+</lsmframe:frameProperties>

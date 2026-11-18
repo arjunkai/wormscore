@@ -216,6 +216,9 @@ def test_ome_tiff_2008_schema_channels_are_read_if_the_file_states_them(tmp_path
     (im,) = readers.ome_images(path, cfg)
     assert im["channel_roles"] == ["UNRESOLVED", "UNRESOLVED"]
     assert im["flags"] == ["the file does not say which channel is which (an OME schema from before 2009)"]
+    # a channel count no file can have is compared, not counted out (it would fill the memory)
+    md = readers.ET.fromstring(OME_2008.format(channels=NAMED, planes="").replace('SizeC="2"', 'SizeC="99999999999"'))
+    assert readers._ome_root(md).find(".//o:Pixels", readers.OME_NS).get("ChannelsNotStated") == "1"
 
 
 def test_a_nikon_colour_camera_file_says_why_it_is_not_used(tmp_path, monkeypatch):

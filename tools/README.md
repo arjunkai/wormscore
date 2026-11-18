@@ -22,7 +22,7 @@ Run it from the repository folder:
 python -I -X utf8 tools/bioformats_referee.py FOLDER [FOLDER ...] --bftools PATH\TO\bftools --out report.txt
 ```
 
-- `FOLDER`: folders with real `.lif`, `.czi`, `.nd2`, `.oib`, `.oif` or `.ome.tif` files, searched in depth.
+- `FOLDER`: folders with real `.lif`, `.czi`, `.nd2`, `.oib`, `.oif`, `.oir` or `.ome.tif` files, searched in depth.
 - `--bftools`: the unzipped folder (or set `BFTOOLS`, or put it on `PATH`). The script says what to install
   if Java or Bio-Formats is missing.
 - `--src`: the wormscore source to check. Default: this checkout's `src`. (`-I` makes Python ignore
@@ -41,5 +41,15 @@ differences per format.
 Bio-Formats is a second opinion, not the truth. Known cases where it is the one that is off: Zeiss camera
 files written as 12-bit are reported as 16 significant bits, and Leica channel names are detector or dye
 names where wormscore lists the colour table. Check a difference against the microscope software.
+
+Olympus `.oir`: Bio-Formats does not write the laser's share into its OME-XML, so the script takes it from
+the file's own metadata as Bio-Formats lists it (`Laser LD488 transmissivity`). Bio-Formats keeps one value
+per laser, the last phase's; for a scan with several phases the script checks wormscore's value against
+every laser entry of the file and prints a note. It counts each wavelength of a lambda scan as a channel
+(a note), and it leaves out a last plane that was not finished, as wormscore does. A gain of 1 and a
+voltage of 0 are left out of wormscore's settings on purpose (a note).
+
+Pixels are not compared by this script. For `.oir` they were compared once with `bfconvert` (every
+channel and plane of 11 files; the reading is the same), with a script kept outside the repository.
 
 Real images are never committed to this repository; keep sample files and the cache outside it.

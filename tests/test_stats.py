@@ -64,4 +64,5 @@ def test_imaging_date_of_locale_dates_is_a_whole_day_not_a_cut_off_string():
     assert day("06/03/2009 10:56:46 AM") == "06/03/2009 (day or month first: not known)"
     # not a date wormscore knows: the text as the file has it, whole
     assert day("sometime in March") == "sometime in March"
+    assert day("=HYPERLINK(1)") == "'=HYPERLINK(1)"            # never a formula when opened in a spreadsheet
     assert day("31/31/2020 10:00:00") == "31/31/2020 10:00:00"

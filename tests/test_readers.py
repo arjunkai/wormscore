@@ -100,6 +100,19 @@ def test_gpl_leica_reader_is_not_used():
     assert not any(r.lower().startswith("readlif") for r in md.requires("wormscore"))
 
 
+def test_the_olympus_oir_library_can_be_bundled():
+    """oirfile reads .oir files (1.26.14). It is BSD-3-Clause, so the MIT app may bundle it, and it is a
+    plain dependency in pyproject.toml, which is what puts it into the Windows and Mac apps."""
+    import tomllib
+    from pathlib import Path
+    meta = md.metadata("oirfile")
+    licence = " ".join(filter(None, [meta.get("License-Expression"), meta.get("License")]))
+    assert "BSD-3-Clause" in licence and "GPL" not in licence.upper()
+    project = tomllib.loads((Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    assert any(d.startswith("oirfile") for d in project["dependencies"])
+    assert "oirfile" in sys.modules             # loaded with the readers, like oiffile: it adds no large import
+
+
 def test_dye_name_breaks_a_tie_between_channels_on_the_same_laser(tmp_path):
     """Six channels as in a NeuroPAL stack: GFP and a second fluorophore are both excited at 488 nm,
     the transmitted channel is named 'T PMT'. The GFP channel by dye name is the marker."""

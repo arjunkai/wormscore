@@ -42,7 +42,7 @@ INVENTORY_FIELDS = [
 
 
 def software_versions():
-    import czifile, liffile, oiffile, PIL, scipy, tifffile  # noqa: E401
+    import czifile, liffile, oiffile, oirfile, PIL, scipy, tifffile  # noqa: E401
     from importlib.metadata import PackageNotFoundError, version
     try:
         nd2 = version("nd2")          # read from the package record; the reader itself loads only for .nd2 files
@@ -51,7 +51,7 @@ def software_versions():
     return {"wormscore": __version__, "python": sys.version.split()[0], "numpy": np.__version__,
             "scipy": scipy.__version__, "pillow": PIL.__version__, "tifffile": tifffile.__version__,
             "liffile": liffile.__version__, "czifile": czifile.__version__, "oiffile": oiffile.__version__,
-            "nd2": nd2}
+            "oirfile": oirfile.__version__, "nd2": nd2}
 
 
 # ------------------------------------------------------------------ inventory

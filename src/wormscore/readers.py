@@ -2,15 +2,19 @@
 
 Supported raw formats: Leica .lif (one image per series), Zeiss .czi (one per scene),
 OME-TIFF (one per series; metadata in the file or in a .companion.ome next to it), Nikon .nd2
-(one per stage position), Olympus FluoView .oib and .oif (one per file), and, only for sources
-that turn it on, ImageJ hyperstack TIFF (channel order stated in config.json).
+(one per stage position), Olympus FluoView .oib and .oif (one per file), Olympus/Evident .oir from the
+FV3000, FV4000 and FVMPE-RS (one per file), and, only for sources that turn it on, ImageJ hyperstack
+TIFF (channel order stated in config.json).
 
 Every image becomes a dict with the same fields: where it came from, what it is, how
 it was taken, and which channel is the marker or brightfield. Channel identity comes
 from metadata only. If the metadata does not settle it, the channel is UNRESOLVED.
 """
 import hashlib
+import logging
+import os
 import re
+import struct
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
@@ -19,6 +23,7 @@ from pathlib import Path
 import czifile
 import numpy as np
 import oiffile
+import oirfile
 import tifffile
 from liffile import LifFile
 
@@ -39,6 +44,7 @@ def sha256(path):
 
 
 OIF_PART = "part of an Olympus .oif image (read with its .oif file)"
+OIR_PART = "part of an Olympus .oir image (read with its .oir file)"
 NOT_USED = "other image (no microscope metadata; not used)"
 
 
@@ -48,7 +54,7 @@ def file_role(path):
         return "system hidden file (not data)"
     if any(part.lower().endswith(".oif.files") for part in path.parts[:-1]):
         return OIF_PART
-    if low.endswith((".lif", ".czi", ".nd2", ".oib", ".oif")):
+    if low.endswith((".lif", ".czi", ".nd2", ".oib", ".oif", ".oir")):
         return "raw image"
     if low.endswith(".ome.tif") or low.endswith(".ome.tiff"):
         return "derived (made later from a raw image)" if DERIVED.search(name) else "raw image"
@@ -60,6 +66,9 @@ def file_role(path):
         return NOT_USED
     if low.endswith((".lof", ".xlef", ".xlif", ".lock")):
         return "Leica LAS X project file (not read; export to .lif)"
+    # a large .oir acquisition continues in files named like it, without an extension: scan_00001, scan_00002
+    if re.fullmatch(r".+_\d{5}", name) and path.with_name(name[:-6] + ".oir").is_file():
+        return OIR_PART
     return "reference (not an image)"
 
 
@@ -555,7 +564,8 @@ def _ome_logical_channels(md):
                     if cc.get("Pixels") in (None, px.get("ID")) and (cc.get("Index") or "").isdigit():
                         owner.setdefault(int(cc.get("Index")), []).append(lc)
             n = int(px.get("SizeC") or 0) if (px.get("SizeC") or "").isdigit() else 0
-            if not n or sorted(owner) != list(range(n)) or any(len(v) != 1 for v in owner.values()):
+            # n comes from the file: it is compared, never used to build a list (a file can state any number)
+            if not 0 < n <= 64 or len(owner) != n or any(not 0 <= k < n or len(v) != 1 for k, v in owner.items()):
                 px.set("ChannelsNotStated", "1")
                 continue
             for k in range(n):
@@ -874,6 +884,326 @@ def olympus_images(path, cfg):
     }]
 
 
+# ------------------------------------------------------------------ Olympus / Evident OIR
+
+# 1.26.14: the .oir files of the FV3000, FV4000 and FVMPE-RS (FluoView 1.x, FV31S 2.x, FV40S 3.x). The
+# container is read with oirfile (BSD-3); everything below is read from the file's own XML, by the names
+# found in real files (sources in tests/test_olympus_oir.py). Each channel has an entry under imageInfo
+# (it has pixels; "order" is its place in the file) and one under acquisition/phase (its detector, dye
+# and laser), tied by the channel's id. Detector voltage, offset and gain are in pmt[channelId]; the
+# laser's share let through is in mainLaser[laserDataId].
+
+OIR_MAGIC = b"OLYMPUSRAWFORMAT"
+OIR_UNITS = {"MICRO_METER": 1.0, "NANO_METER": 1e-3, "MILLI_METER": 1e3}
+OIR_TRANSMITTED = re.compile(r"TD_D_\d")        # detector ids "__FV31-LETD_D_1__" (FV3000), "__FV40-LETD_D_1__" (FV4000)
+
+
+def _tag(el):
+    return el.tag.rsplit("}", 1)[-1]
+
+
+def _at(el, path):
+    """The elements at a path of tag names below el. Namespace prefixes are not part of the names."""
+    found = [el] if el is not None else []
+    for name in path.split("/"):
+        found = [k for e in found for k in e if _tag(k) == name]
+    return found
+
+
+def _said(el, path):
+    return next(((e.text or "").strip() for e in _at(el, path) if (e.text or "").strip()), "")
+
+
+def _span(values, unit=""):
+    """A value as text, or the lowest and the highest when it is not the same in every plane."""
+    vs = sorted(set(values))
+    return f"{vs[0]:g}{unit}" if len(vs) == 1 else f"{vs[0]:g}-{vs[-1]:g}{unit}"
+
+
+def _oir_channels(root):
+    """The channels that have pixels, in the file's order, each with what its own blocks state."""
+    acq = next(iter(_at(root, "acquisition")), None)
+    param = next(iter(_at(acq, "imagingParam")), None)
+    own = {c.get("id"): (phase, c) for phase in _at(acq, "phase") for c in _at(phase, "group/channel")}
+    pmts = {p.get("channelId"): p for p in _at(param, "pmt")}
+    shares = {l.get("laserDataId"): l for l in _at(param, "mainLaser")}
+    out = []
+    for info in _at(root, "imageInfo/phase/group/channel"):
+        phase, ch = own.get(info.get("id"), (None, None))
+        lit = {l.get("id"): _num(_said(l, "wavelength")) for l in _at(phase, "imagingMainLaser") if l.get("enable") == "true"}
+        mine = [i for i in (l.text for l in _at(ch, "laserDataId")) if i in lit]
+        pmt = pmts.get(info.get("id"))
+        nd = next(iter(_at(phase, "productData/lightpath/mainLaserNDFilter")), None)
+        device, detector = _said(ch, "deviceName"), (ch.get("detectorId") or "") if ch is not None else ""
+        out.append({
+            "id": info.get("id"), "order": _num(info.get("order") or ""), "stated": ch is not None,
+            "name": _said(info, "name") or _said(ch, "name"), "dye": _said(ch, "dyeName"),
+            "device": device, "detector": detector,
+            # transmitted light: the detector is the transmitted-light detector (device "TD")
+            "transmitted": bool(TRANSMITTED_NAME.fullmatch(device) or OIR_TRANSMITTED.search(detector)),
+            # its own laser lines that are on; "lit" is every line that is on in its phase
+            **{key: [{"id": i, "nm": lit[i], "share": _num(_said(shares.get(i), "transmissivity")),
+                      "power": _num(_said(shares.get(i), "power"))} for i in ids]
+               for key, ids in (("lasers", mine), ("lit", list(lit)))},
+            "emission": _num(_said(ch, "dyeData/emissionWavelength")),
+            "bits": _num(_said(info, "imageDefinition/bitCounts")),
+            "pmt": {k: _num(_said(pmt, k)) for k in ("voltage", "offset", "gain")} if pmt is not None else {},
+            "nd": _num(_said(nd, "transmissivity")) if nd is not None and _said(nd, "name") != "Empty" else None,
+            "length": {a: _num(_said(info, f"length/{a}")) for a in "xz"},
+            "unit": _said(info, "pixelUnit/x"),
+        })
+    return out
+
+
+def _oir_planes(frames, ch):
+    """What each plane's own block records for one channel: detector voltage, offset and gain, and the
+    share of each of its lasers."""
+    seen = {"voltage": [], "offset": [], "gain": [], **{l["id"]: [] for l in ch["lasers"]}}
+    for xml in frames:
+        value = next(iter(_at(ET.fromstring(xml), "acquisitionValue")), None)
+        for p in _at(value, "pmt"):
+            if p.get("channelId") == ch["id"]:
+                for k in ("voltage", "offset", "gain"):
+                    seen[k].append(_num(_said(p, k)))
+        for l in _at(value, "laser"):
+            if l.get("laserDataId") in seen:
+                seen[l.get("laserDataId")].append(_num(_said(l, "transmissivity")))
+    return {k: sorted({v for v in vs if v is not None}) for k, vs in seen.items()}
+
+
+def _oir_settings(ch, root, frames):
+    """(settings text, flags) of the reporter channel, from its own values: detector voltage (HV), gain and
+    offset when they are not 1 and 0, each of its lasers that is on with the share let through, a neutral
+    density filter in the laser path, and averaging. If the channel names no laser of its own, every laser
+    that is on in its phase is listed, so a change of any of them changes the text.
+
+    The values are those of the image's settings block, which is also what Bio-Formats reports. Each
+    plane has a record of its own. With brightness correction along z the planes differ, and the text
+    gives the range over the planes. Without it, 10 of 23 real files have a first plane whose laser share
+    is another number than the image's (for example 1% against 0.1%); which one the scan used cannot be
+    told from the file, so both are written and the image is flagged. Two images therefore share a
+    settings text only if both records are equal."""
+    ch = {**ch, "lasers": ch["lasers"] or ch["lit"]}
+    corrected = _said(root, "acquisition/imagingParam/brightnessAdjustmentParam/enable") == "true"
+    planes = _oir_planes(frames if corrected else frames[:1], ch)
+    parts, varies, differs = [], [], []
+
+    def value(key, stated, what, unit=""):
+        """(every value recorded, its text): one value, the range over the planes, or both records."""
+        seen = planes.get(key, [])
+        every = sorted(set(seen + ([stated] if stated is not None else [])))
+        if corrected and len(every) > 1:
+            varies.append(what)
+        elif stated is not None and seen and seen != [stated]:
+            differs.append(f"{what} {stated:g}{unit} in the image's settings, {_span(seen, unit)} in the first plane's record")
+            return every, f"{stated:g}{unit} (first plane: {_span(seen, unit)})"
+        return every, _span(every, unit) if every else ""
+
+    volt, volt_text = value("voltage", ch["pmt"].get("voltage"), "detector voltage")
+    gain, gain_text = value("gain", ch["pmt"].get("gain"), "gain")
+    offset, offset_text = value("offset", ch["pmt"].get("offset"), "offset")
+    if any(volt):
+        parts.append(f"HV {volt_text} V")
+    if gain and set(gain) != {1.0}:
+        parts.append(f"gain {gain_text}")
+    if any(offset):
+        parts.append(f"offset {offset_text}")
+    lasers = []
+    for l in ch["lasers"]:
+        share, share_text = value(l["id"], l["share"], f"{l['nm']:g} nm laser" if l["nm"] is not None else "laser", "%")
+        if l["nm"] is None or not share:
+            continue
+        lasers.append(f"{l['nm']:g}nm@{share_text}" + (f" of {l['power']:g}%" if l["power"] not in (None, 100.0) else ""))
+    if lasers:
+        # the share is what the software shows; in the files with an ND filter it already includes the filter
+        parts.append(";".join(lasers) + (f" (ND filter {ch['nd']:g}% in)" if ch["nd"] is not None else ""))
+    integration = next(iter(_at(root, "acquisition/imagingParam/method/integration")), None)
+    kind, count = _said(integration, "type"), _said(integration, "count")
+    if kind and kind != "None" and count:
+        how = {"true": "average", "false": "sum"}.get(integration.get("average"), "integration")
+        parts.append(f"{kind.lower()} {how} {count}")
+    flags = []
+    if varies:
+        flags.append(f"brightness is corrected along z: {', '.join(dict.fromkeys(varies))} not the same in every plane "
+                     "(the settings give the range)")
+    if differs:
+        flags.append("the file records two values: " + "; ".join(differs) + " (check in the Olympus software)")
+    return "; ".join(parts), flags
+
+
+def _oir_meta(xml, frames, cfg):
+    """Everything wormscore reads from an .oir file's metadata: xml is its image settings (the lsmimage
+    block), frames the per-plane blocks. Pixels are not needed, so this is tested on the XML of real files."""
+    root = ET.fromstring(xml)
+    chans = _oir_channels(root)
+    flags = []
+    orders = [c["order"] for c in chans]
+    ordered = None not in orders and len(set(orders)) == len(orders) and all(c["stated"] for c in chans)
+    chans.sort(key=lambda c: c["order"] if ordered else 0)
+    # the laser of a channel is used for its role only when it is one line: a lambda channel lists several
+    excitation = [c["lasers"][0]["nm"] if len(c["lasers"]) == 1 else None for c in chans]
+    # emission: the emission peak the file gives for the channel's dye; a channel without a dye has none
+    emission = [c["emission"] for c in chans]
+    dyes = [c["dye"] or None for c in chans]
+    named = [c["dye"] or c["name"] for c in chans]
+    if ordered:
+        roles = [marker_from_named(n, d, ex, c["transmitted"], cfg, em)
+                 for c, n, d, ex, em in zip(chans, named, dyes, excitation, emission)]
+        roles = named_extras(prefer_named_dye(roles, dyes, cfg), cfg, named, dyes, excitation, emission)
+    else:
+        roles = ["UNRESOLVED"] * len(chans)
+        flags.append("the file does not state the order of its channels, or the settings of one of them")
+    mi = pick(roles, "MARKER")
+    settings, varying = _oir_settings(chans[mi], root, frames) if mi is not None else ("", [])
+    system = _said(root, "system/systemName")
+    if system.endswith("(Modified)"):
+        flags.append(f"made or changed in the Olympus software after the scan (the file's system is '{system}')")
+        system = system[:-len("(Modified)")].strip()
+    lens = next(iter(_at(root, "acquisition/microscopeConfiguration/objectiveLens")), None)
+    mag, na, lens_name = _num(_said(lens, "magnification")), _num(_said(lens, "naValue")), " ".join(_said(lens, "name").split())
+    objective = (f"{mag:g}x" + (f"/{na:g}" if na else "") + (f" ({lens_name})" if lens_name else "")) if mag else lens_name
+    first = chans[0] if chans else {"length": {}, "unit": ""}
+    pixel_um, z_um = first["length"].get("x") or 0.0, first["length"].get("z") or 0.0
+    if first["unit"] and first["unit"] not in OIR_UNITS:
+        flags.append(f"pixel size is given in '{first['unit']}', which is not read")
+        pixel_um = z_um = 0.0
+    scale = OIR_UNITS.get(first["unit"], 1.0)
+    bits = [int(c["bits"]) for c in chans if c["bits"]]
+    planned = [int(_num(_said(a, "maxSize")) or 0) for a in _at(root, "acquisition/imagingParam/axis")
+               if _said(a, "axis") == "ZSTACK" and a.get("enable") == "true" and a.get("paramEnable") != "false"]
+    zoom = _num(_said(root, "acquisition/imagingParam/area/zoom"))
+    return {"system": f"Olympus {system}".strip(), "objective": objective,
+            "pixel_um": round(pixel_um * scale, 4), "z_step_um": round(abs(z_um) * scale, 3),
+            "bits": max(bits) if bits else 0,
+            "channel_roles": roles, "channel_names": [f"{c['name']} {c['dye'] or ('TD' if c['transmitted'] else '')}".strip() for c in chans],
+            "channel_ids": [c["id"] for c in chans], "settings": settings,
+            "zoom": f"{zoom:g}" if zoom else "", "acquired": _said(root, "general/creationDateTime")[:19].replace("T", " "),
+            "scan_size": (int(_num(_said(root, "imageInfo/width")) or 0), int(_num(_said(root, "imageInfo/height")) or 0)),
+            "planned_z": planned[0] if planned else 0, "flags": flags + varying}
+
+
+def _oir_tiles(xml, file_name):
+    """The number of tiles of the tile scan that file_name is one tile of, or None. xml is the text of
+    matl.omp2info, which the Olympus software writes next to the files of a multi-area scan: each group
+    lists its areas and the file of each. The .oir file itself does not say that it is a tile."""
+    try:
+        root = ET.fromstring(xml)
+    except ET.ParseError:
+        return None
+    for group in _at(root, "group"):
+        files = [_said(a, "image").lower() for a in _at(group, "area")]
+        if len(files) > 1 and file_name.lower() in files:
+            return len(files)
+    return None
+
+
+def _oir_open(path):
+    """An .oir file opened with oirfile. A file cut short is refused with the reason: oirfile reports it
+    as a damaged index."""
+    with open(path, "rb") as fh:
+        head = fh.read(48)
+    if len(head) < 48 or head[:16] != OIR_MAGIC:
+        raise ValueError("not an Olympus .oir file (it does not begin as one)")
+    stated, size = struct.unpack_from("<Q", head, 32)[0], os.path.getsize(path)
+    if stated > size:
+        raise ValueError(f"the file is incomplete: it holds {size / 2**20:.1f} of {stated / 2**20:.1f} MB "
+                         "(a copy that did not finish, or the scan was interrupted)")
+    try:
+        return oirfile.OirFile(str(path), squeeze=False)
+    except (oirfile.OirFileError, NotImplementedError) as exc:
+        raise ValueError(f"the file's structure could not be read ({str(exc)[:60]})") from None
+
+
+class _OirWarnings:
+    """What oirfile reports while it reads pixels. It fills a plane that is cut short with zeros and only
+    logs it; here that is an error, so a cell that is there never looks missing."""
+
+    def __enter__(self):
+        self.said, self.log = [], logging.getLogger("oirfile")
+        self.handler = logging.Handler()
+        self.handler.emit = lambda record: self.said.append(record.getMessage())
+        self.keep = self.log.propagate
+        self.log.addHandler(self.handler)
+        self.log.propagate = False
+        return self.said
+
+    def __exit__(self, *exc):
+        self.log.removeHandler(self.handler)
+        self.log.propagate = self.keep
+
+
+def _oir_held(f):
+    """(z planes that can be read, what is wrong or None). A scan stopped by hand ends in the middle of a
+    plane; oirfile fills the rest of that plane with zeros (found in a real file, Zenodo 20703055, whose
+    sixth plane is 42% scanned; Bio-Formats leaves that plane out). In a plain z-stack the last plane is
+    then left out here too. Planes missing anywhere else make the file incomplete: it is flagged and
+    not used. The check uses oirfile's index of pixel blocks; tests/test_olympus_oir.py holds it in place."""
+    sizes, index = dict(f.sizes), getattr(f, "_pixel_map", None)
+    n_z = sizes.get("Z", 1)
+    if not index or "Y" not in sizes:
+        return n_z, None
+    need = sizes["Y"] * sizes["X"] * f.dtype.itemsize
+    t0, l0, z0 = (min(k[i] for k in index) for i in range(3))
+    chans = {k[3] for k in index}
+    short = [(t, l, z) for t in range(sizes.get("T", 1)) for l in range(sizes.get("L", 1)) for z in range(n_z)
+             for c in chans
+             if sum(b[2] for b in index.get((t + t0, l + l0, z + z0, c), ())) < need]
+    if not short:
+        return n_z, None
+    if sizes.get("T", 1) == 1 and sizes.get("L", 1) == 1 and n_z > 1 and all(z == n_z - 1 for _, _, z in short):
+        return n_z - 1, f"the scan stopped during plane {n_z}: that plane is left out"
+    return n_z, f"{INCOMPLETE}: {len(short)} of {len(index)} are missing or cut short"
+
+
+def oir_images(path, cfg):
+    with _oir_open(path) as f:
+        sizes, bits = dict(f.sizes), f.bitspersample
+        whole_z, problem = _oir_held(f)
+        blocks = f.xml_metadata
+        xml = (blocks.get(oirfile.METADATA.LSMIMAGE) or [""])[0]
+        frames = list(blocks.get(oirfile.METADATA.FRAMEPROPERTIES) or [])
+    if not sizes or not xml:
+        raise ValueError("the file holds no image (for example the overview map of a multi-area scan)")
+    if "Y" not in sizes or "X" not in sizes:
+        raise ValueError("a line scan, not an image")
+    if "S" in sizes:
+        raise ValueError("a colour picture, not a fluorescence image")
+    axes, shape = "".join(sizes), list(sizes.values())
+    meta = _oir_meta(xml, frames, cfg)
+    flags = list(meta["flags"])
+    n_c, n_z = sizes.get("C", 1), whole_z
+    roles = meta["channel_roles"]
+    if len(roles) != n_c:
+        flags.append(f"the metadata describes {len(roles)} channels, the file holds {n_c}")
+        roles = ["UNRESOLVED"] * n_c
+    names = meta["channel_names"] if len(meta["channel_names"]) == n_c else [""] * n_c
+    if problem:
+        flags.append(problem)
+    if meta["planned_z"] > n_z:
+        flags.append(f"the z-stack was set to {meta['planned_z']} planes, the file holds {n_z} whole planes "
+                     "(stopped early, or a continuation file is missing)")
+    if all(meta["scan_size"]) and meta["scan_size"] != (sizes["X"], sizes["Y"]):
+        flags.append(f"the image is {sizes['X']} x {sizes['Y']} pixels, the scan was {meta['scan_size'][0]} x "
+                     f"{meta['scan_size'][1]}: the pixel size may not apply")
+    sidecar = Path(path).with_name("matl.omp2info")
+    tiles = _oir_tiles(sidecar.read_text(encoding="utf-8", errors="replace"), Path(path).name) if sidecar.is_file() else None
+    if tiles:
+        flags.append(f"one tile of a tile scan ({tiles} tiles, listed in matl.omp2info): the tiles are not joined")
+    bits = meta["bits"] or bits
+    if not bits:
+        bits = 16
+        flags += _no_bits_flag(meta["system"], cfg, 65535)
+    return [{
+        "format": "Olympus OIR", "system": meta["system"], "location_in_file": "whole file", "objective": meta["objective"],
+        "n_z": n_z, "n_t": sizes.get("T", 1), "width": sizes["X"], "height": sizes["Y"],
+        "pixel_um": meta["pixel_um"], "z_step_um": meta["z_step_um"] if n_z > 1 else 0.0,
+        "bits": int(bits), "channel_roles": roles, "channel_names": names,
+        "settings": meta["settings"] if roles == meta["channel_roles"] else "", "zoom": meta["zoom"], "acquired": meta["acquired"],
+        "stage_x": None, "stage_y": None, "flags": flags + _extra_axes_flags(axes, shape),
+        "_reader": ("oir", str(path), 0, axes),
+    }]
+
+
 # ------------------------------------------------------------------ ImageJ hyperstack TIFF
 
 IMAGEJ_ROLES = {"marker": "MARKER", "identity": "IDENTITY", "brightfield": "BF", "other": "OTHER",
@@ -931,6 +1261,8 @@ def images_in(path, cfg, source=None):
         return nikon_images(path, cfg)
     if low.endswith((".oib", ".oif")):
         return olympus_images(path, cfg)
+    if low.endswith(".oir"):
+        return oir_images(path, cfg)
     if source and source.get("imagej_tiff") and not low.endswith((".ome.tif", ".ome.tiff")):
         return imagej_images(path, cfg, source["imagej_tiff"])
     return ome_images(path, cfg)
@@ -967,6 +1299,13 @@ def _raw(img):
     elif kind == "oif":
         with oiffile.OifFile(path) as f:
             arr, dims = f.asarray(), f.axes
+    elif kind == "oir":
+        with _oir_open(path) as f, _OirWarnings() as said:
+            (whole_z, problem), arr, dims = _oir_held(f), f.asarray(), "".join(f.dims)
+        if "Z" in dims and whole_z < arr.shape[dims.index("Z")]:
+            arr = np.take(arr, range(whole_z), axis=dims.index("Z"))        # a last plane that was not finished
+        elif problem or said:
+            raise ValueError(f"{Path(path).name}: {problem or said[0]}")
     elif kind == "ij":
         arr, dims = tifffile.imread(path, series=0), img["_reader"][3]
     else:

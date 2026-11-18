@@ -12,6 +12,11 @@ It is not part of the test suite: it needs Java, Bio-Formats and real files. See
 
 Bio-Formats is not always right either (for example it reports 16 significant bits for 12-bit Zeiss
 camera files), so a difference is something to look at in the microscope software, not a verdict.
+
+Olympus .oir (1.26.14): Bio-Formats does not put the laser's share into the OME-XML, so it is taken from
+the file's own metadata as Bio-Formats lists it. It keeps one value per laser, the last phase's, so for a
+scan with several phases the comparison is with every laser entry of the file. It counts each wavelength
+of a lambda scan as a channel, and it leaves out a last plane that was not finished.
 """
 import argparse
 import hashlib
@@ -217,6 +222,44 @@ def match_series(images, series):
     return out
 
 
+def oir_lasers(original, text):
+    """(differences, notes) on laser power for an Olympus .oir file: each "488nm@4%" of wormscore's settings
+    against "Laser LD488 transmissivity" (one value per laser) and, if that is from another phase or missing,
+    against every "mainLaser transmissivity" entry Bio-Formats lists for the file."""
+    diffs, notes, named = [], [], {}
+    for k, v in original.items():
+        m = re.match(r"-?\s*Laser (.+) (wavelength|transmissivity|data ID)$", k)
+        if m:
+            named.setdefault(m.group(1), {})[m.group(2)] = v
+    every = sorted({_num(v) for k, v in original.items() if re.search(r"mainLaser transmissivity( #\d+)?$", k)} - {None})
+    mine = re.findall(r"(\d+(?:\.\d+)?)nm@(\d+(?:\.\d+)?)(?:-(\d+(?:\.\d+)?))?%", text)
+    in_use = [f"{d['wavelength']} nm at {d.get('transmissivity', '?')}%" for d in named.values() if "wavelength" in d]
+    if not mine:
+        if in_use:
+            diffs.append(("laser power", "laser power: Bio-Formats lists " + ", ".join(in_use)
+                          + f"; none in wormscore settings {text!r}"))
+        else:
+            notes.append("laser power: Bio-Formats gives none")
+        return diffs, notes
+    for w, lo, hi in mine:
+        lo, hi = float(lo), float(hi or lo)
+        within = lambda v: lo - 0.005 <= v <= hi + 0.005
+        theirs = [d for d in named.values() if _num(d.get("wavelength")) is not None and abs(_num(d["wavelength"]) - float(w)) < 1]
+        values = [_num(d.get("transmissivity")) for d in theirs if _num(d.get("transmissivity")) is not None]
+        if any(within(v) for v in values):
+            continue
+        later = [d for d in theirs if not str(d.get("data ID", "")).endswith("phase_1")]
+        if any(within(v) for v in every) and (later or not values):
+            notes.append(f"laser power: wormscore {w} nm at {lo:g}% is one of the file's laser entries; Bio-Formats keeps "
+                         + (f"one value per laser, here {values[0]:g}% from {later[0].get('data ID', 'another phase')}"
+                            if values else "no value for this laser"))
+        else:
+            diffs.append(("laser power", f"laser power: wormscore {w} nm at {lo:g}%" + (f" to {hi:g}%" if hi != lo else "")
+                          + "; Bio-Formats " + (", ".join(f"{v:g}%" for v in values) or "none for this laser")
+                          + "; laser entries of the file: " + ", ".join(f"{v:g}" for v in every)))
+    return diffs, notes
+
+
 def compare(im, s, original, fmt):
     """(differences, notes) for one image. A difference: both read a value and they disagree, or Bio-Formats
     reads a brightness setting that is not in wormscore's settings text. A note: nothing to compare with."""
@@ -225,10 +268,17 @@ def compare(im, s, original, fmt):
     def diff(kind, text):
         diffs.append((kind, text))
 
+    # Olympus .oir: Bio-Formats counts each wavelength of a lambda scan as a channel; wormscore keeps the
+    # channels and flags the lambda scan
+    lam = re.search(r"lambda scan \((\d+) wavelengths\)", " ".join(im.get("flags") or []))
+    bands = int(lam.group(1)) if fmt == "Olympus OIR" and lam and s["c"] == len(im["channel_roles"]) * int(lam.group(1)) else 0
     for label, a, b in (("width", im["width"], s["x"]), ("height", im["height"], s["y"]),
                         ("planes", im["n_z"], s["z"]), ("time points", im["n_t"], s["t"]),
                         ("channels", len(im["channel_roles"]), s["c"])):
-        if a != b:
+        if label == "channels" and bands:
+            notes.append(f"channels: Bio-Formats lists {b}, one for each of the {bands} wavelengths of the lambda scan; "
+                         f"wormscore lists {a} and flags the lambda scan")
+        elif a != b:
             diff("size", f"{label}: Bio-Formats {b}, wormscore {a}")
     if s["bits"] is None:
         notes.append("bit depth: Bio-Formats gives none")
@@ -253,6 +303,8 @@ def compare(im, s, original, fmt):
         elif not near(abs(s["z_um"]), im["z_step_um"], rel=0.005, absolute=0.002):
             diff("z-step", f"z-step: Bio-Formats {abs(s['z_um']):.5g} um, wormscore {im['z_step_um']:.5g} um")
     theirs, mine = [c["name"] for c in s["channels"]], list(im["channel_names"])
+    if bands:
+        theirs = [n for n in theirs if n][:len(mine)]
     same = len(theirs) == len(mine) and all(
         a.strip().lower() == b.strip().lower() or (a.strip() and b.strip() and
                                                     (a.strip().lower() in b.lower() or b.strip().lower() in a.lower()))
@@ -290,6 +342,12 @@ def compare(im, s, original, fmt):
             if k.strip() in ("Gain", "Multiplier") and numbers(v):
                 gains.append((f"file metadata {k.strip()}", numbers(v)[0]))
     real = [(w, v) for w, v in gains if v > 0 and v != 1.0] or gains     # 1, 0 and -1 are often placeholders
+    if fmt == "Olympus OIR" and all(v in (0.0, 1.0) for _, v in real):
+        # by design: wormscore leaves out a gain of 1 and a voltage of 0 (the FV4000's detectors have no voltage)
+        if gains:
+            notes.append("detector: Bio-Formats gives " + ", ".join(f"{w} {v:g}" for w, v in gains)
+                         + " (a gain of 1 and a voltage of 0 are left out of wormscore's settings)")
+        real = []
     if real and not any(near(v, h, rel=0.002, absolute=0.05) for _, v in real for h in have):
         diff("detector gain", "detector gain: Bio-Formats " + ", ".join(f"{v:g} ({w})" for w, v in real)
              + f"; not in wormscore settings {text!r}")
@@ -313,6 +371,10 @@ def compare(im, s, original, fmt):
                      + ", ".join(f"{q:.3g}%" for q in pct))
         if not atts:
             notes.append("laser power: Bio-Formats gives none")
+    elif fmt == "Olympus OIR" and not lights:
+        more, said = oir_lasers(original, text)
+        diffs += more
+        notes += said
     elif on:
         for l in on:
             p = 100 * (1 - l["attenuation"])

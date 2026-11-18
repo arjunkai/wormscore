@@ -11,7 +11,6 @@ project scores, measures and reports exactly as before. Screens and buttons may 
 
 ### Features
 
-- **Olympus `.oir`.** Planned once its channel information can be checked against enough sample files.
 - **Open (non-blind) scoring, under consideration.** An optional project type for pilots or
   phenotypes that cannot be hidden, chosen when the project is created. Every output and the
   Methods draft would state that scoring was not blind to genotype. Blind scoring stays the default.
@@ -32,6 +31,24 @@ new analysis options only run if a project sets them, so its results stay as in 
 
 ## Recently shipped
 
+- 1.26.14: **Olympus `.oir` files are read (FV3000, FV4000, FVMPE-RS).**
+  - Read from the file's own metadata with [oirfile](https://github.com/cgohlke/oirfile) (BSD-3-Clause):
+    the reporter, identity and brightfield channels (brightfield is the channel on the transmitted
+    detector, TD), the reporter's detector voltage, gain, offset, laser share and averaging, bit depth,
+    pixel size, z-step, objective and date. Checked against Bio-Formats 8.5.0 on 23 public files; the
+    pixels of 11 of them are identical.
+  - Flagged instead of guessed: lambda scans, a tile of a tile scan (from `matl.omp2info`), a scan
+    stopped inside its last plane (that plane is left out), images made by the Olympus software
+    ("Modified"), brightness correction along z, and files that record two values for a laser's share
+    (both are written; check in the Olympus software).
+  - Not read: `.poir` archives, line scans, and the stage position (the files do not record it).
+  - Still wanted: an FV4000 file with a transmitted-light channel, and a file whose laser power is known
+    from the Olympus software. Tell us if `outputs/inventory.csv` differs from what the microscope shows.
+  - Text from a file that is not a date is never written to `per_neuron.csv` as a spreadsheet formula.
+  - **Who is affected:** labs with an FV3000 or FV4000, who had to export to OME-TIFF; and projects whose
+    image folders already hold `.oir` files. After their next Scan data those files are listed as raw
+    images (before: "reference (not an image)"). Codes, scores and results do not change; the new images
+    join a blind set only through Add new images or a rebuild. No other reader changed.
 - 1.26.13: **Imaging dates from Nikon files, OME-TIFF in the 2008 schema, and how settings are worded.**
   - `per_neuron.csv`: the `imaging_date` column held the first 10 characters of the date, which for Nikon
     files is written as the acquiring computer shows it ("11/3/2009 1"). It is now YYYY-MM-DD when the date

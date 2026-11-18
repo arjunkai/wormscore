@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="ASCII"?>
+<lsmimage:imageProperties xmlns:base="http://www.olympus.co.jp/hpf/model/base" xmlns:commonimage="http://www.olympus.co.jp/hpf/model/commonimage" xmlns:commonparam="http://www.olympus.co.jp/hpf/model/commonparam" xmlns:commonphase="http://www.olympus.co.jp/hpf/model/commonphase" xmlns:dye="http://www.olympus.co.jp/hpf/model/dye" xmlns:fvLsmimage="http://www.olympus.co.jp/fluoview/model/fv_lsmimage" xmlns:lsmimage="http://www.olympus.co.jp/hpf/model/lsmimage" xmlns:lsmparam="http://www.olympus.co.jp/hpf/model/lsmparam" xmlns:opticalelement="http://www.olympus.co.jp/hpf/model/opticalelement" xmlns:root="http://www.olympus.co.jp/hpf/model/root" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1.1.0.0">
+ <!-- From '1202-interval_30sec_sequence_frame.oir', Zenodo record 14417737 (OME sample images Olympus-OIR/imagesc-105684), CC BY 4.0, Chin Hung (FV4000, FV40S 3.1.1.67). Shortened: elements left out, nothing changed. -->
+ <commonimage:general>
+  <base:creationDateTime>2024-12-02T09:37:02.725+08:00</base:creationDateTime>
+ </commonimage:general>
+ <commonimage:system>
+  <base:systemName>FV4000</base:systemName>
+  <base:systemVersion>3.1.1.67</base:systemVersion>
+ </commonimage:system>
+ <commonimage:imageInfo>
+  <commonimage:phase id="c449277a-2894-4f34-8729-ff9626d852ab" name="Phase 1">
+   <commonphase:group id="34545674-a880-4651-a5d8-02d4d34ed902" name="Group 2">
+    <commonphase:channel id="8bf167bc-288a-4fa1-8817-0814f5e321ed" order="2">
+     <commonphase:name>CH2</commonphase:name>
+     <commonphase:length>
+      <commonparam:x>2.485922277608956</commonparam:x>
+      <commonparam:y>2.485922277608956</commonparam:y>
+      <commonparam:z>0.6</commonparam:z>
+     </commonphase:length>
+     <commonphase:pixelUnit>
+      <commonphase:x>MICRO_METER</commonphase:x>
+      <commonphase:y>MICRO_METER</commonphase:y>
+      <commonphase:z>MICRO_METER</commonphase:z>
+     </commonphase:pixelUnit>
+     <commonphase:imageDefinition>
+      <commonphase:depth>2</commonphase:depth>
+      <commonphase:bitCounts>16</commonphase:bitCounts>
+      <commonphase:colorType>GlayScale</commonphase:colorType>
+      <commonphase:imageType>INTENSITY</commonphase:imageType>
+     </commonphase:imageDefinition>
+    </commonphase:channel>
+   </commonphase:group>
+   <commonphase:group id="48fd4c6e-488a-49d8-8285-ac662d56e138" name="Group 3">
+    <commonphase:channel id="46ac593d-5fab-4079-a377-8f2df6102d3e" order="3">
+     <commonphase:name>CH3</commonphase:name>
+     <commonphase:length>
+      <commonparam:x>2.485922277608956</commonparam:x>
+      <commonparam:y>2.485922277608956</commonparam:y>
+      <commonparam:z>0.6</commonparam:z>
+     </commonphase:length>
+     <commonphase:pixelUnit>
+      <commonphase:x>MICRO_METER</commonphase:x>
+      <commonphase:y>MICRO_METER</commonphase:y>
+      <commonphase:z>MICRO_METER</commonphase:z>
+     </commonphase:pixelUnit>
+     <commonphase:imageDefinition>
+      <commonphase:depth>2</commonphase:depth>
+      <commonphase:bitCounts>16</commonphase:bitCounts>
+      <commonphase:colorType>GlayScale</commonphase:colorType>
+      <commonphase:imageType>INTENSITY</commonphase:imageType>
+     </commonphase:imageDefinition>
+    </commonphase:channel>
+   </commonphase:group>
+  </commonimage:phase>
+  <commonimage:width>512</commonimage:width>
+  <commonimage:height>512</commonimage:height>
+ </commonimage:imageInfo>
+ <commonimage:acquisition xsi:type="lsmimage:LSMAcquisition" embedSaturationInfo="false">
+  <commonimage:microscopeConfiguration>
+   <commonimage:objectiveLens id="UPLXAPO10X__ID__1" special="false">
+    <opticalelement:name>UPLXAPO10X</opticalelement:name>
+    <opticalelement:magnification>10.0</opticalelement:magnification>
+    <opticalelement:naValue>0.4</opticalelement:naValue>
+    <opticalelement:immersion>DRY</opticalelement:immersion>
+   </commonimage:objectiveLens>
+  </commonimage:microscopeConfiguration>
+  <commonimage:imagingParam xsi:type="lsmparam:LSMImagingParam">
+   <commonparam:axis xsi:type="commonparam:ZAxisParam" enable="false" lockStep="false" paramEnable="true">
+    <commonparam:axis>ZSTACK</commonparam:axis>
+    <commonparam:startPosition>4809.2</commonparam:startPosition>
+    <commonparam:endPosition>4812.8</commonparam:endPosition>
+    <commonparam:step>0.6</commonparam:step>
+    <commonparam:maxSize>7</commonparam:maxSize>
+    <commonparam:paramName>Start End</commonparam:paramName>
+    <commonparam:basePosition>200.0</commonparam:basePosition>
+   </commonparam:axis>
+   <commonparam:axis xsi:type="commonparam:ZAxisParam" enable="false" lockStep="false" paramEnable="false">
+    <commonparam:axis>ZSTACK</commonparam:axis>
+    <commonparam:startPosition>200.0</commonparam:startPosition>
+    <commonparam:endPosition>220.0</commonparam:endPosition>
+    <commonparam:step>1.0</commonparam:step>
+    <commonparam:maxSize>21</commonparam:maxSize>
+    <commonparam:paramName>Range</commonparam:paramName>
+    <commonparam:basePosition>200.0</commonparam:basePosition>
+   </commonparam:axis>
+   <commonparam:axis enable="true" lockStep="false">
+    <commonparam:axis>TIMELAPSE</commonparam:axis>
+    <commonparam:startPosition>0.0</commonparam:startPosition>
+    <commonparam:endPosition>450.0</commonparam:endPosition>
+    <commonparam:step>30.0</commonparam:step>
+    <commonparam:maxSize>15</commonparam:maxSize>
+   </commonparam:axis>
+   <commonparam:axis enable="false" lockStep="false">
+    <commonparam:axis>LAMBDA</commonparam:axis>
+    <commonparam:startPosition>400.0</commonparam:startPosition>
+    <commonparam:endPosition>420.0</commonparam:endPosition>
+    <commonparam:step>10.0</commonparam:step>
+    <commonparam:maxSize>2</commonparam:maxSize>
+   </commonparam:axis>
+   <lsmparam:mainLaser laserDataId="LD405_65792Imaging_main_phase_Lambda">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="LD488_65794Imaging_main_phase_Lambda">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="LD561_65796Imaging_main_phase_Lambda">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="LD594_65797Imaging_main_phase_Lambda">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="LD640_65798Imaging_main_phase_Lambda">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="AUXOUT_131328Imaging_main_phase_Lambda">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="AUXOUT_131329Imaging_main_phase_Lambda">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="LD405_65792Imaging_main_phase_1">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:transmissivity>1.0</commonparam:transmissivity>
+    <commonparam:optionalTransmissivity>1.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="LD488_65794Imaging_main_phase_1">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:transmissivity>0.1</commonparam:transmissivity>
+    <commonparam:optionalTransmissivity>0.1</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="LD561_65796Imaging_main_phase_1">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:transmissivity>0.6</commonparam:transmissivity>
+    <commonparam:optionalTransmissivity>0.6</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="LD594_65797Imaging_main_phase_1">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:transmissivity>5.6</commonparam:transmissivity>
+    <commonparam:optionalTransmissivity>5.6</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="LD640_65798Imaging_main_phase_1">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:transmissivity>6.5</commonparam:transmissivity>
+    <commonparam:optionalTransmissivity>6.5</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="AUXOUT_131328Imaging_main_phase_1">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:transmissivity>0.0</commonparam:transmissivity>
+    <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:mainLaser laserDataId="AUXOUT_131329Imaging_main_phase_1">
+    <commonparam:power>100.0</commonparam:power>
+    <commonparam:transmissivity>0.0</commonparam:transmissivity>
+    <commonparam:optionalTransmissivity>0.0</commonparam:optionalTransmissivity>
+   </lsmparam:mainLaser>
+   <lsmparam:area>
+    <lsmparam:zoom>1.0</lsmparam:zoom>
+   </lsmparam:area>
+   <lsmparam:pmt channelId="99f6246d-1a1f-4be1-927f-d0ac15ef5da9" detectorId="__FV40-BSD_D_1__">
+    <lsmparam:voltage>0</lsmparam:voltage>
+    <lsmparam:offset>0</lsmparam:offset>
+    <lsmparam:gain>1.0</lsmparam:gain>
+   </lsmparam:pmt>
+   <lsmparam:pmt channelId="c263395c-ad37-4a8d-bfe5-2603c4c5a39a" detectorId="__FV40-BSD_D_1__">
+    <lsmparam:voltage>0</lsmparam:voltage>
+    <lsmparam:offset>0</lsmparam:offset>
+    <lsmparam:gain>1.0</lsmparam:gain>
+   </lsmparam:pmt>
+   <lsmparam:pmt channelId="8bf167bc-288a-4fa1-8817-0814f5e321ed" detectorId="__FV40-BSD_D_2__">
+    <lsmparam:voltage>0</lsmparam:voltage>
+    <lsmparam:offset>0</lsmparam:offset>
+    <lsmparam:gain>1.0</lsmparam:gain>
+   </lsmparam:pmt>
+   <lsmparam:pmt channelId="46ac593d-5fab-4079-a377-8f2df6102d3e" detectorId="__FV40-RSD_D_3__">
+    <lsmparam:voltage>0</lsmparam:voltage>
+    <lsmparam:offset>0</lsmparam:offset>
+    <lsmparam:gain>1.0</lsmparam:gain>
+   </lsmparam:pmt>
+   <lsmparam:pmt channelId="e7807a7e-a73a-499d-acc7-141ab07acf6a" detectorId="__FV40-RSD_D_4__">
+    <lsmparam:voltage>0</lsmparam:voltage>
+    <lsmparam:offset>0</lsmparam:offset>
+    <lsmparam:gain>1.0</lsmparam:gain>
+   </lsmparam:pmt>
+   <lsmparam:method>
+    <lsmparam:sequentialType>Frame</lsmparam:sequentialType>
+    <lsmparam:integration average="true">
+     <commonparam:type>None</commonparam:type>
+     <commonparam:count>4</commonparam:count>
+    </lsmparam:integration>
+   </lsmparam:method>
+   <lsmparam:brightnessAdjustmentParam>
+    <lsmparam:enable>false</lsmparam:enable>
+   </lsmparam:brightnessAdjustmentParam>
+  </commonimage:imagingParam>
+  <commonimage:phase xsi:type="lsmimage:LSMPhase" id="c449277a-2894-4f34-8729-ff9626d852ab">
+   <root:productData xsi:type="fvLsmimage:FvLsmPhase">
+    <fvLsmimage:lightpath>
+     <fvLsmimage:mainLaserNDFilter xsi:type="opticalelement:EmptyFilter" id="Empty__ID__0" special="false">
+      <opticalelement:name>Empty</opticalelement:name>
+     </fvLsmimage:mainLaserNDFilter>
+    </fvLsmimage:lightpath>
+   </root:productData>
+   <commonphase:name>Phase 1</commonphase:name>
+   <commonphase:group id="c836fd74-ea9b-4132-9eec-d5fe766492ad">
+    <commonphase:name>Group 1</commonphase:name>
+    <commonphase:channel xsi:type="lsmimage:NormalChannel" id="c263395c-ad37-4a8d-bfe5-2603c4c5a39a" order="1" enable="false" detectorId="__FV40-BSD_D_1__">
+     <commonphase:name>CH1</commonphase:name>
+     <commonphase:deviceName>BSD1</commonphase:deviceName>
+     <lsmimage:dyeName>DAPI</lsmimage:dyeName>
+     <lsmimage:dyeData applicationVersion="3.1.1.67" platformVersion="2.20.1.8" version="2.3" id="DAPI_DYEDATA">
+      <dye:name>DAPI</dye:name>
+      <dye:excitationWavelength>359</dye:excitationWavelength>
+      <dye:emissionWavelength>461</dye:emissionWavelength>
+     </lsmimage:dyeData>
+     <lsmimage:laserDataId>LD405_65792Imaging_main_phase_1</lsmimage:laserDataId>
+    </commonphase:channel>
+   </commonphase:group>
+   <commonphase:group id="34545674-a880-4651-a5d8-02d4d34ed902">
+    <commonphase:name>Group 2</commonphase:name>
+    <commonphase:channel xsi:type="lsmimage:NormalChannel" id="8bf167bc-288a-4fa1-8817-0814f5e321ed" order="2" enable="true" detectorId="__FV40-BSD_D_2__">
+     <commonphase:name>CH2</commonphase:name>
+     <commonphase:deviceName>BSD2</commonphase:deviceName>
+     <lsmimage:dyeName>FITC</lsmimage:dyeName>
+     <lsmimage:dyeData applicationVersion="3.1.1.67" platformVersion="2.20.1.8" version="2.3" id="FITC_DYEDATA">
+      <dye:name>FITC</dye:name>
+      <dye:excitationWavelength>498</dye:excitationWavelength>
+      <dye:emissionWavelength>517</dye:emissionWavelength>
+     </lsmimage:dyeData>
+     <lsmimage:laserDataId>LD488_65794Imaging_main_phase_1</lsmimage:laserDataId>
+    </commonphase:channel>
+   </commonphase:group>
+   <commonphase:group id="48fd4c6e-488a-49d8-8285-ac662d56e138">
+    <commonphase:name>Group 3</commonphase:name>
+    <commonphase:channel xsi:type="lsmimage:NormalChannel" id="46ac593d-5fab-4079-a377-8f2df6102d3e" order="3" enable="true" detectorId="__FV40-RSD_D_3__">
+     <commonphase:name>CH3</commonphase:name>
+     <commonphase:deviceName>RSD3</commonphase:deviceName>
+     <lsmimage:dyeName>TRITC</lsmimage:dyeName>
+     <lsmimage:dyeData applicationVersion="3.1.1.67" platformVersion="2.20.1.8" version="2.3" id="TRITC_DYEDATA">
+      <dye:name>TRITC</dye:name>
+      <dye:excitationWavelength>552</dye:excitationWavelength>
+      <dye:emissionWavelength>578</dye:emissionWavelength>
+     </lsmimage:dyeData>
+     <lsmimage:laserDataId>LD561_65796Imaging_main_phase_1</lsmimage:laserDataId>
+    </commonphase:channel>
+   </commonphase:group>
+   <commonphase:group id="cc896b17-a5c8-471a-9c25-f9aac7389512">
+    <commonphase:name>Group 4</commonphase:name>
+    <commonphase:channel xsi:type="lsmimage:NormalChannel" id="e7807a7e-a73a-499d-acc7-141ab07acf6a" order="4" enable="false" detectorId="__FV40-RSD_D_4__">
+     <commonphase:name>CH4</commonphase:name>
+     <commonphase:deviceName>RSD4</commonphase:deviceName>
+     <lsmimage:dyeName>Cy5</lsmimage:dyeName>
+     <lsmimage:dyeData applicationVersion="3.1.1.67" platformVersion="2.20.1.8" version="2.3" id="Cy5_DYEDATA">
+      <dye:name>Cy5</dye:name>
+      <dye:excitationWavelength>647</dye:excitationWavelength>
+      <dye:emissionWavelength>665</dye:emissionWavelength>
+     </lsmimage:dyeData>
+     <lsmimage:laserDataId>LD640_65798Imaging_main_phase_1</lsmimage:laserDataId>
+    </commonphase:channel>
+   </commonphase:group>
+   <lsmimage:imagingMainLaser enable="false" id="LD405_65792Imaging_main_phase_1" isVariable="false" laserId="LD405_65792">
+    <commonimage:wavelength>405</commonimage:wavelength>
+   </lsmimage:imagingMainLaser>
+   <lsmimage:imagingMainLaser enable="true" id="LD488_65794Imaging_main_phase_1" isVariable="false" laserId="LD488_65794">
+    <commonimage:wavelength>488</commonimage:wavelength>
+   </lsmimage:imagingMainLaser>
+   <lsmimage:imagingMainLaser enable="true" id="LD561_65796Imaging_main_phase_1" isVariable="false" laserId="LD561_65796">
+    <commonimage:wavelength>561</commonimage:wavelength>
+   </lsmimage:imagingMainLaser>
+   <lsmimage:imagingMainLaser enable="false" id="LD594_65797Imaging_main_phase_1" isVariable="false" laserId="LD594_65797">
+    <commonimage:wavelength>594</commonimage:wavelength>
+   </lsmimage:imagingMainLaser>
+   <lsmimage:imagingMainLaser enable="false" id="LD640_65798Imaging_main_phase_1" isVariable="false" laserId="LD640_65798">
+    <commonimage:wavelength>640</commonimage:wavelength>
+   </lsmimage:imagingMainLaser>
+   <lsmimage:imagingMainLaser enable="false" id="AUXOUT_131328Imaging_main_phase_1" isVariable="false" laserId="AUXOUT_131328">
+    <commonimage:wavelength>730</commonimage:wavelength>
+   </lsmimage:imagingMainLaser>
+   <lsmimage:imagingMainLaser enable="false" id="AUXOUT_131329Imaging_main_phase_1" isVariable="false" laserId="AUXOUT_131329">
+    <commonimage:wavelength>785</commonimage:wavelength>
+   </lsmimage:imagingMainLaser>
+  </commonimage:phase>
+  <commonimage:configuration xsi:type="lsmimage:LSMConfiguration">
+   <lsmimage:scannerType>Galvano</lsmimage:scannerType>
+  </commonimage:configuration>
+ </commonimage:acquisition>
+</lsmimage:imageProperties>

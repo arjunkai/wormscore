@@ -40,7 +40,7 @@ Something wrong, unclear or missing? [Open an issue](https://github.com/arjunkai
 with what you did and what you saw (the project's `log.md` helps; it never names a code's genotype).
 
 Supported raw formats: Leica `.lif`, Zeiss `.czi`, OME-TIFF (including Micro-Manager style files with
-a `.companion.ome`), Nikon `.nd2`, Olympus FluoView `.oib` and `.oif`, and ImageJ hyperstack TIFF (only
+a `.companion.ome`), Nikon `.nd2`, Olympus FluoView `.oib` and `.oif`, Olympus `.oir` (FV3000, FV4000), and ImageJ hyperstack TIFF (only
 where you turn it on, because ImageJ files do not record which channel is which). Channel identity
 (marker vs brightfield) is read from metadata, never guessed.
 
@@ -457,6 +457,7 @@ lists all versions and resolves to the latest. GitHub's "Cite this repository" b
 
 wormscore reads Leica files with [liffile](https://github.com/cgohlke/liffile), Zeiss files with
 [czifile](https://github.com/cgohlke/czifile), Olympus FluoView files with
-[oiffile](https://github.com/cgohlke/oiffile) and Nikon files with [nd2](https://github.com/tlambert03/nd2)
+[oiffile](https://github.com/cgohlke/oiffile), Olympus `.oir` files with
+[oirfile](https://github.com/cgohlke/oirfile) and Nikon files with [nd2](https://github.com/tlambert03/nd2)
 (all BSD-3). With pip, Nikon support is an extra: `pip install "wormscore[nd2]"`. The Windows and Mac
 apps bundle these and other libraries; their licenses are in `THIRD_PARTY_LICENSES.txt` next to the app.
