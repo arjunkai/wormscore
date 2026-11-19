@@ -310,6 +310,13 @@ class Project:
             self.roi_arrived += 1
             return self.roi_arrived
 
+    def rois_version(self, code):
+        """A short name for the outlines now saved for a code, worked out from rois.json (nothing more is
+        stored). A scoring window keeps the one it loaded or last saved; if another window has saved
+        other outlines since, the names differ. The same outlines always give the same name."""
+        rois = self.load("rois.json", {}).get(code) or []
+        return hashlib.sha256(json.dumps(rois, sort_keys=True).encode()).hexdigest()[:12]
+
     def save_rois_in_order(self, code, rois, rows, ticket):
         """Write the outlines unless a request that arrived later has already written this code's
         (call with the lock held). Returns whether they were written. The last click wins whatever
@@ -463,8 +470,11 @@ def make_handler(project):
                     and (project.blind / parts[2]).is_dir():
                 code = parts[2]
                 return self.send_json({"meta": project.meta(code), "img_v": project.image_version(code), "score": project.load("scores.json", {}).get(code),
-                                       "rois": project.load("rois.json", {}).get(code, []),
+                                       "rois": project.load("rois.json", {}).get(code, []), "rois_v": project.rois_version(code),
                                        "draft": project.drafts().get(code)})
+            if parts[:2] == ["api", "worm"] and len(parts) == 4 and parts[3] == "rois-version" and CODE.match(parts[2])                     and (project.blind / parts[2]).is_dir():
+                # which outlines are saved now: a window asks when it is looked at again
+                return self.send_json({"version": project.rois_version(parts[2])})
             self.send_error(404)
 
         def post(self):
@@ -494,13 +504,22 @@ def make_handler(project):
                 ticket = project.roi_ticket()       # before measuring: the order of the clicks
                 check_writable(*(project.scoring / n for n in project.ROI_FILES))
                 rows = project.measure_rois(code, rois) if rois else []
+                # Two windows that save one after the other: the later save wins, as before, and is told
+                # when it replaced outlines saved since its window loaded them ("loaded": the version the
+                # page got with the image or with its last save). What is written does not depend on it.
+                loaded, told = body.get("loaded"), {}
                 with project.lock:
+                    before = project.rois_version(code) if isinstance(loaded, str) else None
                     written = project.save_rois_in_order(code, rois, rows, ticket)
+                    if written and before is not None:
+                        told["version"] = project.rois_version(code)
+                        if before not in (loaded, told["version"]):
+                            told["replaced"] = True
                 if not written:
                     # another window saved this code's outlines after this click, and finished first
                     return self.send_json({"ok": False, "superseded": True})
                 # Only confirm the save; the numbers stay in the CSV, not on screen.
-                return self.send_json({"ok": True, "n_regions": len(rois)})
+                return self.send_json({"ok": True, "n_regions": len(rois), **told})
             with project.lock:
                 if what == "score":
                     return self.send_json({"ok": True, "saved": project.save_score(code, body)})

@@ -557,13 +557,18 @@ def _ome_settings(chan, md=None):
     return parts
 
 
-OME_SCHEMA = re.compile(r"http://www\.openmicroscopy\.org/Schemas/OME/\d{4}-\d{2}")
+# 2016-DEV0 is the name development builds of Bio-Formats 5.2.0 wrote (September 2015 to June 2016), before
+# the schema was published as 2016-06. It began as 2015-01 and ended as 2016-06, and every state between
+# them (checked in the Bio-Formats history) names what is read here as those two do. No other development
+# name is taken: a schema that was not checked is not guessed.
+OME_SCHEMA = re.compile(r"http://www\.openmicroscopy\.org/Schemas/OME/(?:\d{4}-\d{2}|2016-DEV0)")
 MICROMETRES = {"\u00b5m": 1, "\u03bcm": 1, "um": 1, "micron": 1, "nm": 1e-3, "pm": 1e-6, "\u00c5": 1e-4, "mm": 1e3, "cm": 1e4, "m": 1e6}
 
 
 def _ome_root(md):
-    """Files written to an older OME schema (2008 to 2015) keep the same names for everything read here,
-    under another namespace (1.26.8). They were listed as "no microscope metadata"."""
+    """Files written to an older OME schema (2008 to 2015, and the development name 2016-DEV0) keep the same
+    names for everything read here, under another namespace (1.26.8). They were listed as "no microscope
+    metadata"."""
     old = OME_SCHEMA.match(md.tag[1:]) if md.tag.startswith("{") else None
     if old and old.group(0) != OME_NS["o"]:
         for el in md.iter():

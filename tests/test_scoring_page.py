@@ -220,3 +220,91 @@ def test_the_window_whose_outlines_were_not_saved_says_so(browser, fresh_project
         go.set()
         srv.shutdown()
         srv.server_close()
+
+
+WARNING_BOX = """() => {
+  const msg = document.querySelector('#roiMsg'), text = msg.lastElementChild, cs = getComputedStyle(text);
+  const box = el => { const r = el.getBoundingClientRect(); return {left: r.left, right: r.right, top: r.top, bottom: r.bottom}; };
+  const lh = parseFloat(cs.lineHeight) || 1.4 * parseFloat(cs.fontSize);
+  return {lines: Math.round(text.getBoundingClientRect().height / lh), msg: box(msg), panel: box(document.querySelector('#panel')),
+          button: box(document.querySelector('#saveRois')), icon: box(msg.querySelector('svg')),
+          sr: msg.querySelector('.sr').textContent, said: text.textContent, role: msg.getAttribute('role'),
+          color: cs.color, text: getComputedStyle(document.querySelector('#codeTitle')).color, scroll: [document.querySelector('#panel').scrollWidth, document.querySelector('#panel').clientWidth]};
+}"""
+
+
+def test_two_windows_that_save_outlines_one_after_the_other_both_say_so(playwright, fresh_project):
+    """One window saved an image's outlines, then another window (which had the image open before that)
+    saved its own. The later save is the saved one, as before, and neither window said anything: the first
+    still read "Saved 1 outline". Now the second says it replaced outlines saved elsewhere, and the first
+    says so when it is looked at again. Chromium, a 1920 x 1080 laptop at 125%."""
+    try:
+        browser = playwright.chromium.launch()
+    except Exception as exc:
+        pytest.skip(f"chromium is not installed for Playwright ({type(exc).__name__})")
+    srv = make_server(fresh_project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}/"
+    context = browser.new_context(viewport={"width": 1536, "height": 785}, device_scale_factor=1.25)
+
+    def open_page(_, url):
+        page = context.new_page()
+        page.goto(url)
+        page.wait_for_function("document.querySelector('#codeTitle').textContent.startsWith('W')")
+        return page
+    try:
+        one = open_page(context, url)
+        one.evaluate("api(`/api/worm/${st.code}/score`, {usable: 'no', unusable_reason: 'x', flag_answers: {}})"
+                     ".then(() => openWorm(st.code))")
+        one.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
+        two = open_page(context, url)
+        two.evaluate("code => openWorm(code)", one.evaluate("st.code"))
+        two.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
+        code = one.evaluate("st.code")
+        assert code == two.evaluate("st.code")
+        for page, nth in ((one, 0), (two, 1)):
+            page.locator("#markTab").click()
+            page.locator("#sugList button").nth(nth).click()
+
+        one.locator("#saveRois").click()
+        one.wait_for_function("document.querySelector('#roiMsg').textContent === 'Saved 1 outline'")     # one window: as before
+        assert one.evaluate("document.querySelector('.tab[data-tab=mark] .actions').classList.contains('warned')") is False
+        one.evaluate("checkIn()")                                    # looked at again: its own outlines are the saved ones
+        one.wait_for_timeout(300)
+        assert one.locator("#roiMsg").inner_text() == "Saved 1 outline"
+
+        two.locator("#saveRois").click()                             # the later save wins and says what it replaced
+        two.wait_for_function("document.querySelector('#roiMsg').classList.contains('warn')")
+        w = two.evaluate(WARNING_BOX)
+        assert w["said"] == "Saved 1 outline. They replaced outlines saved in another window. Use one scoring window at a time."
+        assert srv.project.load("rois.json", {})[code] == two.evaluate("st.rois") != one.evaluate("st.rois")
+        assert two.evaluate("st.roisDirty") is False
+
+        one.evaluate("window.dispatchEvent(new Event('focus'))")     # the first window is looked at again
+        one.wait_for_function("document.querySelector('#roiMsg').classList.contains('warn')")
+        v = one.evaluate(WARNING_BOX)
+        assert v["said"] == "Another window saved other outlines for this image. Open the image again to see them, or save these instead."
+        for box in (w, v):
+            assert box["sr"] == "Warning: " and box["role"] == "status"
+            assert box["lines"] <= 2                                 # at most two lines
+            assert box["icon"]["right"] > box["icon"]["left"] and box["icon"]["left"] >= box["msg"]["left"]
+            assert box["panel"]["left"] <= box["msg"]["left"] and box["msg"]["right"] <= box["panel"]["right"]
+            assert box["msg"]["bottom"] <= box["button"]["top"] + 1  # on its own row, above the button
+            assert box["button"]["bottom"] <= 785 and box["scroll"][0] <= box["scroll"][1]
+            assert box["color"] == box["text"]                        # the page's text colour, the icon in the warning colour
+        # said once: drawing after the warning is not written over by the next check
+        one.locator("#sugList button").last.click()
+        assert one.locator("#roiMsg").inner_text() == "Unsaved changes"
+        one.evaluate("checkIn()")
+        one.wait_for_timeout(300)
+        assert one.locator("#roiMsg").inner_text() == "Unsaved changes"
+        # opening the image again shows the saved outlines and clears the warning
+        one.evaluate("st.roisDirty = false; openWorm(st.code)")
+        one.wait_for_function("document.querySelector('#roiMsg').textContent === ''")
+        assert one.evaluate("st.rois") == srv.project.load("rois.json", {})[code]
+        assert one.evaluate("document.querySelector('.tab[data-tab=mark] .actions').classList.contains('warned')") is False
+    finally:
+        context.close()
+        browser.close()
+        srv.shutdown()
+        srv.server_close()

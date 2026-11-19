@@ -123,7 +123,21 @@ async function checkIn() {
   let ok = true;
   try { await api("/api/ping"); } catch { ok = false; }
   if (ok) setConnected(true);
+  if (ok) checkOutlines();
   if (!st.otherProject) st.checkTimer = setTimeout(checkIn, ok ? 20000 : 2000);
+}
+
+// Two scoring windows on one image: the outlines saved last are the saved ones. A window whose outlines
+// were replaced by another window's save says so when it is looked at again (and at each check-in), once
+// for each change. st.roisV names the outlines this window loaded or last saved.
+async function checkOutlines() {
+  if (browsing() || !st.ready || !st.code || !st.roisV || st.loading || st.roisSaving) return;
+  const code = st.code, had = st.roisV;
+  let now;
+  try { now = (await api(`/api/worm/${code}/rois-version`)).version; } catch { return; }
+  if (!now || st.code !== code || st.roisV !== had || st.roisSaving || now === had || now === st.roisElsewhere) return;
+  st.roisElsewhere = now;
+  roiMessage("Another window saved other outlines for this image. Open the image again to see them, or save these instead.", "warn");
 }
 
 for (const ev of ["focus", "online"]) window.addEventListener(ev, checkIn);
@@ -502,6 +516,7 @@ async function openWorm(code) {
   if (seq !== st.openSeq) return;
   Object.assign(st, {
     code, meta: r.meta, imgV: r.img_v, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
+    roisV: r.rois_v || null, roisElsewhere: null,
     view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), planeFailed: new Set(),
     drawing: null, mip: null, bfVals: null, angle: 0, tilt: 0, rot: new Map(), mipDepth: null, planesDone: false,
     rendering: null, vol: null,
@@ -531,7 +546,7 @@ async function openWorm(code) {
   }
   renderSuggestions();
   renderRoiList();
-  $("#roiMsg").textContent = "";
+  roiMessage("");
   setTab(browsing() ? "mark" : st.score ? st.tab : "score");
   renderList();
   try {
@@ -1024,9 +1039,17 @@ function toRaw(e) {
   return [(x - st.geom.ox) / st.geom.s, (y - st.geom.oy) / st.geom.s];
 }
 
+// err: true for an error, "warn" for a warning (an icon, "Warning:" for screen readers, and a row of its own)
 function roiMessage(text, err = false) {
-  $("#roiMsg").textContent = text;
-  $("#roiMsg").className = err ? "err" : "";
+  const msg = $("#roiMsg"), warn = err === "warn";
+  msg.textContent = warn ? "" : text;
+  msg.className = warn ? "warn" : err ? "err" : "";
+  msg.parentElement.classList.toggle("warned", warn);
+  if (!warn) return;
+  const icon = $("#readbackWarn svg").cloneNode(true);
+  icon.setAttribute("width", "14");
+  icon.setAttribute("height", "14");
+  msg.append(icon, h("span", { class: "sr" }, "Warning: "), h("span", {}, text));
 }
 
 function commitRoi(r) {
@@ -1167,16 +1190,18 @@ $("#saveRois").onclick = () => {
   btn.disabled = true;
   st.roisSaving = (async () => {
     try {
-      const r = await api(`/api/worm/${code}/rois`, { rois: JSON.parse(sent) });
+      const r = await api(`/api/worm/${code}/rois`, { rois: JSON.parse(sent), ...(st.roisV ? { loaded: st.roisV } : {}) });
       // Two scoring windows saved this image's outlines and the other click came later: its outlines
       // are the saved ones, whichever finished first. These stay unsaved, and the message says so.
       if (r.superseded) throw new Error("another window saved outlines for this image after this click.");
       if (st.code === code) {
+        if (r.version) Object.assign(st, { roisV: r.version, roisElsewhere: null });
         // outlines changed while it was saving are still unsaved
-        if (JSON.stringify(st.rois) === sent) {
-          st.roisDirty = false;
-          roiMessage(`Saved ${n} outline${n === 1 ? "" : "s"}`);
-        } else roiMessage("Unsaved changes");
+        const same = JSON.stringify(st.rois) === sent, saved = `Saved ${n} outline${n === 1 ? "" : "s"}`;
+        if (same) st.roisDirty = false;
+        // the later save wins; this one replaced outlines another window saved after this window loaded its own
+        if (r.replaced) roiMessage(`${saved}. They replaced outlines saved in another window. Use one scoring window at a time.`, "warn");
+        else roiMessage(same ? saved : "Unsaved changes");
       }
       await loadList();
     } catch (err) {

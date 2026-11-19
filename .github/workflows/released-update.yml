@@ -5,6 +5,9 @@ name: released-update
 # checks it: mac-ui and win-app update between two builds of the same source.
 # Started by hand only (Actions > released-update > Run workflow). It downloads release files and
 # reads the latest release; it never creates, changes or publishes anything.
+# The app's updater asks GitHub's API without a login, and GitHub sometimes answers its shared runners
+# "rate limit exceeded". Each call of the updater goes through packaging/github_retry.sh (.ps1 on
+# Windows), which tries again after a growing wait on that answer only.
 on:
   workflow_dispatch:
     inputs:
@@ -24,6 +27,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FROM: ${{ inputs.from }}
     steps:
+      - uses: actions/checkout@v7        # for packaging/github_retry.sh only
       - name: Download and unpack the older app
         run: |
           mkdir -p "$RUNNER_TEMP/apps" && cd "$RUNNER_TEMP/apps"
@@ -52,7 +56,8 @@ jobs:
           for f in "$DIR/cert.pem" "$DIR/certs"; do if [ -e "$f" ]; then sudo mv "$f" "$f.hidden"; hidden="$hidden $f"; fi; done
           echo "moved away:${hidden:- nothing was there}"
           unset SSL_CERT_FILE SSL_CERT_DIR
-          out=$("$APP" update 2>&1) || true
+          source packaging/github_retry.sh
+          out=$(with_github_retry "$APP" update 2>&1) || true
           for f in $hidden; do sudo mv "$f.hidden" "$f"; done
           echo "$out"
           if echo "$out" | grep -q "is available"; then
@@ -62,7 +67,8 @@ jobs:
           fi
       - name: Update with the older app's own updater
         run: |
-          "$APP" update --install
+          source packaging/github_retry.sh
+          with_github_retry "$APP" update --install
           for i in $(seq 1 60); do v=$("$APP" --version 2>/dev/null || true); case "$v" in *"$LATEST"*) break;; esac; sleep 3; done
           echo "after the update: $v (latest release: $LATEST)"
           D="$HOME/Library/Application Support/wormscore"
@@ -74,11 +80,12 @@ jobs:
           test -x "$APP"
       - name: The new version works
         run: |
+          source packaging/github_retry.sh
           "$APP" demo "$RUNNER_TEMP/demo"
           "$APP" inventory "$RUNNER_TEMP/demo"
           "$APP" prepare "$RUNNER_TEMP/demo"
           test "$(ls "$RUNNER_TEMP/demo/blind" | wc -l)" -ge 1
-          "$APP" update
+          with_github_retry "$APP" update
       - name: Go back
         run: |
           "$APP" update --rollback
@@ -98,6 +105,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FROM: ${{ inputs.from }}
     steps:
+      - uses: actions/checkout@v7        # for packaging/github_retry.ps1 only
       - name: Download and unpack the older app
         run: |
           New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\apps" | Out-Null
@@ -111,6 +119,8 @@ jobs:
       - name: Update with the older app's own updater, then go back
         run: |
           # the app has no console of its own: without "| Out-Host" PowerShell would not wait for a command to end
+          # (Invoke-GitHubRetry passes the output through the pipeline too, so it waits as well)
+          . packaging\github_retry.ps1
           function Wait-Version($want) {
             $v = ""
             foreach ($i in 1..60) {
@@ -121,8 +131,8 @@ jobs:
             return $v
           }
           & $env:APP --version
-          & $env:APP update | Out-Host
-          & $env:APP update --install | Out-Host
+          Invoke-GitHubRetry $env:APP update
+          Invoke-GitHubRetry $env:APP update --install
           $v = Wait-Version $env:LATEST
           "after the update: $v (latest release: $env:LATEST)"
           Get-ChildItem "$env:RUNNER_TEMP\apps" | ForEach-Object { $_.Name }

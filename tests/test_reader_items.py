@@ -5,6 +5,7 @@ The sequential-scan fixtures follow the layout of a Stellaris file (LAS X 4.4, s
 with gain) and of an SP8 file (LAS X 3.5, steps list their detectors without gain), as read from public
 sample files; in both, the detection bands and the averaging are only in the master setting."""
 import hashlib
+import re
 
 import numpy as np
 import pytest
@@ -258,3 +259,82 @@ def test_a_plane_count_that_a_new_scan_reads_differently_is_named(tmp_path):
                      "system": r["system"], "settings": r["settings"], "settings_group": "A", "pixel_um": r["pixel_um"],
                      "n_z": 1} for k, r in enumerate(rows)])
     assert scan_changes(project)["lines"] == [f"the number of planes of 2 coded images changes from 1 to {old}"]
+# The header of a real file that Bio-Formats 5.2.0-DEV wrote from an Olympus .oir (three planes kept, names
+# changed): the schema name of a development build, a channel with no name, a UUID in every TiffData.
+DEV0_HEADER = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="no"?><!-- Warning: this comment is an OME-XML metadata '
+    'block, which contains crucial dimensional parameters and other important metadata. Please edit cautiously '
+    '(if at all), and back up the original data before doing so. For more information, see the OME-TIFF web '
+    'site: http://www.openmicroscopy.org/site/support/ome-model/ome-tiff/. -->'
+    '<OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-DEV0" '
+    'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Creator="OME Bio-Formats 5.2.0-DEV" '
+    'UUID="urn:uuid:00000000-0000-4000-8000-000000000001" '
+    'xsi:schemaLocation="http://www.openmicroscopy.org/Schemas/OME/2016-DEV0 '
+    'http://www.openmicroscopy.org/Schemas/OME/2016-DEV0/ome.xsd"><Image ID="Image:0">'
+    '<Pixels BigEndian="false" DimensionOrder="XYCZT" ID="Pixels:0" PhysicalSizeX="0.194592741887198" '
+    'PhysicalSizeXUnit="µm" PhysicalSizeY="0.194592741887198" PhysicalSizeYUnit="µm" PhysicalSizeZ="0.16" '
+    'PhysicalSizeZUnit="µm" SizeC="1" SizeT="1" SizeX="24" SizeY="24" SizeZ="3" TimeIncrement="0.0" '
+    'TimeIncrementUnit="s" Type="uint16"><Channel ID="Channel:0:0" SamplesPerPixel="1"><LightPath/></Channel>'
+    + "".join(f'<TiffData FirstC="0" FirstT="0" FirstZ="{z}" IFD="{z}" PlaneCount="1"><UUID FileName="stack.ome.tif">'
+              'urn:uuid:00000000-0000-4000-8000-000000000001</UUID></TiffData>' for z in range(3))
+    + '</Pixels></Image></OME>')
+
+
+def test_ome_tiff_from_a_development_build_of_bio_formats_is_read(tmp_path):
+    """The schema name 2016-DEV0 (Bio-Formats 5.2.0-DEV, before 2016-06 was published) was not taken for an
+    OME schema, so the file was listed as not used. Every state of that schema lies between 2015-01 and
+    2016-06, which name everything read here alike."""
+    cfg = C.merge(C.DEFAULTS, {})
+    planes = np.random.default_rng(0).integers(0, 1000, (3, 24, 24), dtype=np.uint16)
+    read = {}
+    for name in ("2016-DEV0", "2016-06"):
+        path = tmp_path / name / "stack.ome.tif"
+        path.parent.mkdir()
+        tifffile.imwrite(path, planes, description=DEV0_HEADER.replace("2016-DEV0", name).encode("utf-8"), metadata=None,
+                         photometric="minisblack", compression="lzw")
+        found = readers.images_in(path, cfg)
+        assert len(found) == 1, name                                 # was no image at all for 2016-DEV0
+        assert np.array_equal(readers._raw(found[0])[0].reshape(planes.shape), planes)
+        read[name] = {k: v for k, v in found[0].items() if k != "_reader"}
+    assert read["2016-DEV0"] == read["2016-06"]
+    assert (read["2016-DEV0"]["n_z"], read["2016-DEV0"]["pixel_um"], read["2016-DEV0"]["z_step_um"]) == (3, 0.194592741887198, 0.16)
+    # only this one development name: another is still not taken for a schema that is known
+    other = tmp_path / "other.ome.tif"
+    tifffile.imwrite(other, planes, description=DEV0_HEADER.replace("2016-DEV0", "2017-DEV1").encode("utf-8"),
+                     metadata=None,
+                     photometric="minisblack")
+    assert readers.images_in(other, cfg) == []
+
+
+def test_a_project_scanned_before_2016_dev0_was_read_gets_the_image_only_when_added(tmp_path, monkeypatch):
+    """Such a file was "not used". Nothing changes until Scan data runs again; then it is a raw image, a plain
+    rebuild refuses (the codes would change), and Add new images gives it a new code after the others."""
+    project = make_demo(tmp_path / "p", n_per_group=2, log=quiet)
+    donor = make_demo(tmp_path / "donor", n_per_group=1, seed=99, log=quiet)
+    src = next((donor / "data").glob("demo_*.ome.tif"))
+    dev = project / "data" / src.name.replace("demo_", "demo_dev0_")
+    dev.write_bytes(src.read_bytes())
+    rewrite(dev, lambda xml: xml.replace("OME/2016-06", "OME/2016-DEV0"))
+    monkeypatch.setattr(readers, "OME_SCHEMA", re.compile(r"http://www\.openmicroscopy\.org/Schemas/OME/\d{4}-\d{2}"))
+    inventory(project, log=quiet)                                    # as every version up to 1.26.17 scanned it
+    role = lambda: {r["relative_path"]: r["role"] for r in read_csv(project / "outputs" / "manifest.csv")}[dev.name]
+    assert role() == readers.NOT_USED
+    prepare(project, log=quiet)
+    key = (project / "key" / "key.csv").read_bytes()
+    before = read_csv(project / "key" / "key.csv")
+    assert len(before) == 4
+    monkeypatch.undo()
+
+    prepare(project, log=quiet)                                      # no new scan: a rebuild is as before
+    assert (project / "key" / "key.csv").read_bytes() == key
+    inventory(project, log=quiet)
+    assert role() == "raw image"
+    with pytest.raises(SystemExit, match="--add-new-images"):
+        prepare(project, log=quiet)
+    assert (project / "key" / "key.csv").read_bytes() == key
+    prepare(project, add=True, log=quiet)
+    rows = read_csv(project / "key" / "key.csv")
+    assert [r["code"] for r in rows if r["added_on"]] == ["W0005"] and len(rows) == 5
+    assert [r["file"] for r in rows if r["added_on"]] == [dev.name]
+    assert {r["code"]: r["local_path"] for r in rows if not r["added_on"]} == \
+        {r["code"]: r["local_path"] for r in before}

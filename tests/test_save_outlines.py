@@ -210,3 +210,71 @@ def test_saves_one_after_the_other_are_each_written(fresh_project):
         with p.lock:
             assert p.save_rois_in_order("W0001", rois, None, p.roi_ticket()) is True
         assert p.load("rois.json", {})["W0001"] == rois
+
+
+# ------------------------------------------------------------------ two windows, one after the other
+
+def get(port, path):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    conn.request("GET", path)
+    res = conn.getresponse()
+    data = res.read()
+    conn.close()
+    return res.status, json.loads(data) if res.status == 200 else data
+
+
+def running(project):
+    srv = server.make_server(project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, srv.server_address[1]
+
+
+def test_a_save_says_when_it_replaced_outlines_another_window_saved_meanwhile(fresh_project):
+    """Two scoring windows saved one image's outlines one after the other: the later save replaced the
+    earlier one and neither window was told. The later save still wins. The window that saves now learns
+    that it replaced outlines saved since it loaded them, and the other can ask which outlines are saved."""
+    srv, port = running(fresh_project)
+    save = lambda rois, loaded: json.loads(post(port, "/api/worm/W0001/rois", {"rois": rois, "loaded": loaded})[1])
+    try:
+        opened = get(port, "/api/worm/W0001")[1]["rois_v"]               # both windows open the image: no outlines yet
+        assert get(port, "/api/worm/W0001/rois-version")[1] == {"version": opened}
+        a = save(FIRST, opened)                                          # window A
+        assert a == {"ok": True, "n_regions": 1, "version": a["version"]} and a["version"] != opened
+        assert get(port, "/api/worm/W0001/rois-version")[1] == {"version": a["version"]}    # A looks again: still its own
+        b = save(LATER, opened)                                          # window B, which never saw A's outlines
+        assert b == {"ok": True, "n_regions": 1, "version": b["version"], "replaced": True}
+        assert json.loads((fresh_project / "scoring" / "rois.json").read_text(encoding="utf-8"))["W0001"] == LATER
+        assert get(port, "/api/worm/W0001/rois-version")[1]["version"] == b["version"] != a["version"]   # A looks again: replaced
+        assert get(port, "/api/worm/W0001")[1]["rois_v"] == b["version"]
+        again = save(FIRST, a["version"])                                # A saves anyway: it wins, and is told
+        assert again["replaced"] is True and again["version"] == a["version"]       # the same outlines, the same version
+        assert "replaced" not in save(LATER, again["version"])           # a window that saw the saved outlines
+        assert "replaced" not in save(LATER, a["version"])               # the same outlines again replace nothing
+        assert get(port, "/api/worm/W0002/rois-version")[1] == {"version": opened}          # another image: none saved
+        assert get(port, "/api/worm/W9999/rois-version")[0] == 404
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_what_is_stored_is_the_same_with_and_without_the_version(fresh_project, tmp_path):
+    """One scoring window: the same files with the same bytes as before, and a page that sends no version
+    (an earlier one left open) gets the answer it always got."""
+    import shutil
+    other = tmp_path / "other"
+    shutil.copytree(fresh_project, other)
+    stored = []
+    for project, with_version in ((fresh_project, True), (other, False)):
+        srv, port = running(project)
+        try:
+            for rois in (FIRST, LATER + FIRST, []):
+                loaded = get(port, "/api/worm/W0001")[1]["rois_v"]
+                answer = json.loads(post(port, "/api/worm/W0001/rois", {"rois": rois, **({"loaded": loaded} if with_version else {})})[1])
+                assert "replaced" not in answer
+                if not with_version:
+                    assert answer == {"ok": True, "n_regions": len(rois)}
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        stored.append({p.name: p.read_bytes() for p in sorted((project / "scoring").iterdir())})
+    assert stored[0] == stored[1] and sorted(stored[0]) == ["roi_measurements.csv", "roi_measurements.json", "rois.json"]
