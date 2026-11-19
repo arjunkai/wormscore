@@ -57,6 +57,8 @@ the copies read-only.
 
 ## The five steps
 
+<img src="img/home.png" alt="The home page: a project with its five steps, from Scan data to Unblind" width="820">
+
 ### 1. Scan data
 
 `wormscore inventory my_project`
@@ -73,6 +75,8 @@ the reason and left out. It never stops the scan or the build.
 **Set criteria...** opens the criteria: what the scorer answers for each image (see
 [Scoring criteria](#scoring-criteria)). Pressing Save records them in `log.md`, even if you keep the
 defaults. They lock at the first score.
+
+<img src="img/guide-criteria.png" alt="The criteria editor: the neurons in each image and the call for each, with a preview of the scoring form on the right" width="820">
 
 On the command line this step is optional: the criteria in `config.json` (the defaults unless you
 changed them) are recorded when you build the blind set.
@@ -113,6 +117,8 @@ For each coded image:
 3. Click **Save score**.
 4. Optional: outline each cell body, or accept a suggestion, and click **Save outlines**.
 
+<img src="img/scoring.png" alt="The scoring page: a coded image of a worm head with the questions for each cell on the right" width="820">
+
 **Keyboard.** Every question is a row of buttons. Tab to a question and press the number of the answer
 (1 for the first); the focus moves to the next question. The numbers show on the question that has the
 focus. **Ctrl+Enter** saves and opens the next unscored image. **N** (or **Next image**) moves on
@@ -139,6 +145,8 @@ paragraph (see [Results](#results)). The confirmation says how many images are s
 unscored ones are left out. Afterwards a **Results** card at the top of the project shows the
 penetrance per genotype and the planned Fisher tests, with **Open results**.
 
+<img src="img/guide-results.png" alt="The Results card after unblinding: affected animals per genotype and the Fisher test" width="820">
+
 A score saved or changed after the first unblinding is no longer blind. The summary, `merged.csv` and
 the Methods draft mark it.
 
@@ -151,6 +159,8 @@ scoring viewer with each image's file name and genotype. Use it after Scan data 
 decide the scoring criteria. It has the same views as scoring (planes, 3D, channels, both display
 ranges, suggested cells), and you can outline a cell to see its measurements on screen. Nothing is
 scored or saved.
+
+<img src="img/guide-browse.png" alt="Browse images: each code with its genotype, the image, and its file, microscope and saved score" width="820">
 
 - **It is recorded.** Each image you open before the build is written to `log.md` and
   `outputs/browsed_images.csv`, and the Build log and the Methods draft say how many images were seen.

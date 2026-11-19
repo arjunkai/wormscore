@@ -22,6 +22,10 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
   then says so.
 - Clearer wording for the notices about two scoring windows, for example "Another window changed
   this image's score. Open the image again to see it, or save yours."
+- The update box showed each line of the release notes as a paragraph of its own, breaking sentences
+  in the middle. Lines of one paragraph or list item are now joined.
+- The user guide has pictures of the main screens: the home page, the criteria editor, the scoring
+  page, the Results card and Browse images.
 - OME-TIFF from Micro-Manager whose planes are described only in the `.companion.ome` file next to it
   was read as its first plane, with the flag "illuminations (2)". The pages are now read as the planes,
   channels or time points that file gives them. Pages it does not place are flagged plainly.

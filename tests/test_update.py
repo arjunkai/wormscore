@@ -82,6 +82,26 @@ def test_release_notes_become_plain_text():
     assert U.clean_notes("## New\n- **bold** and `code` and [link](http://x)") == "New\n- bold and code and link"
 
 
+def test_release_notes_wrapped_by_hand_are_joined_into_their_paragraph_or_item():
+    """Release notes are written with line breaks every 100 characters or so; the update box showed each
+    line as a paragraph of its own, breaking sentences in the middle (seen by the owner on 1.26.17's notes)."""
+    md = ("## wormscore 1.26.17: Olympus `.oir` laser power\n\nA small release on top of 1.26.16, whose notes\n"
+          "list everything new since 1.8.1.\n\n- **Olympus `.oir`:** some files record a laser's power twice\n"
+          "  with two different numbers.\n- **Who is affected:** projects with `.oir` files. After the next\n"
+          "  Scan data the Build card says if coded images change\nsettings group.\n\n### Updating\n"
+          "**Mac, updating from 1.8.1:** the built-in update check of those versions\ncannot reach GitHub.\n\n"
+          "1. first\n2. second\n")
+    assert [ln for ln in U.clean_notes(md).split("\n") if ln] == [          # the page drops blank lines
+        "wormscore 1.26.17: Olympus .oir laser power",
+        "A small release on top of 1.26.16, whose notes list everything new since 1.8.1.",
+        "- Olympus .oir: some files record a laser's power twice with two different numbers.",
+        "- Who is affected: projects with .oir files. After the next Scan data the Build card says if coded "
+        "images change settings group.",
+        "Updating",
+        "Mac, updating from 1.8.1: the built-in update check of those versions cannot reach GitHub.",
+        "1. first", "2. second"]
+
+
 # ------------------------------------------------------------------ check and download
 
 def test_check_sends_nothing_about_the_user(github, monkeypatch):

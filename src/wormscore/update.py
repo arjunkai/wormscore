@@ -244,8 +244,18 @@ def check(timeout=5):
 
 
 def clean_notes(md, limit=3000):
-    """Release notes as plain text for the banner."""
-    text = re.sub(r"^#+\s*", "", md.replace("\r\n", "\n"), flags=re.M)
+    """Release notes as plain text for the banner: one line per heading, paragraph or list item. Notes
+    are written with a line break every 100 characters or so; the update box showed each such line as a
+    paragraph of its own, breaking sentences in the middle (1.26.18)."""
+    lines, start = [], re.compile(r"(#+\s|[-*]\s|\d+[.)]\s)")
+    for raw in md.replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if lines and lines[-1] and line and not start.match(line) and not lines[-1].startswith("#"):
+            lines[-1] += " " + line           # the next line of the same paragraph or item
+        else:
+            lines.append(line)
+    text = "\n".join(lines)
+    text = re.sub(r"^#+\s*", "", text, flags=re.M)
     text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text).strip()
