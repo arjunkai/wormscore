@@ -54,6 +54,26 @@ def test_one_leica_image_lists_what_scan_data_reads(tmp_path):
     assert "—" not in text and "Traceback" not in text
 
 
+def test_leica_sp8_gain_says_its_unit_as_las_x_shows_it(tmp_path):
+    """On a TCS SP8, LAS X shows a HyD's gain in percent (10 to 500 %, 100 % when Live starts) and a PMT's in
+    volts (0 to 1250 V). The file holds the number alone; inventory.csv keeps it as before ("HyD gain 458.3").
+    On a STELLARIS the HyD S detectors record in photon counting, where LAS X turns the gain off and the
+    file still holds a number such as 2.5 (a real STELLARIS 5 file): no unit is claimed for other systems."""
+    path = lif(tmp_path / "one.lif", NAMES[:1])
+    text = K.check_reading(path)
+    assert value(text, "Detector gain") == "100.0 (HyD)"                 # the test file's "Leica TCS TEST"
+    cfg = K.default_settings()
+    img = K._images(path, cfg, None)[0]
+    for system, settings, shown in (("Leica TCS SP8", "HyD gain 458.3; 488nm@2.0%", "458.3 % (HyD)"),
+                                    ("Leica TCS SP8", "PMT gain 625.0; 488nm@2.0%", "625.0 V (PMT)"),
+                                    ("Leica TCS SP8 X", "APD gain 3.0", "3.0 (APD)"),
+                                    ("Leica STELLARIS 5", "HyD gain 2.5; 488nm@1.0%", "2.5 (HyD)"),
+                                    ("Leica TCS SP5", "PMT gain 100", "100 (PMT)")):
+        lines = K.describe(dict(img, system=system, settings=settings), cfg, path)
+        assert value("\n".join(lines), "Detector gain") == shown, system
+        assert value("\n".join(lines), "In inventory.csv") == settings
+
+
 def test_nothing_is_written_anywhere(tmp_path, monkeypatch):
     home_dir, data = tmp_path / "home", tmp_path / "data"
     project = make_demo(tmp_path / "project", n_per_group=1, log=quiet)

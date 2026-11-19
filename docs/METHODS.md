@@ -50,7 +50,7 @@ The settings are those of the reporter channel, read from that channel's own par
 
 | Format | Settings read |
 |---|---|
-| Leica | Detector gain, each laser line in use with its intensity, and line averaging. The detector is named as the file names it: "HyD gain" for hybrid detectors, "PMT gain" for a PMT. |
+| Leica | Detector gain, each laser line in use with its intensity, and line averaging. The detector is named as the file names it: "HyD gain" for hybrid detectors, "PMT gain" for a PMT. The number is the one LAS X shows; on a TCS SP8 that is percent for a HyD and volts for a PMT. On a STELLARIS in photon counting, LAS X does not use the gain the file records. |
 | Zeiss | Detector gain (or voltage), each laser line with the share of its power let through (1 - attenuation), lamp intensity and exposure for cameras, and averaging. |
 | Nikon | Camera exposure, gain and multiplier, each laser line that is on with its power, and the fluorescence lamp. For the A1 and AX point-scanning confocals: the laser power and detector voltage (HV) of the detector channel with the reporter's excitation wavelength, and line averaging. |
 | OME-TIFF | Detector gain and voltage, each light source's wavelength and attenuation as the file states them, and exposure. A value the channel does not give itself is taken from the instrument's detector or light source that the channel names, as Bio-Formats writes converted files. |

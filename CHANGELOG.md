@@ -11,7 +11,8 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
 - **Check the reading...** under Scan data (`wormscore check-reading <file>`) shows what wormscore reads
   from one microscope file (objective, pixel size, z-step, planes, bit depth, each channel's role, the
   reporter's detector, laser and averaging settings) and where LAS X, ZEN, NIS-Elements or the FluoView
-  software shows each value. It reads the file's metadata only and changes nothing.
+  software shows each value. It reads the file's metadata only and changes nothing. A Leica TCS SP8
+  gain is shown with the unit LAS X uses: percent for a HyD, volts for a PMT.
 - OME-TIFF from Micro-Manager whose planes are described only in the `.companion.ome` file next to it
   was read as its first plane, with the flag "illuminations (2)". The pages are now read as the planes,
   channels or time points that file gives them. Pages it does not place are flagged plainly.

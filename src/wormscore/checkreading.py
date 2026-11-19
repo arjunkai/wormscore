@@ -227,6 +227,21 @@ def written_by(path):
     return R._no_formula("; ".join(said))
 
 
+LEICA_UNITS = {"HyD": "%", "PMT": "V"}
+
+
+def _leica_unit(value, system):
+    """A TCS SP8 gain with the unit LAS X shows it in: percent for a HyD (10 to 500 %, 100 % when Live
+    starts), volts for a PMT (0 to 1250 V), from LAS X 3.1 notes of Kyoto University's imaging facility and
+    UCSF's SP8 guide. The file holds the number alone. Other systems keep the number alone: a STELLARIS
+    records its HyD S in photon counting, where LAS X turns the gain off (Leica's STELLARIS 5 LAS X basic
+    guide) and the file still holds a number such as 2.5; no source was found for the others."""
+    found = re.fullmatch(r"(.+) \((HyD|PMT)\)", value)
+    if not found or not re.search(r"\bSP8\b", system or ""):
+        return value
+    return f"{found.group(1)} {LEICA_UNITS[found.group(2)]} ({found.group(2)})"
+
+
 def _row(label, value, width=18):
     return f"  {label:<{width}}{value}".rstrip()
 
@@ -253,6 +268,9 @@ def describe(img, cfg, path):
     lines += [_row(n or "(no name)", _role(r, cfg), width) for n, r in zip(names, roles)]
     lines.append("")
     parts = settings_parts(img["settings"]) if mi is not None else []
+    if img["format"] == "Leica LIF":
+        parts = [(what, _leica_unit(value, img["system"]), key) if what == "Detector gain" else (what, value, key)
+                 for what, value, key in parts]
     if mi is None:
         lines.append("Reporter settings: no single reporter channel was found, so none are read. If the reporter "
                      "is not the one named above, add --project with the project folder.")

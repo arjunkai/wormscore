@@ -205,8 +205,15 @@ def test_a_new_scan_before_scoring_reads_the_day_and_says_so(tmp_path, dated):
     # the slide images chosen again are read the same way: 20 July is a session of its own
     FF.measure(p, tmp_path / "ref", **QUIET)
     assert sorted(s["day"] for s in FF.summary(p)["sessions"]) == ["2009-05-07", "2009-07-20"]
-    pipeline.prepare(p, **QUIET)
+    said = []
+    pipeline.prepare(p, log=said.append)
     assert {r["flat_field"] for r in by_name(p).values()} == {"same session"}
+    # what the Build card said is done: the line is gone, also after the next scan, and no build warns again
+    assert rescan.scan_changes(p)["lines"] == []
+    pipeline.inventory(p, **QUIET)
+    assert rescan.scan_changes(p)["lines"] == []
+    pipeline.prepare(p, log=said.append)
+    assert not [s for s in said if s.startswith("Warning")] and {r["flat_field"] for r in by_name(p).values()} == {"same session"}
 
 
 def test_a_new_scan_after_scoring_keeps_the_coded_images_as_they_were_scored(tmp_path, dated):
