@@ -161,7 +161,8 @@ Most of these are a flag in `outputs/inventory.csv`; files that cannot be read a
   not a length is not used, and the image is left out for having no pixel size.
 - One file of a set that keeps each plane in its own file is flagged ("the metadata lists 5 planes,
   this file holds 1").
-- Files written to the 2010 to 2015 schemas are read like current ones.
+- Files written to the 2010 to 2015 schemas, and to `2016-DEV0` (a development build of Bio-Formats,
+  whose names match 2016-06 for everything read here), are read like current ones.
 - Files written to the 2008 schema describe their channels apart from the pixels. The channels are
   read where the file says which pixel channel each description belongs to. Where it does not, they
   are UNRESOLVED and flagged "the file does not say which channel is which"; the order of the
@@ -542,7 +543,9 @@ uniform fluorescent reference slide taken at the project's settings in each imag
 
 An imaging session is one microscope, settings, objective and zoom, and one acquisition day from the
 metadata. Nikon and Olympus dates, written in the computer's locale, are read in the common forms, US
-month/day first.
+month/day first; a date that can only be day first (a day above 12) and is written with AM or PM, or
+with no time, is read day first when Scan data was run with 1.26.18 or later (the day is then in `inventory.csv`, column
+`acquired_day`). Slide images are read by the same rule as the project's images.
 
     corrected = (raw - dark) / flat x factor + mean(dark)
 
@@ -638,6 +641,8 @@ With flat-field correction on (section 5), every measurement is made on the corr
 Saving outlines replaces the image's saved outlines and their measurements. If two scoring windows of
 one project save outlines for the same image at nearly the same time, the click that reached the app
 later is the one kept, whichever is measured first; the other window says its outlines were not saved.
+If they save one after the other, the later save is kept too, and both windows say so. The same holds
+for scores.
 
 ### With an identity channel
 
@@ -1121,7 +1126,10 @@ what an existing project shows.
   the correction, in words that can fit two sessions; keys built then still warn when they do.
 - **Joint bleed-through fit, 1.26.0 and 1.26.1:** collinearity was checked with the centred variance
   inflation factor, which missed channels that share an offset.
-- **Before 1.26.18,** a Micro-Manager style OME-TIFF whose planes are described only in its
+- **Before 1.26.18,** a Nikon or Olympus date written day first with AM or PM (17/7/2009 4:01:38 PM) gave no
+  flat-field day, so such images used the average of the microscope's sessions; projects scanned
+  before keep that reading until they run Scan data again.
+- **Before 1.26.18,** OME-TIFF files in the `2016-DEV0` schema were not read, and a Micro-Manager style OME-TIFF whose planes are described only in its
   `.companion.ome` file was read as its first plane, flagged "illuminations".
 
 **When a feature arrived.** A project scored before a feature arrived has no record of it, except

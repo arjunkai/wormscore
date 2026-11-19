@@ -5,6 +5,43 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.18
+
+**Check the reading of a file against the microscope software; Micro-Manager z-stacks read whole; faster builds.**
+- **Check the reading...** under Scan data (`wormscore check-reading <file>`) shows what wormscore reads
+  from one microscope file (objective, pixel size, z-step, planes, bit depth, each channel's role, the
+  reporter's detector, laser and averaging settings) and where LAS X, ZEN, NIS-Elements or the FluoView
+  software shows each value. It reads the file's metadata only and changes nothing.
+- OME-TIFF from Micro-Manager whose planes are described only in the `.companion.ome` file next to it
+  was read as its first plane, with the flag "illuminations (2)". The pages are now read as the planes,
+  channels or time points that file gives them. Pages it does not place are flagged plainly.
+- OME-TIFF written by a development build of Bio-Formats (schema name 2016-DEV0) is read. It was listed
+  as not used.
+- When two scoring windows save a score or outlines for the same image one after the other, the later
+  save is kept, as before, and both windows now say so.
+- Scan data reads dates written day first with AM or PM or with no time (for example 17/7/2009 4:01:38
+  PM), so such
+  images get their flat-field imaging day. Before, they used the average of the microscope's sessions.
+- Build blind set is about 2.4 times faster on large stacks, and with an identity channel uses 2.5 GB
+  instead of 6.1 GB at most (4 images of 2048 x 2048 x 50). Opening an image in Browse before the build
+  is about 3 times faster. Every file a build writes is the same, byte for byte.
+- The real-worm demo shows its images larger (a display frame that fits them).
+- The user guide is organised by step and feature; the app's Guide button opens it. What changed in
+  each version is now in this file; ROADMAP.md lists what is planned.
+- **Who is affected:**
+  - Projects with Micro-Manager OME-TIFF z-stacks: after the next Scan data such images have all their
+    planes. If any of them already has a code, the Build card says "the number of planes of N coded
+    images changes from 1 to 2", and a rebuild keeping the codes records it in `log.md`. Images of a
+    stack shallower than the minimum z extent stay left out.
+  - Projects with 2016-DEV0 OME-TIFF files in an image folder: after the next Scan data they are listed
+    as images, and join a blind set only through Add new images or a build with new codes.
+  - Flat-field projects whose microscope writes such dates: nothing changes until Scan data runs again.
+    After it, the Build card names the coded images whose day is now read. Before scoring, a rebuild
+    uses the new day (choose the slide images again so theirs are read the same way); once scoring has
+    begun, coded images keep the correction they were scored with.
+  - Everyone else: nothing changes in scores, measurements or reports. `inventory.csv` gains an
+    `acquired_day` column at the next Scan data.
+
 ## 1.26.17
 
 **Olympus `.oir`: a laser's power that the file records twice is settled from the file.**
