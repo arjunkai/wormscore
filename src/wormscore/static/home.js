@@ -1898,7 +1898,7 @@ async function sideAction(which) {
   if (which === "demo") {
     const real = await ask("Try a demo", "Pick the kind of demo, then choose an empty folder for it.", [
       { value: "sim", label: "Simulated worms", desc: "20 heads with known normal, dim and missing cells. Instant, works offline." },
-      { value: "real", label: "Real worm images", desc: "4 L1 heads from Sun and Hobert 2021 (Zenodo, CC BY 4.0). Downloads about 150 MB once." },
+      { value: "real", label: "Real worm images", desc: "4 larval heads with the BAG neurons marked, from Sun and Hobert 2021 (Zenodo, CC BY 4.0). Downloads about 230 MB once." },
     ]);
     if (!real) return;
     st.log = []; st.since = 0;

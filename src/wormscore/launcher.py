@@ -158,7 +158,7 @@ class Launcher(tk.Tk):
         d = filedialog.askdirectory(title="Choose an empty folder for the demo project")
         if not d:
             return
-        real = messagebox.askyesno("Demo", "Use real worm images? This downloads 4 heads (about 150 MB, "
+        real = messagebox.askyesno("Demo", "Use real worm images? This downloads 4 heads (about 230 MB, "
                                            "CC BY 4.0).\n\nNo makes 20 simulated worms instead.")
         self.project.set(d)
         self._remember()

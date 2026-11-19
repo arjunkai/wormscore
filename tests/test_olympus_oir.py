@@ -84,6 +84,15 @@ def test_a_reporter_that_names_another_fluorophore_is_flagged_not_changed():
     assert R.other_fluorophore(["MARKER"], ["mcherry"], GFP) == [
         "the GFP channel is named mcherry in the file, another fluorophore: check the channel roles"]
     assert R.other_fluorophore(["OTHER", "MARKER"], [None, ""], GFP) == []
+    assert R.other_fluorophore(["MARKER"], [488], GFP) == []            # oiffile reads an unquoted number as int
+    # a relative excited by the same laser lines is not flagged: a lab whose software has no entry for its
+    # fluorophore would see the flag on every image (independent review)
+    assert R.other_fluorophore(["MARKER"], ["EGFP"], marker(preset="mNeonGreen")) == []
+    assert R.other_fluorophore(["MARKER"], ["mCherry"], marker(preset="mScarlet")) == []
+    gcamp = copy.deepcopy(GFP)
+    gcamp["marker"] = {"label": "GCaMP", "dye_names": ["GCaMP6s"], "excitation_nm": [488], "channel_name_prefixes": []}
+    assert R.other_fluorophore(["MARKER"], ["EGFP"], gcamp) == []
+    assert R.other_fluorophore(["MARKER"], ["EYFP"], GFP) != []          # 514 nm against 488 nm
     ident = copy.deepcopy(GFP)
     ident["identity"] = {**C.PRESETS["mCherry"]}
     assert R.other_fluorophore(["MARKER", "IDENTITY"], ["EGFP", "TagBFP"], ident) == [

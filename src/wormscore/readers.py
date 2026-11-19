@@ -168,12 +168,15 @@ def other_fluorophore(roles, fluors, cfg):
     out = []
     for role, m in (("MARKER", cfg["marker"]), ("IDENTITY", cfg.get("identity"))):
         i = pick(roles, role) if m else None
-        dye = (fluors[i] or "").strip() if i is not None and i < len(fluors) else ""
-        own = {d.casefold() for d in m.get("dye_names") or []} if m else set()
+        dye = str(fluors[i] or "").strip() if i is not None and i < len(fluors) else ""
+        own = {str(d).casefold() for d in m.get("dye_names") or []} if m else set()
         if not dye or dye.casefold() in own:
             continue
+        # only another colour: a relative excited by the same lines (EGFP in an mNeonGreen project) is not
+        # flagged, or a lab whose software has no entry for its fluorophore sees it on every image
+        lines = {int(float(x)) for x in m.get("excitation_nm") or []}
         if any(dye.casefold() in {d.casefold() for d in p["dye_names"]} and not own & {d.casefold() for d in p["dye_names"]}
-               for p in C.PRESETS.values()):
+               and not lines & set(p["excitation_nm"]) for p in C.PRESETS.values()):
             out.append(f"the {m['label']} channel is named {dye} in the file, another fluorophore: check the channel roles")
     return out
 

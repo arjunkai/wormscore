@@ -142,6 +142,8 @@ Most of these are a flag in `outputs/inventory.csv`; files that cannot be read a
 
 **Any format**
 
+- The reporter or identity channel is named in the file for a fluorophore of another colour (one
+  excited by other laser lines, for example mCherry on the GFP channel). The channel keeps its role.
 - A dimension wormscore does not use (the tiles of a tile scan, the wavelengths of a lambda scan,
   Airyscan phases): only its first entry is read, and Build warns how many such images are in the
   blind set.

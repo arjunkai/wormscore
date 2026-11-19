@@ -535,14 +535,16 @@ controls with two normal cells, and mutants with cells that are normal, dim or m
 identity channel that marks every cell.
 
 **Real worms.** `wormscore demo my_demo --real`, or **Real worm images** in the demo dialog,
-downloads four L1 heads with an endogenous GFP reporter, about 150 MB, from
+downloads four larval heads with the flp-17::GFP reporter, about 230 MB, from
 [Sun and Hobert 2021](https://doi.org/10.1038/s41586-021-04071-4)
 ([Zenodo 5602160](https://doi.org/10.5281/zenodo.5602160), CC BY 4.0).
 
 - Each file is checked against its MD5 from the Zenodo record and cached in
   `%LOCALAPPDATA%\wormscore\demo_cache` (`~/.cache` elsewhere). The images are not part of this
   repository.
-- The two reporters stand in for two genotypes. Both are normal animals, so this is for practice.
+- flp-17 marks the BAG pair of sensory neurons, so every image shows the two cells the form asks
+  about. Two L1 and two L2 larvae stand in for two genotypes. All are normal animals, and L2 heads are
+  larger, so the group can be guessed from the size: this is for practice.
 - The animals carry NeuroPAL, so the demo also shows its four colours (keys 1, 2, 3 switch between
   GFP, NeuroPAL and both).
 

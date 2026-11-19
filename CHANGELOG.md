@@ -26,12 +26,14 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
 - Build blind set is about 2.4 times faster on large stacks, and with an identity channel uses 2.5 GB
   instead of 6.1 GB at most (4 images of 2048 x 2048 x 50). Opening an image in Browse before the build
   is about 3 times faster. Every file a build writes is the same, byte for byte.
-- Scan data flags an image whose reporter or identity channel the file names for another fluorophore,
+- Scan data flags an image whose reporter or identity channel the file names for a fluorophore of another colour,
   for example a channel named mCherry that was taken as GFP because it was excited at 488 nm (16 public
   Olympus files did this). The channel keeps its role; the flag asks you to check it.
 - A Build-card line about a new scan could stay as it was when the key or the scan was written twice
   within a second or two (drives formatted FAT32 or exFAT keep file times to 2 seconds).
-- The real-worm demo shows its images larger (a display frame that fits them).
+- The real-worm demo shows one reporter, flp-17::GFP, which marks the BAG pair, in two L1 and two L2
+  heads, and the form asks about BAG 1 and BAG 2. It compared flp-17 with nlp-45, a reporter of other
+  neurons, and asked for the two brightest GFP cells. It downloads about 230 MB (was 150 MB).
 - The user guide is organised by step and feature; the app's Guide button opens it. What changed in
   each version is now in this file; ROADMAP.md lists what is planned.
 - **Who is affected:**
@@ -45,8 +47,8 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
     After it, the Build card names the coded images whose day is now read. Before scoring, a rebuild
     uses the new day (choose the slide images again so theirs are read the same way); once scoring has
     begun, coded images keep the correction they were scored with.
-  - Projects whose files name a different fluorophore for the reporter channel: the next Scan data adds
-    the flag; roles, codes and results do not change.
+  - Projects whose files name a fluorophore of another colour for the reporter or identity channel: the
+    next Scan data adds the flag; roles, codes and results do not change.
   - Everyone else: nothing changes in scores, measurements or reports. `inventory.csv` gains an
     `acquired_day` column at the next Scan data.
 

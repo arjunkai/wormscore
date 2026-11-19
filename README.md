@@ -26,7 +26,7 @@ the cells, and writes the tables, the tests and a draft Methods paragraph when y
 <p align="center">
   <img src="https://raw.githubusercontent.com/arjunkai/wormscore/main/docs/img/scoring.png" alt="The scoring page: a coded image of a worm head with brightfield on, and the questions for each cell on the right" width="820">
 </p>
-<p align="center"><sub>The scoring page. The image is from the real-worm demo: an L1 head with a GFP reporter, from Sun and Hobert 2021 (<a href="https://doi.org/10.5281/zenodo.5602160">Zenodo 5602160</a>, CC BY 4.0).</sub></p>
+<p align="center"><sub>The scoring page. The image is from the real-worm demo: an L2 head with the BAG neurons and their dendrites marked (flp-17::GFP), from Sun and Hobert 2021 (<a href="https://doi.org/10.5281/zenodo.5602160">Zenodo 5602160</a>, CC BY 4.0).</sub></p>
 
 - **Blind:** every image gets a random code. Genotypes and file names stay in a sealed key until you
   finish scoring.
@@ -85,7 +85,7 @@ wormscore app my_demo
 
 The demo is 20 simulated worm heads in two genotypes, with a `demo_truth.csv` to check your calls
 against. **Real worm images** in the demo dialog (`wormscore demo my_demo --real`) downloads four real
-L1 heads from [Sun and Hobert 2021](https://doi.org/10.1038/s41586-021-04071-4)
+larval heads with the BAG neurons marked (flp-17::GFP) from [Sun and Hobert 2021](https://doi.org/10.1038/s41586-021-04071-4)
 ([Zenodo 5602160](https://doi.org/10.5281/zenodo.5602160), CC BY 4.0).
 
 ## How a project goes

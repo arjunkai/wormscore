@@ -25,10 +25,23 @@ def test_real_demo_project_from_cache(tmp_path):
     cfg = json.loads((project / "config.json").read_text(encoding="utf-8"))
     rules = cfg["sources"][0]["genotypes"]
     assert all(any(n.startswith(r["match"].rstrip("*")) for r in rules) for n in realdemo.FILES)
-    # the frame fits these heads (the widest is 125.4 um), so they fill the window instead of two thirds of it
+    # the frame fits these heads (the widest is 164.2 um), so every head is drawn at the same scale
     from wormscore import config
     display = config.load(project)["display"]
-    assert 125.4 < display["frame_px"] * display["display_um_per_px"] < 135
+    assert 164.2 < display["frame_px"] * display["display_um_per_px"] < 172
+
+
+def test_the_real_demo_scores_one_identified_pair_of_neurons():
+    """Every image shows the same reporter, flp-17::GFP, which marks the BAG pair, so the two cells on the
+    form are the cells in every image. The two stages stand in for the two genotypes (the old demo
+    compared two reporters in different neurons, and asked for "the two brightest GFP cells")."""
+    assert all(n.startswith(("flp-17 L1 ", "flp-17 L2 ")) for n in realdemo.FILES)
+    assert sum(n.startswith("flp-17 L1 ") for n in realdemo.FILES) == sum(n.startswith("flp-17 L2 ") for n in realdemo.FILES) == 2
+    assert all(len(md5) == 32 for md5, _ in realdemo.FILES.values())
+    cfg = realdemo.demo_config("data")
+    assert cfg["scoring"]["neurons"] == ["BAG 1", "BAG 2"]
+    assert [g["match"] for g in cfg["sources"][0]["genotypes"]] == ["flp-17 L1*", "flp-17 L2*"]
+    assert any("BAG" in rule for rule in cfg["scoring"]["rules"])
 
 
 def test_a_download_that_stalls_is_tried_again_then_reported_plainly(tmp_path, monkeypatch):
