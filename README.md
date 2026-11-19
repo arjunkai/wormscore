@@ -24,8 +24,9 @@ statistics. You score coded images without knowing the genotype; wormscore keeps
 the cells, and writes the tables, the tests and a draft Methods paragraph when you unblind.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/arjunkai/wormscore/main/docs/img/scoring.png" alt="The scoring page: a coded image, with the questions for each neuron on the right" width="820">
+  <img src="https://raw.githubusercontent.com/arjunkai/wormscore/main/docs/img/scoring.png" alt="The scoring page: a coded image of a worm head with brightfield on, and the questions for each cell on the right" width="820">
 </p>
+<p align="center"><sub>The scoring page. The image is from the real-worm demo: an L1 head with a GFP reporter, from Sun and Hobert 2021 (<a href="https://doi.org/10.5281/zenodo.5602160">Zenodo 5602160</a>, CC BY 4.0).</sub></p>
 
 - **Blind:** every image gets a random code. Genotypes and file names stay in a sealed key until you
   finish scoring.
@@ -90,7 +91,10 @@ L1 heads from [Sun and Hobert 2021](https://doi.org/10.1038/s41586-021-04071-4)
 ## How a project goes
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/arjunkai/wormscore/main/docs/img/home.png" alt="The home page: a project with its five steps" width="820">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/arjunkai/wormscore/main/docs/img/home-dark.png">
+    <img src="https://raw.githubusercontent.com/arjunkai/wormscore/main/docs/img/home.png" alt="The home page: a project with its five steps" width="820">
+  </picture>
 </p>
 
 1. **Scan data:** lists every image with its metadata and which channel is which.
