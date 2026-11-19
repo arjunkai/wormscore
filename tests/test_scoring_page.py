@@ -446,3 +446,89 @@ def test_the_score_warnings_keep_to_two_lines_in_a_narrow_window(playwright, fre
         browser.close()
         srv.shutdown()
         srv.server_close()
+
+
+ANSWER_USABLE = """() => {
+  const f = document.querySelector('#scoreForm');
+  for (const fl of st.meta.flags) f.querySelector(`input[name="flag_${fl.id}"]`)?.click();
+  f.querySelector('input[name=usable][value=yes]').click();
+  const names = new Set([...f.querySelectorAll('input[type=radio]')].map(i => i.name));
+  for (const n of names) {
+    if (n === 'usable' || n.startsWith('flag_') || f.querySelector(`input[name="${n}"]:checked`)) continue;
+    [...f.querySelectorAll(`input[type=radio][name="${n}"]`)].find(i => !i.disabled)?.click();
+  }
+}"""
+
+
+def test_the_score_warnings_show_for_a_usable_image(playwright, fresh_project):
+    """After saving a usable image the page moves to Outline cells, which hid the Score tab and the warning
+    in it: neither window's score warning could be seen in the usual case (second review of 1.26.18). The
+    window that replaced a score now stays on the Score tab, and the other returns to it to say so."""
+    browser = playwright.chromium.launch()
+    srv = make_server(fresh_project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    context = browser.new_context(viewport={"width": 1536, "height": 785}, device_scale_factor=1.25)
+
+    def opened():
+        page = context.new_page()
+        page.goto(f"http://127.0.0.1:{srv.server_address[1]}/")
+        page.wait_for_function("document.querySelector('#codeTitle').textContent.startsWith('W') && !st.loading")
+        return page
+    try:
+        one, two = opened(), opened()
+        code = one.evaluate("st.code")
+        one.evaluate(ANSWER_USABLE)
+        one.locator("#scoreForm button[type=submit]").click()
+        one.wait_for_function("st.tab === 'mark'")                   # one window: on to the outlines, as before
+        two.evaluate(ANSWER_USABLE)
+        two.locator("label", has_text="Unsure").click()              # a different score from window one's
+        two.locator("#scoreForm button[type=submit]").click()
+        two.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
+        assert two.evaluate("st.tab") == "score" and two.evaluate("st.code") == code
+        assert two.locator("#saveMsg").is_visible()
+        one.evaluate("window.dispatchEvent(new Event('focus'))")
+        one.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
+        assert one.evaluate("st.tab") == "score" and one.locator("#saveMsg").is_visible()
+        assert one.evaluate(SAVE_WARNING)["said"] == \
+            "Another window saved a different score for this image. Reopen it to see it, or save yours."
+    finally:
+        context.close()
+        browser.close()
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_a_replaced_score_is_said_when_an_answer_changed_while_it_saved(playwright, fresh_project):
+    """A save that replaced another window's score, during which an answer was changed, said only "you
+    changed an answer while it saved", and the next save did not mention the replaced score."""
+    browser = playwright.chromium.launch()
+    srv = make_server(fresh_project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    context = browser.new_context(viewport={"width": 1024, "height": 700}, device_scale_factor=1.25)
+    try:
+        page = context.new_page()
+        page.goto(f"http://127.0.0.1:{srv.server_address[1]}/")
+        page.wait_for_function("document.querySelector('#codeTitle').textContent.startsWith('W') && !st.loading")
+        code = page.evaluate("st.code")
+        import json as _json
+        import urllib.request as _ur
+        _ur.urlopen(_ur.Request(f"http://127.0.0.1:{srv.server_address[1]}/api/worm/{code}/score",      # another window saves first
+                                data=_json.dumps({"usable": "no", "unusable_reason": "x", "flag_answers": {}}).encode(),
+                                headers={"Content-Type": "application/json"}), timeout=30).read()
+        page.evaluate(ANSWER_UNUSABLE, 0)
+        held = []
+        page.route("**/score", lambda route: held.append(route))
+        page.locator("#scoreForm button[type=submit]").click()
+        page.wait_for_function("st.saving === true")
+        page.locator("label", has_text="Fairly sure").click()                     # an answer changes meanwhile
+        page.wait_for_timeout(100)
+        held[0].continue_()
+        page.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
+        box = page.evaluate(SAVE_WARNING)
+        assert box["said"] == "Score saved, replacing a score saved in another window. Click Save again for your newest answers."
+        assert box["lines"] <= 2
+    finally:
+        context.close()
+        browser.close()
+        srv.shutdown()
+        srv.server_close()

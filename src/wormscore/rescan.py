@@ -145,7 +145,10 @@ def scan_changes(project, cfg=None):
     # 1.26.18: dates written day first with AM/PM have a flat-field day only from a new scan (acquired_day)
     if isinstance(cfg.get("flat_field"), dict):
         from .flatfield import DAY_COLUMN, acquired_day
-        days = sum(1 for r, s in pairs if DAY_COLUMN in s and s[DAY_COLUMN] != acquired_day(r.get("acquired", "")))
+        # the key's imaging_session names the day the build used ("system, 2009-07-20, settings ..."): an
+        # image built from a scan that already read the day is not counted again
+        days = sum(1 for r, s in pairs if s.get(DAY_COLUMN) and s[DAY_COLUMN] != acquired_day(r.get("acquired", ""))
+                   and f", {s[DAY_COLUMN]}" not in (r.get("imaging_session") or ""))
         if days:
             out["lines"] += [f"the flat-field imaging day of {days} coded image{'s' if days != 1 else ''} is now read "
                              f"from {'their' if days != 1 else 'its'} date (written day first, with AM or PM); before "

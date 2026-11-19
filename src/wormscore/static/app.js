@@ -1245,6 +1245,7 @@ async function checkScore() {
   try { now = (await api(`/api/worm/${code}/score-version`)).version; } catch { return; }
   if (!now || st.code !== code || st.scoreV !== had || st.saving || now === had || now === st.scoreElsewhere) return;
   st.scoreElsewhere = now;
+  if (st.tab !== "score") setTab("score");      // the message sits on the Score tab: show it
   saveMessage("Another window saved a different score for this image. Reopen it to see it, or save yours.", "warn");
 }
 
@@ -1359,9 +1360,11 @@ $("#scoreForm").addEventListener("submit", async e => {
         saveMessage("Score saved, replacing a score saved in another window. Use one scoring window at a time.", "warn");
       } else saveMessage(`Saved ${r.saved}`);
     } else {
-      // an answer was changed while saving: that change is not in the saved score yet
+      // an answer was changed while saving: that change is not in the saved score yet. A save that
+      // replaced another window's score says that first; the unsaved change still shows as a draft.
       st.saveAndNext = false;
-      saveMessage(`Saved ${r.saved}, but you changed an answer while it saved. Click Save again.`, true);
+      if (r.replaced) saveMessage("Score saved, replacing a score saved in another window. Click Save again for your newest answers.", "warn");
+      else saveMessage(`Saved ${r.saved}, but you changed an answer while it saved. Click Save again.`, true);
     }
     markAvailable(true);
     await loadList();
@@ -1372,7 +1375,8 @@ $("#scoreForm").addEventListener("submit", async e => {
       if (next) return openWorm(next.code);
       return saveMessage(`Saved ${r.saved}. Every image is scored.`);
     }
-    if (v.usable === "yes" && !st.formDirty) setTab("mark");    // nothing to outline on an unusable image
+    // nothing to outline on an unusable image; after a warning the Score tab stays, so it is read
+    if (v.usable === "yes" && !st.formDirty && !r.replaced) setTab("mark");
   } catch (err) {
     st.saving = false;
     st.saveAndNext = false;

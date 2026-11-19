@@ -541,12 +541,12 @@ class Correction:
             # 1.26.18: a scan that now reads the image's day (DAY_COLUMN) where 1.26.17 read none: the image
             # keeps the correction it was scored with, from the day as it was read then
             was = {k: v for k, v in img.items() if k != DAY_COLUMN}
+            held = False
             if not fits and DAY_COLUMN in img and session_key(was) != session_key(img):
                 fits = fitting(was)
                 if fits:
                     self.held_day.add(_ident(img))
-                    if fits[0][0] is self.sessions:
-                        kept += 1
+                    held = True
             if code not in recorded:
                 # a key from before 1.26.16: slide images added after the image got its code cannot be the
                 # ones it was scored with, so a session list without them comes first
@@ -559,9 +559,11 @@ class Correction:
                     changed += 1        # the words fit more than one session: the warning says to compare
             if not fits:
                 changed += 1
-            elif fits[0][0] is not self.sessions:
-                self.pins[_ident(img)] = fits[0][0]
-                kept += 1
+            else:
+                if fits[0][0] is not self.sessions:
+                    self.pins[_ident(img)] = fits[0][0]
+                if held or fits[0][0] is not self.sessions:
+                    kept += 1           # once per image (an image held to its old day may also be pinned)
         self.kept_changed = bool(changed)
         return kept, changed
 

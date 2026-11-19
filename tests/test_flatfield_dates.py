@@ -223,3 +223,43 @@ def test_the_day_from_a_scan_and_the_reading_of_1_26_17():
     assert FF.session_key(img)[2] == ""                                     # an inventory of 1.26.17
     assert FF.session_key({**img, "acquired_day": "2009-07-17"})[2] == "2009-07-17"
     assert FF.session_key({**img, "acquired_day": ""})[2] == ""
+
+
+def test_a_project_built_from_a_new_scan_is_not_told_its_day_changed(tmp_path, dated):
+    """The Build-card line about the day now read compared with the key's raw date text, so it showed
+    for every such image, also in a project scanned and built by 1.26.18, and every rebuild logged a
+    change warning (second review of 1.26.18). It counts only images whose recorded session lacks the day."""
+    p = make_demo(tmp_path / "p", n_per_group=2, **QUIET)
+    pipeline.inventory(p, **QUIET)                                   # scanned by 1.26.18
+    slides(tmp_path / "ref" / "a")
+    slides(tmp_path / "ref" / "b", level=1000, seed=1)
+    FF.measure(p, tmp_path / "ref", **QUIET)
+    pipeline.prepare(p, **QUIET)
+    assert rescan.scan_changes(p)["lines"] == []
+    said = []
+    pipeline.prepare(p, log=said.append)
+    assert not [s for s in said if s.startswith("Warning")]
+
+
+def test_an_image_held_to_its_old_day_is_counted_once():
+    """An image held to the day 1.26.17 read, in a key from before 1.26.16 whose newest session list has a
+    session added after scoring, was counted twice in "N coded images keep ..." (second review)."""
+    import tempfile
+    import numpy as np
+    c = FF.Correction.__new__(FF.Correction)
+    c.project = Path(tempfile.mkdtemp())
+    c.ff = {"across_field": True, "between_sessions": False}
+    c.used_now = {}
+    c.sessions = [
+        {"index": 0, "system": "A", "settings": "s", "day": "2009-05-07", "height": 2, "width": 2, "factor": 1, "dark_level": 0},
+        {"index": 1, "system": "A", "settings": "s", "day": "", "height": 2, "width": 2, "factor": 1, "dark_level": 0},
+        {"index": 2, "system": "B", "settings": "t", "day": "2009-08-01", "height": 2, "width": 2, "factor": 1, "dark_level": 0,
+         "added": "2009-08-02 10:00:00", "added_after_scoring_began": True},
+    ]
+    c.arrays = {f"flat_{i}": np.ones((2, 2)) for i in range(3)} | {f"dark_{i}": np.zeros((2, 2)) for i in range(3)}
+    img = {"system": "A", "settings": "s", "acquired": "20/7/2009 4:01:38 PM", "acquired_day": "2009-07-20",
+           "height": 2, "width": 2, "local_path": "x.tif", "location_in_file": "0"}
+    was = {k: v for k, v in img.items() if k != "acquired_day"}
+    cols = c.key_columns(was, c._states()[1])
+    row = {"code": "W0001", "local_path": "x.tif", "location_in_file": "0", **{k: str(v) for k, v in cols.items()}}
+    assert c.keep_coded([img], [row]) == (1, 0)
