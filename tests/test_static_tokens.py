@@ -72,3 +72,34 @@ def test_project_settings_cards_match_the_criteria_cards():
     sf = re.search(r"\.sf-card \{([^}]*)\}", css).group(1)
     for part in ("background: var(--panel)", "border-color: var(--line-strong)", "border-radius: var(--radius-lg)"):
         assert part in ps and part in sf, part
+
+
+def _tokens(css, selector):
+    block = re.search(re.escape(selector) + r" \{([^}]*)\}", css).group(1)
+    return dict(re.findall(r"(--[\w-]+):\s*(#[0-9a-fA-F]{6})", block))
+
+
+def _contrast(a, b):
+    def lum(h):
+        c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_light_mode_edges_are_as_clear_as_dark_modes():
+    """The owner found the light home page faded (1.26.18): card edges were 1.25:1 against the page in
+    light mode against 2.06:1 in dark, and typing boxes 1.36:1. Input edges now meet WCAG 1.4.11 (3:1)
+    in both themes; card edges are about as clear in light as in dark; and cards, optional cards,
+    buttons and step circles use the stronger edge."""
+    css = (STATIC / "home.css").read_text(encoding="utf-8")
+    dark, light = _tokens(css, ':root, [data-theme="dark"]'), _tokens(css, '[data-theme="light"]')
+    for t in (dark, light):
+        assert _contrast(t["--line-input"], t["--panel"]) >= 3 and _contrast(t["--line-input"], t["--bg"]) >= 3
+    assert _contrast(light["--line-strong"], light["--bg"]) >= 0.95 * _contrast(dark["--line-strong"], dark["--bg"])
+    assert _contrast(light["--line"], light["--panel"]) >= _contrast(dark["--line"], dark["--panel"])
+    for sel, prop in ((".step", "border: 1px solid var(--line-strong)"), (".extra", "border: 1px dashed var(--line-strong)"),
+                      (".btn", "border: 1px solid var(--line-strong)"), (".num", "border: 2px solid var(--line-strong)"),
+                      (".f-input", "border: 1px solid var(--line-input)")):
+        assert prop in re.search(r"(?m)^" + re.escape(sel) + r" \{([^}]*)\}", css).group(1), sel

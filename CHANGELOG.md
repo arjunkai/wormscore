@@ -25,7 +25,9 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
 - The update box showed each line of the release notes as a paragraph of its own, breaking sentences
   in the middle. Lines of one paragraph or list item are now joined.
 - The user guide has pictures of the main screens: the home page, the criteria editor, the scoring
-  page, the Results card and Browse images.
+  page, the Results card and Browse images, in dark or light to match the reader's GitHub.
+- Light mode is less faded: cards, buttons and step circles have clearer edges (about as clear as in
+  dark mode), and typing boxes have edges at 3:1 contrast in both themes, as WCAG asks.
 - OME-TIFF from Micro-Manager whose planes are described only in the `.companion.ome` file next to it
   was read as its first plane, with the flag "illuminations (2)". The pages are now read as the planes,
   channels or time points that file gives them. Pages it does not place are flagged plainly.

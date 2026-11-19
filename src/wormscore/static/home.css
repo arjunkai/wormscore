@@ -7,6 +7,7 @@
   --hover: #2a2f36;
   --line: #31363d;
   --line-strong: #434a53;   /* edges of cards that sit on the page background */
+  --line-input: #666e79;    /* edges of typing boxes: 3:1 against panel and page (WCAG 1.4.11) */
   --text: #e4e6e9;
   --muted: #adb3bc;
   --faint: #9ea5af;
@@ -51,8 +52,9 @@
   --panel: #ffffff;
   --raised: #eef0f3;
   --hover: #e6e9ed;
-  --line: #d9dde3;
-  --line-strong: #c3c9d1;
+  --line: #c9cfd7;          /* 1.26.18: edges were fainter than in dark mode (owner: "too faded") */
+  --line-strong: #a9b1bc;
+  --line-input: #868f9b;
   --text: #1b1f24;
   --muted: #5b636e;
   --faint: #646c76;
@@ -106,7 +108,7 @@ a { color: inherit; }
   border-radius: var(--radius); cursor: pointer; padding: 7px 14px; white-space: nowrap;
   transition: background .12s, border-color .12s, opacity .12s;
 }
-.btn { background: var(--raised); border: 1px solid var(--line); }
+.btn { background: var(--raised); border: 1px solid var(--line-strong); }
 .btn:hover:not(:disabled) { background: var(--hover); }
 .btn.subtle { background: none; }
 .btn.subtle:hover:not(:disabled) { background: var(--raised); }
@@ -250,13 +252,13 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .step {
   position: relative; display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: start;
   padding: 16px 18px; margin-bottom: 10px; background: var(--panel);
-  border: 1px solid var(--line); border-radius: var(--radius-lg);
+  border: 1px solid var(--line-strong); border-radius: var(--radius-lg);
 }
 .step.next { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
 .step.running { border-color: var(--run); }
 .num {
   width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 600;
-  border: 2px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums;
+  border: 2px solid var(--line-strong); color: var(--muted); font-variant-numeric: tabular-nums;
 }
 .step.done .num { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .step.next .num { border-color: var(--accent); color: var(--accent); }
@@ -397,7 +399,7 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 /* ---------------------------------------------------------------- second scorer */
 .extra {
   margin-top: 6px; padding: 16px 18px; background: var(--panel);
-  border: 1px dashed var(--line); border-radius: var(--radius-lg);
+  border: 1px dashed var(--line-strong); border-radius: var(--radius-lg);
 }
 .x-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .x-head > div:first-child { flex: 1 1 320px; min-width: 0; }
@@ -426,7 +428,7 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .form .f-label:first-child, .src > .f-label:first-child { margin-top: 0; }
 .f-input {
   width: 100%; min-width: 0; padding: 7px 10px; border-radius: var(--radius-sm); background: var(--bg);
-  border: 1px solid var(--line); color: var(--text);
+  border: 1px solid var(--line-input); color: var(--text);
 }
 /* placeholders in the faint grey, not the browser's half-transparent text */
 .f-input::placeholder { color: var(--faint); opacity: 1; }
@@ -582,7 +584,7 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
 .sf-form .calls label { font-weight: 500; }
 .sf-form label { display: inline-flex; align-items: center; gap: 6px; margin-right: var(--space-lg); line-height: 1.9; cursor: pointer; overflow-wrap: anywhere; }
 .sf-form input[type="radio"] { accent-color: var(--accent); }
-.sf-form select { display: block; width: 100%; margin-top: 10px; background: var(--raised); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 5px 8px; font: inherit; }
+.sf-form select { display: block; width: 100%; margin-top: 10px; background: var(--raised); color: var(--text); border: 1px solid var(--line-input); border-radius: var(--radius-sm); padding: 5px 8px; font: inherit; }
 .sf-form .opt-k { display: none; }
 .sf-form div.nq { margin: 10px 0 0; }
 .sf-form div.nq-side .nq-row { display: flex; align-items: flex-start; gap: 10px; }
