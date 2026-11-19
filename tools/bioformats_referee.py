@@ -449,7 +449,11 @@ def main(argv=None):
             images, err = R.images_in(path, cfg), ""
         except (Exception, SystemExit) as exc:
             images, err = [], f"{type(exc).__name__}: {str(exc)[:160]}"
-        series, original, bf_err = parse_showinf(showinf(path, bf, version, Path(args.cache)))
+        # A Micro-Manager set keeps its metadata in <name>.companion.ome; given only the TIFF, Bio-Formats
+        # reads it as a plain TIFF (each page a time point, no channel names). Give it the companion file.
+        companion = Path(re.sub(r"(_t\d+_p\d+)?\.ome\.tiff?$", ".companion.ome", str(path)))
+        target = companion if companion != path and companion.is_file() else path
+        series, original, bf_err = parse_showinf(showinf(target, bf, version, Path(args.cache)))
         fmt = images[0]["format"] if images else path.suffix.lower()
         if err or bf_err or not images:
             ws = f"could not read ({err})" if err else f"{len(images)} image(s)" if images else "no image (not used)"

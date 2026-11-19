@@ -49,6 +49,10 @@ every laser entry of the file and prints a note. It counts each wavelength of a 
 (a note), and it leaves out a last plane that was not finished, as wormscore does. A gain of 1 and a
 voltage of 0 are left out of wormscore's settings on purpose (a note).
 
+Micro-Manager OME-TIFF: the metadata is in `<name>.companion.ome` next to the TIFF. Given only the TIFF,
+Bio-Formats reads it as a plain TIFF (each page a time point, no channel names), so the script gives it
+the companion file.
+
 Pixels are not compared by this script. For `.oir` they were compared once with `bfconvert` (every
 channel and plane of 11 files; the reading is the same), with a script kept outside the repository.
 
