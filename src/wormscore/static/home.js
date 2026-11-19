@@ -329,7 +329,9 @@ function renderMain(d) {
         : scanned ? `${plural(p.scanned, "image")} found.` : null,
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
-        scanned ? "Scan again" : "Scan data")],
+        scanned ? "Scan again" : "Scan data"),
+       h("button", { class: "btn subtle", "data-k": "checkReading", title: "What wormscore reads from one file, to compare with the microscope software",
+         onclick: checkReading }, "Check the reading...")],
       msScan && scanned && s1 !== "running" ? warnNote("The markers changed. Scan again to find their channels.")
         : fsScan && scanned && s1 !== "running" ? warnNote("The image folders or rules changed. Scan again to use them.") : null),
     stepCard(2, sF, ["Set scoring criteria", wsHelp(h, "criteria", "scoring criteria")], "Choose the calls and questions, and what counts as a defect.",
@@ -1903,6 +1905,18 @@ async function sideAction(which) {
   }
   const r = await act(`/api/${which}`, {});
   if (r?.settings) openProjectSettings("new");      // a new project starts with its name and image folders
+}
+
+// What wormscore reads from one microscope file, to hold against the microscope software (wormscore
+// check-reading). The Windows app has no console, so the text is shown here with a Copy button.
+async function checkReading() {
+  let r;
+  try { r = await api("/api/check-reading", {}); } catch (e) { return toast(e.message, "error"); }
+  if (!r.text) return;
+  const copy = h("button", { class: "btn", onclick: () => copyText(r.text, "Copied.", `Could not copy. Select the text and press ${MOD}+C.`) }, "Copy");
+  await ask("Check the reading", h("div", { class: "settings" },
+    h("p", {}, "Compare these values with what the microscope software shows for the same image."),
+    h("pre", { class: "log reading" }, r.text), h("p", {}, copy)), [], "Close", { wide: true });
 }
 
 async function scan() {

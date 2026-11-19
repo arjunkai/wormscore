@@ -566,14 +566,14 @@ def _start_icon_keeper():
 _dialog_lock = threading.Lock()
 
 
-def pick_folder(title):
-    """The system folder picker. Windows and Linux: Tk's native dialog on its own thread.
-    macOS allows Tk windows only on the main thread, so there the Finder dialog is used."""
+def pick_folder(title, file=False):
+    """The system folder picker (file=True: a file picker). Windows and Linux: Tk's native dialog on its
+    own thread. macOS allows Tk windows only on the main thread, so there the Finder dialog is used."""
     if sys.platform == "darwin":
         # Title and folder go in as arguments, never into the script text, so a folder name
         # with quotes in it cannot change the script.
         r = subprocess.run(["osascript", "-e", "on run argv",
-                            "-e", "POSIX path of (choose folder with prompt (item 1 of argv) "
+                            "-e", f"POSIX path of (choose {'file' if file else 'folder'} with prompt (item 1 of argv) "
                                   "default location (POSIX file (item 2 of argv)))",
                             "-e", "end run", title, start_folder()], capture_output=True, text=True)
         return r.stdout.strip().rstrip("/") or None if r.returncode == 0 else None
@@ -585,7 +585,8 @@ def pick_folder(title):
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
-        result["path"] = filedialog.askdirectory(parent=root, title=title, initialdir=start_folder(), mustexist=False)
+        result["path"] = (filedialog.askopenfilename(parent=root, title=title, initialdir=start_folder()) if file else
+                          filedialog.askdirectory(parent=root, title=title, initialdir=start_folder(), mustexist=False))
         root.destroy()
     with _dialog_lock:
         t = threading.Thread(target=run)
@@ -1134,6 +1135,14 @@ class HomeApp:
                 d = self.pick("Choose the folder with the images")
                 return {"ok": bool(d), "path": d or ""}
             raise ValueError("unknown settings action")
+        elif route == "check-reading":
+            # what wormscore reads from one file, to compare with the microscope software; writes nothing
+            from .checkreading import text_for
+            d = self.pick("Choose one microscope file", file=True)
+            if not d:
+                return {"ok": False}
+            p = self.current()
+            return {"ok": True, "text": text_for(Path(d), project=p if p and (Path(p) / "config.json").is_file() else None)}
         elif route == "second-scorer":
             return self.second_scorer(body)
         elif route == "practice":

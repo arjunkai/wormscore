@@ -61,6 +61,10 @@ def main(argv=None):
     s = sub.add_parser("add-practice", help="record a scored practice set's agreement in a project")
     s.add_argument("project")
     s.add_argument("practice_set")
+    s = sub.add_parser("check-reading", help="show what wormscore reads from one microscope file, to compare with the microscope software")
+    s.add_argument("file")
+    s.add_argument("--series", type=int, help="which image of the file (the number in its list); default the first")
+    s.add_argument("--project", help="a project folder whose config.json sets the markers (default: a GFP reporter)")
     s = sub.add_parser("update", help="check GitHub for a newer version; --install or --rollback the downloaded app")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--install", action="store_true", help="download, check and install it when this command ends")
@@ -120,6 +124,12 @@ def main(argv=None):
         elif a.cmd == "add-practice":
             from .practice import add_result
             add_result(a.project, a.practice_set)
+        elif a.cmd == "check-reading":
+            from .checkreading import NotRead, check_reading
+            try:
+                print(check_reading(a.file, series=a.series, project=a.project))
+            except NotRead as exc:
+                sys.exit(str(exc))
         elif a.cmd == "update":
             update_command(a)
     except FileNotFoundError as exc:
