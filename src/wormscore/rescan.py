@@ -151,8 +151,27 @@ def scan_changes(project, cfg=None):
         from .flatfield import DAY_COLUMN, acquired_day
         # the key's imaging_session names the day the build used ("system, 2009-07-20, settings ..."): an
         # image built from a scan that already read the day is not counted again
-        days = sum(1 for r, s in pairs if s.get(DAY_COLUMN) and s[DAY_COLUMN] != acquired_day(r.get("acquired", ""))
-                   and f", {s[DAY_COLUMN]}" not in (r.get("imaging_session") or ""))
+        from .flatfield import summary
+        lacks = lambda r, s: s.get(DAY_COLUMN) and f", {s[DAY_COLUMN]}" not in (r.get("imaging_session") or "")
+        # 1.26.18: Leica images have a date at all only from a new scan; the line stays until the slide
+        # images are read with theirs (the flat-field summary says so), also after a rebuild
+        read = bool((summary(project) or {}).get("leica_days"))
+        leica = 0 if read else sum(1 for r, s in pairs if s.get("format") == "Leica LIF" and lacks(r, s))
+        days = sum(1 for r, s in pairs if s.get("format") != "Leica LIF" and lacks(r, s)
+                   and s[DAY_COLUMN] != acquired_day(r.get("acquired", "")))
+        if leica:
+            out["lines"] += [f"the flat-field imaging day of {leica} coded Leica image{'s' if leica != 1 else ''} is now "
+                             f"read from the file; choose the slide images again so theirs are read the same way"]
+        # a Leica date is given in the time zone of the computer that runs Scan data (found by review): a
+        # scan elsewhere can move an image to the day before or after
+        zone = lambda a: (a or "")[-6:] if (a or "")[-6:-5] in ("+", "-") else ""
+        moved = sum(1 for r, s in pairs if s.get("format") == "Leica LIF" and r.get("acquired") and s.get("acquired")
+                    and zone(r["acquired"]) != zone(s["acquired"]) and s.get(DAY_COLUMN)
+                    and s[DAY_COLUMN] != acquired_day(r["acquired"]))
+        if moved:
+            out["lines"] += [f"the flat-field imaging day of {moved} coded Leica image{'s' if moved != 1 else ''} changes: "
+                             f"this computer is in another time zone than the one that ran Scan data before; scan there, "
+                             f"or choose the slide images again"]
         if days:
             out["lines"] += [f"the flat-field imaging day of {days} coded image{'s' if days != 1 else ''} is now read "
                              f"from {'their' if days != 1 else 'its'} date (written day first, with AM or PM); before "

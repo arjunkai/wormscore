@@ -74,21 +74,23 @@ def test_leica_sp8_gain_says_its_unit_as_las_x_shows_it(tmp_path):
         assert value("\n".join(lines), "In inventory.csv") == settings
 
 
-def test_leica_start_time_is_shown_as_las_x_and_bio_formats_read_it(tmp_path):
+def test_leica_start_time_is_shown_as_las_x_and_bio_formats_read_it(tmp_path, monkeypatch):
     """LAS X Office's Properties window shows "Start Time: 10/15/2026 4:20:58.187 PM" for Series001 of the
     owner's SP8 file; the reading said "not recorded in the file". LAS X writes each frame's time as a
     Windows file time in hexadecimal (UTC) in the series' TimeStampList; LAS X shows the first in the
     viewing computer's time zone, and Bio-Formats gives 2026-10-15T20:20:58 for the same file. Scan data
-    does not record the date of Leica files (unchanged), and the reading says so."""
+    records it too (test_leica_dates.py); here in UTC."""
+    import datetime as dt
     from test_readers import HARDWARE
+    monkeypatch.setattr(readers, "LOCAL_ZONE", dt.timezone.utc)
     stamps = '<TimeStampList NumberOfTimeStamps="2">1dd5ce2b05779b0 1dd5ce2b2a73610 </TimeStampList>'
     rng = np.random.default_rng(0)
     path = tmp_path / "dated.lif"
     write_lif(path, [("Series001", (rng.integers(0, 4096, (4, 6, 8)), rng.integers(0, 4096, (4, 6, 8))))],
               hardware=HARDWARE + stamps)
     text = K.check_reading(path)
-    assert value(text, "Acquired") == "2026-10-15 20:20:58 UTC (not in inventory.csv)"
-    assert readers.leica_images(path, K.default_settings())[0]["acquired"] == ""     # inventory.csv unchanged
+    assert value(text, "Acquired") == "2026-10-15 20:20:58 +00:00"
+    assert readers.leica_images(path, K.default_settings())[0]["acquired"] == "2026-10-15 20:20:58 +00:00"
     where = text[text.index("Where to find these"):].splitlines()
     assert where[2].strip() == "Acquired                  Start Time (this computer's time zone)"   # first, as above
     undated = K.check_reading(lif(tmp_path / "undated.lif", NAMES[:1]))
@@ -100,7 +102,7 @@ def test_leica_start_time_is_shown_as_las_x_and_bio_formats_read_it(tmp_path):
     path = tmp_path / "old.lif"
     write_lif(path, [("Series001", (rng.integers(0, 4096, (4, 6, 8)), rng.integers(0, 4096, (4, 6, 8))))],
               hardware=HARDWARE + old)
-    assert value(K.check_reading(path), "Acquired") == "2019-08-17 04:15:15 UTC (not in inventory.csv)"
+    assert value(K.check_reading(path), "Acquired") == "2019-08-17 04:15:15 +00:00"
     broken = '<TimeStampList NumberOfTimeStamps="1">zz</TimeStampList>'
     path = tmp_path / "broken.lif"
     write_lif(path, [("Series001", (rng.integers(0, 4096, (4, 6, 8)), rng.integers(0, 4096, (4, 6, 8))))],

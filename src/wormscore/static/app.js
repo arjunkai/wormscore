@@ -138,7 +138,7 @@ async function checkOutlines() {
   try { now = (await api(`/api/worm/${code}/rois-version`)).version; } catch { return; }
   if (!now || st.code !== code || st.roisV !== had || st.roisSaving || now === had || now === st.roisElsewhere) return;
   st.roisElsewhere = now;
-  roiMessage("Another window saved other outlines for this image. Reopen it to see them, or save yours.", "warn");
+  roiMessage("Another window changed this image's outlines. Open the image again to see them, or save yours.", "warn");
 }
 
 for (const ev of ["focus", "online"]) window.addEventListener(ev, checkIn);
@@ -1198,14 +1198,14 @@ $("#saveRois").onclick = () => {
       const r = await api(`/api/worm/${code}/rois`, { rois: JSON.parse(sent), ...(st.roisV ? { loaded: st.roisV } : {}) });
       // Two scoring windows saved this image's outlines and the other click came later: its outlines
       // are the saved ones, whichever finished first. These stay unsaved, and the message says so.
-      if (r.superseded) throw new Error("another window saved outlines for this image after this click.");
+      if (r.superseded) throw new Error("another window saved this image's outlines just after you clicked; those are kept.");
       if (st.code === code) {
         if (r.version) Object.assign(st, { roisV: r.version, roisElsewhere: null });
         // outlines changed while it was saving are still unsaved
         const same = JSON.stringify(st.rois) === sent, saved = `Saved ${n} outline${n === 1 ? "" : "s"}`;
         if (same) st.roisDirty = false;
         // the later save wins; this one replaced outlines another window saved after this window loaded its own
-        if (r.replaced) roiMessage(`${saved}, replacing outlines saved in another window. Use one scoring window at a time.`, "warn");
+        if (r.replaced) roiMessage(`${saved}, replacing those from another window. Use one scoring window at a time.`, "warn");
         else roiMessage(same ? saved : "Unsaved changes");
       }
       await loadList();
@@ -1246,7 +1246,7 @@ async function checkScore() {
   if (!now || st.code !== code || st.scoreV !== had || st.saving || now === had || now === st.scoreElsewhere) return;
   st.scoreElsewhere = now;
   if (st.tab !== "score") setTab("score");      // the message sits on the Score tab: show it
-  saveMessage("Another window saved a different score for this image. Reopen it to see it, or save yours.", "warn");
+  saveMessage("Another window changed this image's score. Open the image again to see it, or save yours.", "warn");
 }
 
 function fillForm() {
@@ -1357,13 +1357,13 @@ $("#scoreForm").addEventListener("submit", async e => {
         // the later save wins; it replaced a score another window saved after this window opened the image.
         // The window stays on this image, so the warning is read.
         st.saveAndNext = false;
-        saveMessage("Score saved, replacing a score saved in another window. Use one scoring window at a time.", "warn");
+        saveMessage("Score saved, replacing one from another window. Use one scoring window at a time.", "warn");
       } else saveMessage(`Saved ${r.saved}`);
     } else {
       // an answer was changed while saving: that change is not in the saved score yet. A save that
       // replaced another window's score says that first; the unsaved change still shows as a draft.
       st.saveAndNext = false;
-      if (r.replaced) saveMessage("Score saved, replacing a score saved in another window. Click Save again for your newest answers.", "warn");
+      if (r.replaced) saveMessage("Score saved, replacing one from another window. Click Save again for your latest change.", "warn");
       else saveMessage(`Saved ${r.saved}, but you changed an answer while it saved. Click Save again.`, true);
     }
     markAvailable(true);

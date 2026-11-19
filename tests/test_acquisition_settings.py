@@ -143,7 +143,7 @@ def test_ome_tiff_reporter_named_for_another_fluorophore_is_flagged(tmp_path):
         tifffile.imwrite(path, data.reshape(-1, 32, 32), description=named, metadata=None, photometric="minisblack")
         img = readers.ome_images(path, cfg)[0]
         assert img["channel_roles"] == ["MARKER", "BF"], fluor
-        assert (img["flags"] == ["the GFP channel is named mCherry in the file, another fluorophore: check the channel roles"]) \
+        assert (img["flags"] == ["the GFP channel is named mCherry in the file (another fluorophore): check the channel roles"]) \
             if flagged else img["flags"] == [], (fluor, img["flags"])
 
 

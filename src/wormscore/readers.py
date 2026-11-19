@@ -177,7 +177,7 @@ def other_fluorophore(roles, fluors, cfg):
         lines = {int(float(x)) for x in m.get("excitation_nm") or []}
         if any(dye.casefold() in {d.casefold() for d in p["dye_names"]} and not own & {d.casefold() for d in p["dye_names"]}
                and not lines & set(p["excitation_nm"]) for p in C.PRESETS.values()):
-            out.append(f"the {m['label']} channel is named {dye} in the file, another fluorophore: check the channel roles")
+            out.append(f"the {m['label']} channel is named {dye} in the file (another fluorophore): check the channel roles")
     return out
 
 
@@ -366,6 +366,31 @@ def _leica_channels(elem):
     return chans
 
 
+LOCAL_ZONE = None       # the time zone dates are given in: None is the computer's own (tests set one)
+
+
+def _leica_acquired(elem):
+    """The series' start time as LAS X shows it (Properties, Start Time): "YYYY-MM-DD HH:MM:SS +HH:MM" in
+    the scanning computer's time zone, or "" (1.26.18; before, Leica images had no date). LAS X writes each
+    frame's time in TimeStampList as a Windows file time (100 ns steps since 1601, UTC), in hexadecimal, or
+    in older files as <TimeStamp HighInteger LowInteger>, the two halves of the same number. Bio-Formats
+    reads the same value. The computer's time zone, not UTC, so that an evening session keeps its day."""
+    import datetime as dt
+    try:
+        stamps = elem.find("./Data/Image/TimeStampList")
+        old = stamps.find("TimeStamp")
+        ticks = ((int(old.get("HighInteger")) << 32) + int(old.get("LowInteger")) if old is not None
+                 else int(stamps.text.split()[0], 16))
+        when = dt.datetime(1601, 1, 1, tzinfo=dt.timezone.utc) + dt.timedelta(microseconds=ticks // 10)
+        if when.year < 1990:
+            return ""
+        local = when.astimezone(LOCAL_ZONE)
+    except (AttributeError, IndexError, TypeError, ValueError, OverflowError, OSError):
+        return ""
+    zone = local.strftime("%z")
+    return local.strftime("%Y-%m-%d %H:%M:%S ") + zone[:3] + ":" + zone[3:5]
+
+
 def leica_images(path, cfg):
     lf = _lif(path)
     system = next((a.get("SystemTypeName") for a in lf.xml_element.iter("Attachment") if a.get("SystemTypeName")), "")
@@ -394,7 +419,7 @@ def leica_images(path, cfg):
             "bits": bits, "channel_roles": roles, "channel_names": luts,
             "settings": (f"{g.get('kind', 'HyD')} gain {g['gain']:.1f}; " + ";".join(f"{ln}nm@{p:.1f}%" for ln, p in g["lasers"])
                          + f"; line avg {g['line_avg']}") if g else "",
-            "zoom": st.get("Zoom", ""), "acquired": "",
+            "zoom": st.get("Zoom", ""), "acquired": _leica_acquired(elem),
             "stage_x": float(st["StagePosX"]) * 1e6 if "StagePosX" in st else None,
             "stage_y": float(st["StagePosY"]) * 1e6 if "StagePosY" in st else None,
             "flags": flags, "_reader": ("lif", str(path), i),

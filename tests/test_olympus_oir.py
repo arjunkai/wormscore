@@ -76,13 +76,13 @@ def test_a_reporter_that_names_another_fluorophore_is_flagged_not_changed():
     image = xml("chloroplasts.image").replace("<lsmimage:dyeName>EGFP<", "<lsmimage:dyeName>mCherry<", 1)
     meta = R._oir_meta(image, [], GFP)
     assert meta["channel_roles"] == ["MARKER", "OTHER", "OTHER", "BF"]
-    assert meta["flags"] == ["the GFP channel is named mCherry in the file, another fluorophore: check the channel roles"]
+    assert meta["flags"] == ["the GFP channel is named mCherry in the file (another fluorophore): check the channel roles"]
     assert R._oir_meta(xml("chloroplasts.image"), [], GFP)["flags"] == []                   # EGFP: no flag
     assert R._oir_meta(image, [], marker(preset="mCherry"))["flags"] == []                  # the reporter is mCherry
     custom = R._oir_meta(image.replace(">mCherry<", ">Leica/EGFP<"), [], GFP)              # a dye wormscore does not know
     assert custom["flags"] == []
     assert R.other_fluorophore(["MARKER"], ["mcherry"], GFP) == [
-        "the GFP channel is named mcherry in the file, another fluorophore: check the channel roles"]
+        "the GFP channel is named mcherry in the file (another fluorophore): check the channel roles"]
     assert R.other_fluorophore(["OTHER", "MARKER"], [None, ""], GFP) == []
     assert R.other_fluorophore(["MARKER"], [488], GFP) == []            # oiffile reads an unquoted number as int
     # a relative excited by the same laser lines is not flagged: a lab whose software has no entry for its
@@ -96,7 +96,7 @@ def test_a_reporter_that_names_another_fluorophore_is_flagged_not_changed():
     ident = copy.deepcopy(GFP)
     ident["identity"] = {**C.PRESETS["mCherry"]}
     assert R.other_fluorophore(["MARKER", "IDENTITY"], ["EGFP", "TagBFP"], ident) == [
-        "the mCherry channel is named TagBFP in the file, another fluorophore: check the channel roles"]
+        "the mCherry channel is named TagBFP in the file (another fluorophore): check the channel roles"]
 
 
 def test_transmitted_light_is_read_from_the_detector_not_from_the_position():

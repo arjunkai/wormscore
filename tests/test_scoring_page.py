@@ -211,7 +211,7 @@ def test_the_window_whose_outlines_were_not_saved_says_so(browser, fresh_project
         two.wait_for_function("document.querySelector('#roiMsg').textContent === 'Saved 1 outline'")
         go.set()
         one.wait_for_function("document.querySelector('#roiMsg').textContent.startsWith('Not saved')")
-        assert one.locator("#roiMsg").inner_text() == "Not saved: another window saved outlines for this image after this click."
+        assert one.locator("#roiMsg").inner_text() == "Not saved: another window saved this image's outlines just after you clicked; those are kept."
         assert one.evaluate("st.roisDirty") is True and two.evaluate("st.roisDirty") is False
         one.wait_for_function("!document.querySelector('#saveRois').disabled")
         saved = srv.project.load("rois.json", {})[two.evaluate("st.code")]
@@ -276,14 +276,14 @@ def test_two_windows_that_save_outlines_one_after_the_other_both_say_so(playwrig
         two.locator("#saveRois").click()                             # the later save wins and says what it replaced
         two.wait_for_function("document.querySelector('#roiMsg').classList.contains('warn')")
         w = two.evaluate(WARNING_BOX)
-        assert w["said"] == "Saved 1 outline, replacing outlines saved in another window. Use one scoring window at a time."
+        assert w["said"] == "Saved 1 outline, replacing those from another window. Use one scoring window at a time."
         assert srv.project.load("rois.json", {})[code] == two.evaluate("st.rois") != one.evaluate("st.rois")
         assert two.evaluate("st.roisDirty") is False
 
         one.evaluate("window.dispatchEvent(new Event('focus'))")     # the first window is looked at again
         one.wait_for_function("document.querySelector('#roiMsg').classList.contains('warn')")
         v = one.evaluate(WARNING_BOX)
-        assert v["said"] == "Another window saved other outlines for this image. Reopen it to see them, or save yours."
+        assert v["said"] == "Another window changed this image's outlines. Open the image again to see them, or save yours."
         for box in (w, v):
             assert box["sr"] == "Warning: " and box["role"] == "status"
             assert box["lines"] <= 2                                 # at most two lines
@@ -327,8 +327,8 @@ def test_the_outline_warnings_keep_to_two_lines_in_a_narrow_window(playwright, f
                       ".then(() => openWorm(st.code))")
         page.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
         page.locator("#markTab").click()
-        for text in ("Another window saved other outlines for this image. Reopen it to see them, or save yours.",
-                     "Saved 12 outlines, replacing outlines saved in another window. Use one scoring window at a time."):
+        for text in ("Another window changed this image's outlines. Open the image again to see them, or save yours.",
+                     "Saved 12 outlines, replacing those from another window. Use one scoring window at a time."):
             page.evaluate("t => roiMessage(t, 'warn')", text)
             assert page.evaluate(WARNING_BOX)["lines"] <= 2, text
     finally:
@@ -384,7 +384,7 @@ def test_two_windows_that_save_a_score_one_after_the_other_both_say_so(playwrigh
         two.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
         w = two.evaluate(SAVE_WARNING)
         saved = srv.project.load("scores.json", {})[code]
-        assert w["said"] == "Score saved, replacing a score saved in another window. Use one scoring window at a time."
+        assert w["said"] == "Score saved, replacing one from another window. Use one scoring window at a time."
         assert saved["unusable_reason"] == two.evaluate("document.querySelector('#reasonSelect').value") \
             != one.evaluate("document.querySelector('#reasonSelect').value")
         assert two.evaluate("st.code") == code and two.evaluate("st.formDirty") is False
@@ -392,7 +392,7 @@ def test_two_windows_that_save_a_score_one_after_the_other_both_say_so(playwrigh
         one.evaluate("window.dispatchEvent(new Event('focus'))")     # the first window is looked at again
         one.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
         v = one.evaluate(SAVE_WARNING)
-        assert v["said"] == "Another window saved a different score for this image. Reopen it to see it, or save yours."
+        assert v["said"] == "Another window changed this image's score. Open the image again to see it, or save yours."
         for box in (w, v):
             assert box["sr"] == "Warning: " and box["role"] == "status" and box["lines"] <= 2
             assert box["icon"]["right"] > box["icon"]["left"] >= box["msg"]["left"]
@@ -496,7 +496,7 @@ def test_the_score_warnings_show_for_a_usable_image(playwright, fresh_project):
         one.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
         assert one.evaluate("st.tab") == "score" and one.locator("#saveMsg").is_visible()
         assert one.evaluate(SAVE_WARNING)["said"] == \
-            "Another window saved a different score for this image. Reopen it to see it, or save yours."
+            "Another window changed this image's score. Open the image again to see it, or save yours."
     finally:
         context.close()
         browser.close()
@@ -534,7 +534,7 @@ def test_a_replaced_score_is_said_when_an_answer_changed_while_it_saved(playwrig
         held[0].continue_()
         page.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
         box = page.evaluate(SAVE_WARNING)
-        assert box["said"] == "Score saved, replacing a score saved in another window. Click Save again for your newest answers."
+        assert box["said"] == "Score saved, replacing one from another window. Click Save again for your latest change."
         assert box["lines"] <= 2
     finally:
         context.close()

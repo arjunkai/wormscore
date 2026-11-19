@@ -21,7 +21,7 @@ Nothing that can be worked around stops the build (1.21.1); each fallback is a w
 a column of key.csv, log.md and the Methods draft. The pattern of light across the field changes little
 unless the microscope is realigned, so for an image without slide images from its own session:
 - a dated image uses the nearest day's slide images (same microscope and settings);
-- an image without a date (Leica LIF, ImageJ TIFF), when the microscope has several sessions, uses
+- an image without a date (ImageJ TIFF; Leica LIF scanned before 1.26.18), when the microscope has several sessions, uses
   their average;
 - an image whose microscope has slide images only at other settings uses those of the same size;
 in each case the light across the field is corrected and the brightness between sessions is not (the
@@ -39,6 +39,7 @@ warning in the Build log and log.md.
 Raw files are never changed, and the scores are never read. A project without "flat_field" in
 config.json is built, shown and measured exactly as before.
 """
+import csv
 import datetime as dt
 import hashlib
 import json
@@ -125,6 +126,17 @@ def days_from_scan(project):
         return False
 
 
+def leica_days_from_scan(project):
+    """Whether the project's images were scanned with their Leica dates (1.26.18; before, Leica images had
+    no date). Until then slide images from a Leica are read without theirs too, so the project corrects as
+    before; a project with no dated Leica image is read as before as well."""
+    try:
+        with open(Path(project) / "outputs" / "inventory.csv", encoding="utf-8", newline="") as fh:
+            return any(r.get("format") == "Leica LIF" and (r.get("acquired") or "").strip() for r in csv.DictReader(fh))
+    except OSError:
+        return False
+
+
 UNCLEAR_DATE = "day or month first: not known"
 
 
@@ -199,9 +211,10 @@ def check_folder(project, folder, cfg, what="slide images"):
                              f"Put the {what} in a folder of their own.")
 
 
-def _images(folder, cfg, log, skipped, new_days=False):
+def _images(folder, cfg, log, skipped, new_days=False, leica_days=False):
     """Every readable image in folder, with its marker plane averaged over z. new_days: the day is read as
-    Scan data reads it now (days_from_scan), so slide images and images follow the same rule."""
+    Scan data reads it now (days_from_scan), so slide images and images follow the same rule. leica_days:
+    Leica slide images keep their date (leica_days_from_scan); otherwise they have none, as before."""
     from . import readers as R
     from .bleed import control_files
     from .pipeline import saturation_for
@@ -227,6 +240,8 @@ def _images(folder, cfg, log, skipped, new_days=False):
             except Exception as exc:          # one unreadable image is reported, not fatal
                 skipped.append(f"{where}: could not be read ({type(exc).__name__})")
                 continue
+            if not leica_days and img.get("format") == "Leica LIF":
+                img["acquired"] = ""
             if new_days:
                 img[DAY_COLUMN] = scanned_day(img.get("acquired", ""))
             out.append({"where": where, "path": path, "key": session_key(img),
@@ -321,12 +336,12 @@ def measure(project, folder, dark_folder=None, across_field=True, between_sessio
     if dark_folder:
         check_folder(project, dark_folder, cfg, "dark images")
     skipped = []
-    new_days = days_from_scan(project)
-    refs = _images(folder, cfg, log, skipped, new_days)
+    new_days, leica_days = days_from_scan(project), leica_days_from_scan(project)
+    refs = _images(folder, cfg, log, skipped, new_days, leica_days)
     if not refs:
         raise SystemExit("No slide image could be read. " + ("; ".join(skipped[:3]) if skipped else
                                                             "The folder has no images wormscore can read."))
-    darks = _images(dark_folder, cfg, log, skipped, new_days) if dark_folder else []
+    darks = _images(dark_folder, cfg, log, skipped, new_days, leica_days) if dark_folder else []
     if dark_folder and not darks:
         skipped.append("No dark image could be read, so the camera offset is taken as 0.")
     sessions, flats = _make_sessions(refs, _darks(darks, skipped), skipped)
@@ -342,7 +357,8 @@ def measure(project, folder, dark_folder=None, across_field=True, between_sessio
                 "reference_images": sum(s["images"] for s in sessions),
                 "reference_sha256": _sha([r["path"] for r in refs]),
                 "dark_sha256": _sha([r["path"] for r in darks]) if darks else "", "skipped": skipped[:50],
-                "measured": f"{dt.datetime.now():%Y-%m-%d %H:%M}"}
+                "measured": f"{dt.datetime.now():%Y-%m-%d %H:%M}",
+                **({"leica_days": True} if leica_days else {})}
     _save(project, summary_, flats, {"across_field": bool(across_field), "between_sessions": bool(between_sessions)})
     cfg = C.load(project)
     lines = log_lines(project, cfg)
@@ -366,7 +382,7 @@ def add_sessions(project, folder, log=print):
     corr = Correction(project, cfg)          # checks that the stored correction is intact
     check_folder(project, folder, cfg)
     skipped = []
-    refs = _images(folder, cfg, log, skipped, days_from_scan(project))
+    refs = _images(folder, cfg, log, skipped, days_from_scan(project), leica_days_from_scan(project))
     if not refs:
         raise SystemExit("No slide image could be read. " + ("; ".join(skipped[:3]) if skipped else
                                                             "The folder has no images wormscore can read."))

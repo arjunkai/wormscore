@@ -13,8 +13,15 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
   reporter's detector, laser and averaging settings) and where LAS X, ZEN, NIS-Elements or the FluoView
   software shows each value. It reads the file's metadata only and changes nothing. A Leica TCS SP8
   gain is shown with the unit LAS X uses: percent for a HyD, volts for a PMT. For Leica files the
-  places are the sections of LAS X's Properties window, and the start time is shown, as checked
-  against LAS X Office on a real TCS SP8 file. Scan data still does not record the date of Leica files.
+  places are the sections of LAS X's Properties window, as checked against LAS X Office on a real TCS
+  SP8 file.
+- Leica files have a date. Scan data records each image's start time, which LAS X shows as Start Time,
+  in the computer's time zone (for example 2026-10-15 16:20:58 -04:00). Before, Leica images had none,
+  so `imaging_date` was empty and flat-field correction could not tell their days apart. A scan on a
+  computer in another time zone can move a Leica image to the day before or after; the Build card
+  then says so.
+- Clearer wording for the notices about two scoring windows, for example "Another window changed
+  this image's score. Open the image again to see it, or save yours."
 - OME-TIFF from Micro-Manager whose planes are described only in the `.companion.ome` file next to it
   was read as its first plane, with the flag "illuminations (2)". The pages are now read as the planes,
   channels or time points that file gives them. Pages it does not place are flagged plainly.
@@ -49,6 +56,13 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
     After it, the Build card names the coded images whose day is now read. Before scoring, a rebuild
     uses the new day (choose the slide images again so theirs are read the same way); once scoring has
     begun, coded images keep the correction they were scored with.
+  - Leica projects: nothing changes until Scan data runs again. After it, `inventory.csv` has each
+    image's date, and after the next build `key.csv` and the `imaging_date` column have it too (a
+    label; nothing is tested by it). With flat-field correction, slide images keep their undated
+    session, so the correction stays the same, and the Build card says "the flat-field imaging day of
+    N coded Leica images is now read from the file; choose the slide images again so theirs are read
+    the same way". Before scoring, choosing them again gives each day its own slide images; once
+    scoring has begun, coded images keep the correction they were scored with.
   - Projects whose files name a fluorophore of another colour for the reporter or identity channel: the
     next Scan data adds the flag; roles, codes and results do not change.
   - Everyone else: nothing changes in scores, measurements or reports. `inventory.csv` gains an

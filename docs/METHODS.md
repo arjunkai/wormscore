@@ -547,7 +547,10 @@ An imaging session is one microscope, settings, objective and zoom, and one acqu
 metadata. Nikon and Olympus dates, written in the computer's locale, are read in the common forms, US
 month/day first; a date that can only be day first (a day above 12) and is written with AM or PM, or
 with no time, is read day first when Scan data was run with 1.26.18 or later (the day is then in `inventory.csv`, column
-`acquired_day`). Slide images are read by the same rule as the project's images.
+`acquired_day`). Slide images are read by the same rule as the project's images. Leica files have a
+date from 1.26.18: the series' start time, which LAS X shows as Start Time, in the time zone of the
+computer that ran Scan data. Leica slide images are read with their date only once the project's
+images have theirs (a Scan data with 1.26.18 or later).
 
     corrected = (raw - dark) / flat x factor + mean(dark)
 
@@ -574,8 +577,8 @@ size from the same microscope:
   those sessions (or the one session, if there is only one).
 
 Its light across the field is then corrected, its brightness between sessions is not. An image with
-no usable slide images at all is used as recorded. Formats with no acquisition date (Leica LIF, ImageJ
-TIFF) use the microscope's only session directly.
+no usable slide images at all is used as recorded. Images with no acquisition date (ImageJ TIFF, and
+Leica LIF scanned before 1.26.18 or without time stamps) use the microscope's only session directly.
 
 **What is recorded.** Pixels at the detector maximum are found on the raw stack and stored per image
 (`saturated.png`), so `saturated_px_mip` still counts them. Raw files are never changed. Each
