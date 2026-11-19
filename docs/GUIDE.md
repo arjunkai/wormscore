@@ -30,7 +30,7 @@ press Enter; Escape closes it.
 ## Before you start
 
 **Check the reading of one file first** (two minutes, once per microscope). Click **Check the
-reading...** under Scan data and choose one microscope file
+reading...** under Scan data (shown until the blind set is built) and choose one microscope file
 (`wormscore check-reading <file>`; `--series N` for another image of the file, `--project <folder>` to
 use a project's markers instead of a GFP reporter; in the app the open project's markers are used).
 It lists, for one image, what Scan data would record: objective, pixel size, z-step, planes, bit depth,

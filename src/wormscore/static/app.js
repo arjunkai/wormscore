@@ -1200,7 +1200,7 @@ $("#saveRois").onclick = () => {
         const same = JSON.stringify(st.rois) === sent, saved = `Saved ${n} outline${n === 1 ? "" : "s"}`;
         if (same) st.roisDirty = false;
         // the later save wins; this one replaced outlines another window saved after this window loaded its own
-        if (r.replaced) roiMessage(`${saved}. They replaced outlines saved in another window. Use one scoring window at a time.`, "warn");
+        if (r.replaced) roiMessage(`${saved}, replacing outlines saved in another window. Use one scoring window at a time.`, "warn");
         else roiMessage(same ? saved : "Unsaved changes");
       }
       await loadList();

@@ -330,7 +330,8 @@ function renderMain(d) {
       [needFolders && !p.scoring_started ? h("button", { class: "primary", "data-k": "folders", disabled: busy, onclick: () => openProjectSettings("folders") }, "Set image folders...") : null,
        h("button", { class: s1 === "next" && !needFolders ? "primary" : "btn", "data-k": "step1", disabled: busy || !ok || needFolders, onclick: scan },
         scanned ? "Scan again" : "Scan data"),
-       h("button", { class: "btn subtle", "data-k": "checkReading", title: "What wormscore reads from one file, to compare with the microscope software",
+       // for a new microscope, before the blind set exists; the command works at any time
+       built ? null : h("button", { class: "btn subtle", "data-k": "checkReading", title: "What wormscore reads from one file, to compare with the microscope software",
          onclick: checkReading }, "Check the reading...")],
       msScan && scanned && s1 !== "running" ? warnNote("The markers changed. Scan again to find their channels.")
         : fsScan && scanned && s1 !== "running" ? warnNote("The image folders or rules changed. Scan again to use them.") : null),

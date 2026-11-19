@@ -276,7 +276,7 @@ def test_two_windows_that_save_outlines_one_after_the_other_both_say_so(playwrig
         two.locator("#saveRois").click()                             # the later save wins and says what it replaced
         two.wait_for_function("document.querySelector('#roiMsg').classList.contains('warn')")
         w = two.evaluate(WARNING_BOX)
-        assert w["said"] == "Saved 1 outline. They replaced outlines saved in another window. Use one scoring window at a time."
+        assert w["said"] == "Saved 1 outline, replacing outlines saved in another window. Use one scoring window at a time."
         assert srv.project.load("rois.json", {})[code] == two.evaluate("st.rois") != one.evaluate("st.rois")
         assert two.evaluate("st.roisDirty") is False
 
