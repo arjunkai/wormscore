@@ -5,7 +5,7 @@ Everything the app does, step by step. The [README](../README.md) is the short v
 
 **Contents**
 
-- [Before you start](#before-you-start)
+- [Before you start](#before-you-start): check the reading of one file, copy your data, make a project
 - [The five steps](#the-five-steps): Scan data, Set scoring criteria, Build blind set, Score, Unblind
 - [Browse images](#browse-images)
 - [Scoring criteria](#scoring-criteria)
@@ -28,6 +28,17 @@ set, ROI, settings group, primary outcome and others) gives a one-sentence defin
 press Enter; Escape closes it.
 
 ## Before you start
+
+**Check the reading of one file first** (two minutes, once per microscope). Click **Check the
+reading...** under Scan data and choose one microscope file
+(`wormscore check-reading <file>`; `--series N` for another image of the file, `--project <folder>` to
+use a project's markers instead of a GFP reporter; in the app the open project's markers are used).
+It lists, for one image, what Scan data would record: objective, pixel size, z-step, planes, bit depth,
+each channel with its role, and the reporter's detector, laser and averaging settings. Each value comes
+with where Leica LAS X, Zeiss ZEN, Nikon NIS-Elements or the Olympus FluoView software shows it. Open
+the same image there and compare. It reads only the file's metadata and changes nothing. If a value
+differs, [open an issue](https://github.com/arjunkai/wormscore/issues/new) with the text (the Copy
+button copies it).
 
 **Copy your data to a local folder** (recommended).
 `wormscore copy D:\from\drive C:\data\my_copy` copies every file, checks each one by SHA-256 and makes

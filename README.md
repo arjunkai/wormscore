@@ -112,9 +112,11 @@ The analysis settings are recorded before scoring and locked while you score.
 Optional: a second scorer for agreement between scorers, hidden repeat images, practice sets for new
 scorers, flat-field correction, and checks for bleed-through and gut autofluorescence.
 
-**On a new microscope, check the reading first.** After Scan data, open `outputs/inventory.csv` and compare
-one image's objective, pixel size, bit depth, channels and settings with what your microscope software
-shows. If anything differs, [open an issue](https://github.com/arjunkai/wormscore/issues/new).
+**On a new microscope, check the reading first.** Click **Check the reading...** under Scan data and
+choose one of your files (or run `wormscore check-reading <file>`). It lists the objective, pixel size,
+z-step, bit depth, which channel is the reporter, and the detector and laser settings, each with where
+LAS X, ZEN, NIS-Elements or the FluoView software shows the same value. It reads the file and changes
+nothing. If anything differs, [open an issue](https://github.com/arjunkai/wormscore/issues/new).
 
 ## Documentation
 
