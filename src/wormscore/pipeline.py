@@ -40,7 +40,8 @@ INVENTORY_FIELDS = [
     "source", "genotype", "system", "format", "file", "location_in_file", "relative_path",
     "local_path", "original_path", "file_sha256", "objective", "n_z", "n_t", "width", "height", "pixel_um",
     "z_step_um", "bits", "channel_names", "channel_roles", "marker_channel", "bf_channel", "settings", "zoom",
-    "acquired", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes", "pixel_sha256",
+    "acquired", "acquired_day", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes",
+    "pixel_sha256",
 ]
 
 
@@ -72,6 +73,7 @@ def inventory(project, log=print, progress=None):
     project = Path(project)
     from .scorers import refuse_in_package
     refuse_in_package(project, "Scanning")
+    from .flatfield import scanned_day
     cfg = C.load(project)
     ident = cfg.get("identity")
     # 1.26.8: progress covers both halves of the scan, the file checksums and then the pixel checksum of
@@ -105,6 +107,8 @@ def inventory(project, log=print, progress=None):
             progress(to_read + read_so_far, 2 * to_read)
         rk = img["_reader"]
         rows.append({**{k: img.get(k, "") for k in INVENTORY_FIELDS},
+                     # 1.26.18: the day as the flat-field correction reads it (also day first with AM/PM)
+                     "acquired_day": scanned_day(img.get("acquired", "")),
                      "channel_names": "/".join(img["channel_names"]), "channel_roles": "/".join(roles),
                      "marker_channel": "" if mi is None else mi, "bf_channel": "" if bi is None else bi,
                      **({"identity_channel": "" if ii is None else ii} if ident else {}),

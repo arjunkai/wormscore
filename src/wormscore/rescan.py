@@ -142,5 +142,14 @@ def scan_changes(project, cfg=None):
                      if str(r.get("n_z") or "").isdigit() and str(s.get("n_z") or "").isdigit() and int(r["n_z"]) != int(s["n_z"]))
     out["lines"] += [f"the number of planes of {n} coded image{'s' if n != 1 else ''} changes from {a} to {b}"
                      for (a, b), n in sorted(planes.items())]
+    # 1.26.18: dates written day first with AM/PM have a flat-field day only from a new scan (acquired_day)
+    if isinstance(cfg.get("flat_field"), dict):
+        from .flatfield import DAY_COLUMN, acquired_day
+        days = sum(1 for r, s in pairs if DAY_COLUMN in s and s[DAY_COLUMN] != acquired_day(r.get("acquired", "")))
+        if days:
+            out["lines"] += [f"the flat-field imaging day of {days} coded image{'s' if days != 1 else ''} is now read "
+                             f"from {'their' if days != 1 else 'its'} date (written day first, with AM or PM); before "
+                             f"scoring begins, this can change {'their' if days != 1 else 'its'} flat-field correction; choose "
+                             f"the slide images again so theirs are read the same way"]
     _scan_changes[str(project)] = (stamp, out)
     return out

@@ -90,6 +90,41 @@ def acquired_day(acquired):
     return ""
 
 
+# 1.26.18: day first with AM/PM ("17/7/2009 4:01:38 PM", a day-first computer with a 12-hour clock), and
+# day first without a time. acquired_day gives such a date no day, as 1.26.17 did; Scan data now reads it
+# (scanned_day) and writes the day into inventory.csv (column acquired_day). An existing project therefore
+# corrects, measures and reports exactly as before until it is scanned again; its slide images are read
+# by the same rule as its images (days_from_scan).
+SCAN_FORMATS = ("%d/%m/%Y %I:%M:%S %p", "%d/%m/%Y")
+DAY_COLUMN = "acquired_day"
+
+
+def scanned_day(acquired):
+    """The day Scan data writes into inventory.csv: acquired_day, and when that gives none, the day-first
+    forms above. They are tried last, so only a date that had no day gets one (a day above 12 says which
+    number is the day); a date that reads both ways is still read month first."""
+    day = acquired_day(acquired)
+    if day:
+        return day
+    a = " ".join(str(acquired or "").split())
+    for fmt in SCAN_FORMATS:
+        try:
+            return dt.datetime.strptime(a, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return ""
+
+
+def days_from_scan(project):
+    """Whether the project's inventory.csv has the day column (scanned by 1.26.18 or later). Slide images
+    are then read with scanned_day too, otherwise as 1.26.17 read them."""
+    try:
+        with open(Path(project) / "outputs" / "inventory.csv", encoding="utf-8") as fh:
+            return DAY_COLUMN in fh.readline().strip().split(",")
+    except OSError:
+        return False
+
+
 UNCLEAR_DATE = "day or month first: not known"
 
 
@@ -132,7 +167,9 @@ def session_key(img):
     zoom, which change the light across the field but are not in every format's settings string."""
     settings = " | ".join(x for x in (str(img.get("settings", "") or ""), str(img.get("objective", "") or ""),
                                       str(img.get("zoom", "") or "")) if x)
-    return (img.get("system", ""), settings, acquired_day(img.get("acquired", "")))
+    # the day Scan data wrote (1.26.18), or for an inventory without it the day as 1.26.17 read it
+    day = img[DAY_COLUMN] if DAY_COLUMN in img else acquired_day(img.get("acquired", ""))
+    return (img.get("system", ""), settings, day or "")
 
 
 def _label(key):
@@ -162,8 +199,9 @@ def check_folder(project, folder, cfg, what="slide images"):
                              f"Put the {what} in a folder of their own.")
 
 
-def _images(folder, cfg, log, skipped):
-    """Every readable image in folder, with its marker plane averaged over z."""
+def _images(folder, cfg, log, skipped, new_days=False):
+    """Every readable image in folder, with its marker plane averaged over z. new_days: the day is read as
+    Scan data reads it now (days_from_scan), so slide images and images follow the same rule."""
     from . import readers as R
     from .bleed import control_files
     from .pipeline import saturation_for
@@ -189,6 +227,8 @@ def _images(folder, cfg, log, skipped):
             except Exception as exc:          # one unreadable image is reported, not fatal
                 skipped.append(f"{where}: could not be read ({type(exc).__name__})")
                 continue
+            if new_days:
+                img[DAY_COLUMN] = scanned_day(img.get("acquired", ""))
             out.append({"where": where, "path": path, "key": session_key(img),
                         "plane": stack.astype(np.float64).mean(0),
                         "saturated": float((stack >= saturation_for(img, cfg)).mean())})
@@ -281,11 +321,12 @@ def measure(project, folder, dark_folder=None, across_field=True, between_sessio
     if dark_folder:
         check_folder(project, dark_folder, cfg, "dark images")
     skipped = []
-    refs = _images(folder, cfg, log, skipped)
+    new_days = days_from_scan(project)
+    refs = _images(folder, cfg, log, skipped, new_days)
     if not refs:
         raise SystemExit("No slide image could be read. " + ("; ".join(skipped[:3]) if skipped else
                                                             "The folder has no images wormscore can read."))
-    darks = _images(dark_folder, cfg, log, skipped) if dark_folder else []
+    darks = _images(dark_folder, cfg, log, skipped, new_days) if dark_folder else []
     if dark_folder and not darks:
         skipped.append("No dark image could be read, so the camera offset is taken as 0.")
     sessions, flats = _make_sessions(refs, _darks(darks, skipped), skipped)
@@ -325,7 +366,7 @@ def add_sessions(project, folder, log=print):
     corr = Correction(project, cfg)          # checks that the stored correction is intact
     check_folder(project, folder, cfg)
     skipped = []
-    refs = _images(folder, cfg, log, skipped)
+    refs = _images(folder, cfg, log, skipped, days_from_scan(project))
     if not refs:
         raise SystemExit("No slide image could be read. " + ("; ".join(skipped[:3]) if skipped else
                                                             "The folder has no images wormscore can read."))
@@ -453,6 +494,7 @@ class Correction:
         self.sessions = self.summary["sessions"]
 
     pins = {}       # image -> the earlier session list it is held to (set per object by keep_coded)
+    held_day = frozenset()  # images held to the day as 1.26.17 read it (set per object by keep_coded)
     used_now = {}   # code -> the session (or sessions) this build corrected it with (set per object by key_columns)
     kept_changed = False
 
@@ -479,22 +521,33 @@ class Correction:
         # image is held to the session list that gives that session. For a key built before, the words are
         # all there is: if they fit more than one session, the image is counted as one that may change.
         recorded = used_record(self.project) if getattr(self, "project", None) else {}
-        self.pins = {}
+        self.pins, self.held_day = {}, set()
         kept = changed = 0
         for img in images:
             row = rows.get(_ident(img))
             if row is None:
                 continue
-            fits = []
-            for sessions in self._states():
-                cols = self.key_columns(img, sessions)
-                if all(_same_record(img.get("system", ""), k, str(v), row.get(k) or "") for k, v in cols.items()):
-                    ses = self.resolve(img, sessions)
-                    fits.append((sessions, None if ses is None else ses["index"]))
             code = row.get("code")
-            if code in recorded:
-                fits = [f for f in fits if f[1] == recorded[code]]
-            else:
+
+            def fitting(img):
+                fits = []
+                for sessions in self._states():
+                    cols = self.key_columns(img, sessions)
+                    if all(_same_record(img.get("system", ""), k, str(v), row.get(k) or "") for k, v in cols.items()):
+                        ses = self.resolve(img, sessions)
+                        fits.append((sessions, None if ses is None else ses["index"]))
+                return [f for f in fits if f[1] == recorded[code]] if code in recorded else fits
+            fits = fitting(img)
+            # 1.26.18: a scan that now reads the image's day (DAY_COLUMN) where 1.26.17 read none: the image
+            # keeps the correction it was scored with, from the day as it was read then
+            was = {k: v for k, v in img.items() if k != DAY_COLUMN}
+            if not fits and DAY_COLUMN in img and session_key(was) != session_key(img):
+                fits = fitting(was)
+                if fits:
+                    self.held_day.add(_ident(img))
+                    if fits[0][0] is self.sessions:
+                        kept += 1
+            if code not in recorded:
                 # a key from before 1.26.16: slide images added after the image got its code cannot be the
                 # ones it was scored with, so a session list without them comes first
                 digits = lambda t: "".join(ch for ch in str(t or "") if ch.isdigit())[:12]
@@ -511,6 +564,10 @@ class Correction:
                 kept += 1
         self.kept_changed = bool(changed)
         return kept, changed
+
+    def _as_recorded(self, img):
+        """The image as keep_coded holds it: without the day of a new scan if it keeps the old one."""
+        return {k: v for k, v in img.items() if k != DAY_COLUMN} if _ident(img) in self.held_day else img
 
     def session_for(self, img, sessions=None):
         """The image's own session, or None: same microscope and settings, and the same day, or the only
@@ -534,6 +591,7 @@ class Correction:
         which), or None (used as recorded; "why" from not_corrected). sessions: the sessions to choose
         from; by default all of them, or the earlier list keep_coded holds this image to."""
         import numpy as np
+        img = self._as_recorded(img)
         size = (int(img["height"]), int(img["width"])) if "height" in img else None
         fits = lambda s: size is None or (s["height"], s["width"]) == size
         if sessions is None:
@@ -598,6 +656,7 @@ class Correction:
 
     def key_columns(self, img, sessions=None, code=None):
         """code: given by Build for the image it is making, so the session used is recorded for that code."""
+        img = self._as_recorded(img)
         ses = self.resolve(img, sessions)
         if code:
             self.used_now[code] = None if ses is None else ses["index"]
@@ -615,6 +674,7 @@ class Correction:
         so the advice to add slide images is left out."""
         other, none = defaultdict(int), defaultdict(int)
         for s in images:
+            s = self._as_recorded(s)
             ses = self.resolve(s)
             if ses is None:
                 none[(_label(session_key(s)), self.not_corrected(s))] += 1

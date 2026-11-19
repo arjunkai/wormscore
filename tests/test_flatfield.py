@@ -227,8 +227,8 @@ def test_sessions_can_be_added_after_scoring_began_without_changing_coded_images
     (p / "scoring").mkdir()
     (p / "scoring" / "scores.json").write_text("{}")
     real = FF._images
-    def later_day(folder, cfg, log, skipped):     # the demo writes no dates: give the new slides a day
-        return [{**r, "key": r["key"][:2] + ("2026-03-02",)} for r in real(folder, cfg, log, skipped)]
+    def later_day(folder, cfg, log, skipped, *how):     # the demo writes no dates: give the new slides a day
+        return [{**r, "key": r["key"][:2] + ("2026-03-02",)} for r in real(folder, cfg, log, skipped, *how)]
     monkeypatch.setattr(FF, "_images", later_day)
     (new,) = FF.add_sessions(p, slides(tmp_path / "later", level=1000), **QUIET)
     # brought to the level the first session's microscope was brought to (half the light: about twice the factor)

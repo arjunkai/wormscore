@@ -43,3 +43,183 @@ def test_a_day_first_date_with_am_pm_gets_no_day_today():
     assert FF.imaging_date(DAY_FIRST_PM) == "2009-07-17"
     assert FF.acquired_day("17/7/2009 16:01:38") == "2009-07-17"
     assert FF.acquired_day(DAY_FIRST_PM) == ""
+
+
+# ------------------------------------------------------------------ the day-first AM/PM form, from a new scan (1.26.18)
+
+import hashlib                                                 # noqa: E402
+import json                                                    # noqa: E402
+from pathlib import Path                                       # noqa: E402
+
+import numpy as np                                             # noqa: E402
+import pytest                                                  # noqa: E402
+from PIL import Image                                          # noqa: E402
+
+from wormscore import pipeline, readers, rescan, server        # noqa: E402
+from wormscore.demo import make_demo                           # noqa: E402
+from wormscore.files import read_csv, write_csv                # noqa: E402
+
+from test_flatfield import slides                              # noqa: E402
+
+QUIET = {"log": lambda *a: None}
+SCORE = {"usable": "yes", "count_this_image": "yes", "n1_call": "normal", "n2_call": "normal", "flag_answers": {}}
+# One day-first computer with a 12-hour clock: 5 July reads (month first, as 7 May), 20 July did not read at all.
+DATES = {"data/demo_control_01.ome.tif": "5/7/2009 10:00:00 AM", "data/demo_mutant_01.ome.tif": "5/7/2009 11:00:00 AM",
+         "data/demo_control_02.ome.tif": "20/7/2009 4:01:38 PM", "data/demo_mutant_02.ome.tif": "20/7/2009 4:30:00 PM",
+         "a/slide_0.ome.tif": "5/7/2009 9:00:00 AM", "a/slide_1.ome.tif": "5/7/2009 9:05:00 AM",
+         "b/slide_0.ome.tif": "20/7/2009 3:00:00 PM", "b/slide_1.ome.tif": "20/7/2009 3:05:00 PM"}
+LATE = ("demo_control_02.ome.tif", "demo_mutant_02.ome.tif")          # 20 July: no day in 1.26.17
+EARLY = ("demo_control_01.ome.tif", "demo_mutant_01.ome.tif")         # 5 July, read as 7 May by every version
+# This scenario built by wormscore 1.26.17 (commit beb4d4c), measured with fingerprint() below.
+BUILT_BY_1_26_17 = {
+    "blind/demo_control_01.ome.tif": "79970be18438fe2aaf0bcae7897cdb977fcecd5fe40fef10b82eccac5ee561bb",
+    "blind/demo_control_02.ome.tif": "d8df44a76ec8bc8c05e7a5aea96bc3027845be18fa90deee8b2ef77131e001b9",
+    "blind/demo_mutant_01.ome.tif": "bfeb4db3d393cb8dd85bf13f06544320947ba83b509830f2bf99d839e0fd8233",
+    "blind/demo_mutant_02.ome.tif": "320d28a8a8a430abc810a2ed40866b2ed448f4e7693cd602a464958090578bad",
+    "key.csv": "065521e2c7356321ebfb2ee72e8f1d849759b1c1b57300bdffc4c90a2fb2adeb",
+    "sessions.csv": "e6e4d99371a968917c3bf57d8e51149e7f387d22bd16511c87366388d1a93d98",
+    "flat_field_sessions.json": "6b809250f4777487ddc22e4224fd9f8e68b79fecf1e8de3d48dd0fc934f175b8",
+}
+
+
+@pytest.fixture
+def dated(monkeypatch):
+    """Each file read with the date its computer wrote (the demo and the slide images have none)."""
+    real = readers.images_in
+
+    def images_in(path, cfg, source=None):
+        found = real(path, cfg, source)
+        for img in found:
+            img["acquired"] = DATES.get(f"{Path(path).parent.name}/{Path(path).name}", img["acquired"])
+        return found
+    monkeypatch.setattr(readers, "images_in", images_in)
+
+
+def fingerprint(p, root):
+    """SHA-256 of what a build made, without what differs from run to run: the codes (random), the folder the
+    test runs in, and the files' own checksums (an OME-TIFF holds a new UUID each time it is written). Each
+    PNG by its pixels, the other files by their bytes."""
+    sha = lambda b: hashlib.sha256(b).hexdigest()
+    key = read_csv(p / "key" / "key.csv")
+    name = {r["code"]: r["file"] for r in key}
+    per = {}
+    for f in sorted((p / "blind").rglob("*")):
+        if not f.is_file():
+            continue
+        code, rest = f.relative_to(p / "blind").parts[0], "/".join(f.relative_to(p / "blind").parts[1:])
+        if f.suffix == ".png":
+            a = np.asarray(Image.open(f))
+            data = str((a.shape, a.dtype.str)).encode() + a.tobytes()
+        else:
+            data = f.read_bytes().replace(code.encode(), b"CODE")
+        per.setdefault(name[code], []).append(rest + ":" + sha(data))
+    out = {f"blind/{k}": sha("\n".join(v).encode()) for k, v in sorted(per.items())}
+    rows = sorted(({k: v.replace(str(root), "ROOT").replace("\\", "/") for k, v in r.items()
+                    if k not in ("code", "file_sha256")} for r in key), key=lambda r: r["file"])
+    out["key.csv"] = sha(json.dumps(rows, sort_keys=True).encode())
+    out["sessions.csv"] = sha((p / "outputs" / "flat_field" / "sessions.csv").read_bytes().replace(b"\r\n", b"\n"))
+    used = json.loads((p / "key" / "flat_field_sessions.json").read_text(encoding="utf-8"))
+    out["flat_field_sessions.json"] = sha(json.dumps({name[c]: v for c, v in used.items()}, sort_keys=True).encode())
+    return out
+
+
+def scanned_by_1_26_17(p):
+    """inventory.csv as 1.26.17 wrote it: without the acquired_day column."""
+    inv = p / "outputs" / "inventory.csv"
+    with open(inv, encoding="utf-8") as fh:
+        fields = [f for f in fh.readline().strip().split(",") if f != "acquired_day"]
+    write_csv(inv, read_csv(inv), fields)
+
+
+def existing_project(root):
+    """A flat-field project of 1.26.17: scanned, slide images chosen, built."""
+    p = make_demo(root / "p", n_per_group=2, **QUIET)
+    pipeline.inventory(p, **QUIET)
+    scanned_by_1_26_17(p)
+    slides(root / "ref" / "a")
+    slides(root / "ref" / "b", level=1000, seed=1)
+    FF.measure(p, root / "ref", **QUIET)
+    pipeline.prepare(p, **QUIET)
+    return p
+
+
+def blind_files(p):
+    return {f.relative_to(p).as_posix(): f.read_bytes() for f in sorted((p / "blind").rglob("*")) if f.is_file()}
+
+
+def by_name(p):
+    return {r["file"]: r for r in read_csv(p / "key" / "key.csv")}
+
+
+def test_an_existing_project_builds_as_1_26_17_did_until_it_scans_again(tmp_path, dated):
+    """Without a new Scan data the project builds exactly as 1.26.17 built it, also after a rebuild that
+    keeps the codes and one with new codes, and its slide images are read the old way as well."""
+    p = existing_project(tmp_path)
+    assert fingerprint(p, tmp_path) == BUILT_BY_1_26_17
+    key, blind = (p / "key" / "key.csv").read_bytes(), blind_files(p)
+    sessions = (p / "outputs" / "flat_field" / "sessions.csv").read_bytes()
+    pipeline.prepare(p, **QUIET)                                     # keeping the codes
+    assert (p / "key" / "key.csv").read_bytes() == key and blind_files(p) == blind
+    assert (p / "outputs" / "flat_field" / "sessions.csv").read_bytes() == sessions
+    pipeline.prepare(p, reassign=True, **QUIET)                      # new codes
+    assert fingerprint(p, tmp_path) == BUILT_BY_1_26_17
+    assert rescan.scan_changes(p)["lines"] == []
+    FF.measure(p, tmp_path / "ref", **QUIET)                         # slide images chosen again: read the old way too
+    assert (p / "outputs" / "flat_field" / "sessions.csv").read_bytes() == sessions
+
+
+LINE = ("the flat-field imaging day of 2 coded images is now read from their date (written day first, with AM or PM); "
+        "before scoring begins, this can change their flat-field correction; choose the slide images again so theirs "
+        "are read the same way")
+
+
+def test_a_new_scan_before_scoring_reads_the_day_and_says_so(tmp_path, dated):
+    p = existing_project(tmp_path)
+    before = by_name(p)
+    pipeline.inventory(p, **QUIET)
+    days = {Path(r["local_path"]).name: r["acquired_day"] for r in read_csv(p / "outputs" / "inventory.csv")}
+    assert days == {"demo_control_01.ome.tif": "2009-05-07", "demo_mutant_01.ome.tif": "2009-05-07",
+                    "demo_control_02.ome.tif": "2009-07-20", "demo_mutant_02.ome.tif": "2009-07-20"}
+    assert LINE in rescan.scan_changes(p)["lines"]                   # on the Build card
+    said = []
+    pipeline.prepare(p, log=said.append)
+    after = by_name(p)
+    for f in EARLY:
+        assert after[f] == before[f]
+    for f in LATE:
+        assert after[f]["flat_field"] == "nearest day, 2009-05-07"
+        assert after[f]["imaging_session"].split(", ")[1] == "2009-07-20"
+    assert any(LINE in s for s in said) and LINE in (p / "log.md").read_text(encoding="utf-8")
+    # the slide images chosen again are read the same way: 20 July is a session of its own
+    FF.measure(p, tmp_path / "ref", **QUIET)
+    assert sorted(s["day"] for s in FF.summary(p)["sessions"]) == ["2009-05-07", "2009-07-20"]
+    pipeline.prepare(p, **QUIET)
+    assert {r["flat_field"] for r in by_name(p).values()} == {"same session"}
+
+
+def test_a_new_scan_after_scoring_keeps_the_coded_images_as_they_were_scored(tmp_path, dated):
+    p = existing_project(tmp_path)
+    key, blind = (p / "key" / "key.csv").read_bytes(), blind_files(p)
+    pr = server.Project(p)
+    for r in read_csv(p / "key" / "key.csv"):
+        pr.save_score(r["code"], dict(SCORE))
+    pipeline.inventory(p, **QUIET)
+    assert LINE in rescan.scan_changes(p)["lines"]
+    said = []
+    pipeline.prepare(p, log=said.append)
+    assert (p / "key" / "key.csv").read_bytes() == key and blind_files(p) == blind
+    assert any(s.startswith("2 coded images keep the flat-field correction they were scored with.") for s in said)
+    assert not any("this build changes the flat-field correction" in s for s in said)
+
+
+def test_the_day_from_a_scan_and_the_reading_of_1_26_17():
+    assert FF.scanned_day(DAY_FIRST_PM) == "2009-07-17" and FF.acquired_day(DAY_FIRST_PM) == ""
+    assert FF.scanned_day("20/7/2009") == "2009-07-20"
+    assert FF.scanned_day(AMBIGUOUS) == FF.acquired_day(AMBIGUOUS) == "2009-11-03"    # unchanged: month first
+    for text in ["9/24/2020 4:01:38 PM", "24.09.2020 16:01:38", "2020/09/24", "29/12/2010 12:13:08", "",
+                 "2026-03-05 10:00:00", "06/03/2009 10:56:46 AM", "31/31/2009 4:01:38 PM", "sometime"]:
+        assert FF.scanned_day(text) == FF.acquired_day(text), text
+    img = {"system": "A", "settings": "", "acquired": DAY_FIRST_PM}
+    assert FF.session_key(img)[2] == ""                                     # an inventory of 1.26.17
+    assert FF.session_key({**img, "acquired_day": "2009-07-17"})[2] == "2009-07-17"
+    assert FF.session_key({**img, "acquired_day": ""})[2] == ""
