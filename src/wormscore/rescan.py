@@ -137,5 +137,10 @@ def scan_changes(project, cfg=None):
                      for (a, b), n in sorted(sizes.items())]
     out["lines"] += [f"the saturation level of {n} coded image{'s' if n != 1 else ''} changes from {a} to {b}"
                      for (a, b), n in sorted(levels.items())]
+    # 1.26.18: a Micro-Manager z-stack described only in its companion file is now read whole
+    planes = Counter((int(r["n_z"]), int(s["n_z"])) for r, s in pairs
+                     if str(r.get("n_z") or "").isdigit() and str(s.get("n_z") or "").isdigit() and int(r["n_z"]) != int(s["n_z"]))
+    out["lines"] += [f"the number of planes of {n} coded image{'s' if n != 1 else ''} changes from {a} to {b}"
+                     for (a, b), n in sorted(planes.items())]
     _scan_changes[str(project)] = (stamp, out)
     return out

@@ -240,3 +240,21 @@ def test_pages_the_companion_file_does_not_place_are_flagged_plainly(tmp_path):
         flags = [f for f in img["flags"] if readers.NO_BITS not in f]
         assert flags == ["2 images in one file that the metadata does not place: only the first is read"], name
         assert not any("illumination" in f for f in img["flags"])
+
+
+def test_a_plane_count_that_a_new_scan_reads_differently_is_named(tmp_path):
+    """A new scan that reads more planes for coded images (a Micro-Manager z-stack read whole, 1.26.18)
+    would change what a rebuild keeping the codes shows; the Build card says so, as for pixel sizes."""
+    project = make_demo(tmp_path / "p", n_per_group=1, log=quiet)
+    inventory(project, log=quiet)
+    rows = read_csv(project / "outputs" / "inventory.csv")
+    key = project / "key" / "key.csv"
+    write_csv(key, [{"code": f"W000{k + 1}", "local_path": r["local_path"], "location_in_file": r["location_in_file"],
+                     "system": r["system"], "settings": r["settings"], "settings_group": "A", "pixel_um": r["pixel_um"],
+                     "n_z": r["n_z"]} for k, r in enumerate(rows)])
+    assert scan_changes(project)["lines"] == []
+    old = int(rows[0]["n_z"])
+    write_csv(key, [{"code": f"W000{k + 1}", "local_path": r["local_path"], "location_in_file": r["location_in_file"],
+                     "system": r["system"], "settings": r["settings"], "settings_group": "A", "pixel_um": r["pixel_um"],
+                     "n_z": 1} for k, r in enumerate(rows)])
+    assert scan_changes(project)["lines"] == [f"the number of planes of 2 coded images changes from 1 to {old}"]
