@@ -25,6 +25,10 @@ def test_real_demo_project_from_cache(tmp_path):
     cfg = json.loads((project / "config.json").read_text(encoding="utf-8"))
     rules = cfg["sources"][0]["genotypes"]
     assert all(any(n.startswith(r["match"].rstrip("*")) for r in rules) for n in realdemo.FILES)
+    # the frame fits these heads (the widest is 125.4 um), so they fill the window instead of two thirds of it
+    from wormscore import config
+    display = config.load(project)["display"]
+    assert 125.4 < display["frame_px"] * display["display_um_per_px"] < 135
 
 
 def test_a_download_that_stalls_is_tried_again_then_reported_plainly(tmp_path, monkeypatch):

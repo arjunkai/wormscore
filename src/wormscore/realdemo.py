@@ -107,6 +107,9 @@ def make_real_demo(project, log=print, fetch=download, cache=None):
         # 1.23.0: the four NeuroPAL colours shown with the reporter (keys 1, 2 and 3 switch); suggested cells
         # are found on the GFP reporter, since the task is to pick GFP cells
         "identity": {"preset": "NeuroPAL", "spots_from": "reporter"},
+        # The frame every image is drawn in is 188 um wide by default (940 x 0.20 um). These four heads are
+        # 110 to 125 um wide, so a 128 um frame shows them at the full width of the window.
+        "display": {"frame_px": 640},
     }
     (project / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     log(CREDIT)
