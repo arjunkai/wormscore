@@ -12,7 +12,9 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
   from one microscope file (objective, pixel size, z-step, planes, bit depth, each channel's role, the
   reporter's detector, laser and averaging settings) and where LAS X, ZEN, NIS-Elements or the FluoView
   software shows each value. It reads the file's metadata only and changes nothing. A Leica TCS SP8
-  gain is shown with the unit LAS X uses: percent for a HyD, volts for a PMT.
+  gain is shown with the unit LAS X uses: percent for a HyD, volts for a PMT. For Leica files the
+  places are the sections of LAS X's Properties window, and the start time is shown, as checked
+  against LAS X Office on a real TCS SP8 file. Scan data still does not record the date of Leica files.
 - OME-TIFF from Micro-Manager whose planes are described only in the `.companion.ome` file next to it
   was read as its first plane, with the flag "illuminations (2)". The pages are now read as the planes,
   channels or time points that file gives them. Pages it does not place are flagged plainly.

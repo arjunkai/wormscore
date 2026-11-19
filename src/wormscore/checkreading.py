@@ -11,6 +11,8 @@ documentation; where it does not name the field, the line names the window and n
 - Leica LAS X: right-click the image, Properties (University of Zurich ZMB guide "Metadata"; University
   of Houston "The Leica Experiment Tab"; Duke "User's guide, Leica Stellaris 8"). "Project tab: Directory
   tree for opened files" (Leica TCS SP8 user manual). LAS X Office "for experiment review" (Leica).
+  The section and field names were read off LAS X Office 1.4.11's Properties window for a real TCS SP8
+  file (19 November 2026); every value there matched this reading.
 - Zeiss ZEN: "The Information View is a view type that shows a summary information sheet of all relevant
   image acquisition parameters", with the list used below (LSM 880 operating manual, ZEN black, 6.21).
   "Info View" (ZEN knowledge base). "ZEN lite is the free, unlicensed edition of ZEN" (Zeiss).
@@ -19,6 +21,7 @@ documentation; where it does not name the field, the line names the window and n
 - Olympus FV3000: "Select the [Property] tab and check the acquiring conditions" (FV3000 operation
   manual). The free FV31S-SW Viewer (Boston University facility page).
 """
+import datetime as dt
 import html
 import re
 from pathlib import Path
@@ -41,11 +44,18 @@ def _all(where):
 
 # format -> (the software, how to get to the image's values, where each value is)
 VENDOR = {
+    # the section and field names as LAS X Office 1.4.11 shows them for a TCS SP8 file (19 November 2026)
     "Leica LIF": (
         "Leica LAS X",
         "Open the .lif in LAS X (LAS X Office reviews files without the microscope). In the project tree, "
         "right-click the image and choose Properties: the window shows the settings the image was taken with.",
-        _all("Properties window")),
+        dict(_all("Properties window"),
+             objective="Confocal Settings, ObjectiveName",
+             pixel="Dimensions, Pixel Size / Voxel Size, X",
+             zstep="Dimensions, Pixel Size / Voxel Size, Z",
+             planes="Dimensions, Logical Size, Z", bits="Channels, Resolution", channels="Channels, LUT",
+             gain="Detectors, the Active one's Gain (no % or V)", laser="Laser Lines, Intensity",
+             averaging="Confocal Settings, LineAverage", acquired="Start Time (this computer's time zone)")),
     "Zeiss CZI": (
         "Zeiss ZEN",
         "Open the .czi in ZEN (ZEN lite is the free edition) and choose the image's Info view "
@@ -242,6 +252,25 @@ def _leica_unit(value, system):
     return f"{found.group(1)} {LEICA_UNITS[found.group(2)]} ({found.group(2)})"
 
 
+def _leica_start(img):
+    """The first frame's time of a Leica series, as "YYYY-MM-DD HH:MM:SS UTC", or "". LAS X writes each
+    frame's time in the series' TimeStampList as a Windows file time in hexadecimal (100 ns steps since
+    1601, UTC); its Properties window shows the first as Start Time in the viewing computer's time zone,
+    and Bio-Formats reads the same value as the acquisition date. Older files write each time as
+    <TimeStamp HighInteger=.. LowInteger=..>, the two halves of the same number. Scan data does not
+    record it."""
+    try:
+        _, path, index = img["_reader"][:3]
+        stamps = R._lif_series(R._lif(path))[index]["element"].find("./Data/Image/TimeStampList")
+        old = stamps.find("TimeStamp")
+        ticks = ((int(old.get("HighInteger")) << 32) + int(old.get("LowInteger")) if old is not None
+                 else int(stamps.text.split()[0], 16))
+        when = dt.datetime(1601, 1, 1) + dt.timedelta(microseconds=ticks // 10)
+    except (AttributeError, IndexError, KeyError, ValueError, TypeError, OverflowError):
+        return ""
+    return when.strftime("%Y-%m-%d %H:%M:%S") + " UTC" if when.year >= 1990 else ""
+
+
 def _row(label, value, width=18):
     return f"  {label:<{width}}{value}".rstrip()
 
@@ -251,9 +280,13 @@ def describe(img, cfg, path):
     roles, names = img["channel_roles"], img["channel_names"]
     mi = R.pick(roles, "MARKER")
     said = lambda v, unit="": f"{v}{unit}" if v else "not recorded in the file"
+    acquired = said(img["acquired"])
+    start = _leica_start(img) if img["format"] == "Leica LIF" and not img["acquired"] else ""
+    if start:
+        acquired = f"{start} (not in inventory.csv)"
     lines = [f"{img['format']}, {img['location_in_file']}",
              _row("Microscope", said(img["system"])),
-             _row("Acquired", said(img["acquired"])),
+             _row("Acquired", acquired),
              _row("Objective", said(img["objective"]))]
     if img["zoom"]:
         lines.append(_row("Zoom", img["zoom"]))
@@ -292,6 +325,8 @@ def describe(img, cfg, path):
         software, how, where = VENDOR[img["format"]]
         shown = [v for v in VALUES[:6]] + list(dict.fromkeys(key for _, _, key in parts if key))
         lines += [f"Where to find these in {software}", f"  {how}"]
+        if start and "acquired" in where:               # in the order of the values above
+            lines.append(_row("Acquired", where["acquired"], 26))
         lines += [_row(NAMES[v], where[v], 26) for v in shown]
     else:
         wrote = written_by(path)
