@@ -129,6 +129,24 @@ def test_ome_tiff_detector_and_laser_of_the_reporter_channel(tmp_path):
     assert img["settings"] == "gain 2.5; detector 600 V; 488nm attenuation 0.5"
 
 
+def test_ome_tiff_reporter_named_for_another_fluorophore_is_flagged(tmp_path):
+    """A channel called GFP whose Fluor is mCherry stays the reporter (by its name, as before) and is flagged."""
+    cfg = C.merge(C.DEFAULTS, {})
+    path = write_ome(tmp_path / "a.ome.tif", bits=16)
+    with tifffile.TiffFile(path) as f:
+        xml = f.ome_metadata
+    for fluor, flagged in (("mCherry", True), ("EGFP", False), ("Alexa 488", False)):
+        named = re.sub(r'(<Channel ID="Channel:0:0"[^>]*?)(/?>)', rf'\1 Fluor="{fluor}"\2', xml, count=1)
+        assert named != xml
+        with tifffile.TiffFile(path) as f:
+            data = f.asarray()
+        tifffile.imwrite(path, data.reshape(-1, 32, 32), description=named, metadata=None, photometric="minisblack")
+        img = readers.ome_images(path, cfg)[0]
+        assert img["channel_roles"] == ["MARKER", "BF"], fluor
+        assert (img["flags"] == ["the GFP channel is named mCherry in the file, another fluorophore: check the channel roles"]) \
+            if flagged else img["flags"] == [], (fluor, img["flags"])
+
+
 def test_ome_tiff_without_significant_bits_is_flagged_not_guessed(tmp_path):
     cfg = C.merge(C.DEFAULTS, {})
     img = readers.ome_images(write_ome(tmp_path / "a.ome.tif"), cfg)[0]

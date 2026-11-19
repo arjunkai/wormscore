@@ -5,6 +5,7 @@ The sequential-scan fixtures follow the layout of a Stellaris file (LAS X 4.4, s
 with gain) and of an SP8 file (LAS X 3.5, steps list their detectors without gain), as read from public
 sample files; in both, the detection bands and the averaging are only in the master setting."""
 import hashlib
+import os
 import re
 
 import numpy as np
@@ -259,6 +260,25 @@ def test_a_plane_count_that_a_new_scan_reads_differently_is_named(tmp_path):
                      "system": r["system"], "settings": r["settings"], "settings_group": "A", "pixel_um": r["pixel_um"],
                      "n_z": 1} for k, r in enumerate(rows)])
     assert scan_changes(project)["lines"] == [f"the number of planes of 2 coded images changes from 1 to {old}"]
+
+
+def test_scan_changes_sees_a_rewrite_within_the_same_clock_tick(tmp_path):
+    """The result was kept by the files' times only. Two writes of key.csv within one tick of the clock
+    (GitHub's Windows machines; FAT32 and exFAT drives keep times to 2 seconds) gave the old result."""
+    project = make_demo(tmp_path / "p", n_per_group=1, log=quiet)
+    inventory(project, log=quiet)
+    rows = read_csv(project / "outputs" / "inventory.csv")
+    key = project / "key" / "key.csv"
+    write = lambda n_z: write_csv(key, [{"code": f"W000{k + 1}", "local_path": r["local_path"],
+                                         "location_in_file": r["location_in_file"], "system": r["system"],
+                                         "settings": r["settings"], "settings_group": "A", "pixel_um": r["pixel_um"],
+                                         "n_z": n_z or r["n_z"]} for k, r in enumerate(rows)])
+    write(None)
+    when = key.stat().st_mtime_ns
+    assert scan_changes(project)["lines"] == []
+    write(1)
+    os.utime(key, ns=(when, when))
+    assert scan_changes(project)["lines"] == [f"the number of planes of 2 coded images changes from 1 to {rows[0]['n_z']}"]
 # The header of a real file that Bio-Formats 5.2.0-DEV wrote from an Olympus .oir (three planes kept, names
 # changed): the schema name of a development build, a channel with no name, a UUID in every TiffData.
 DEV0_HEADER = (

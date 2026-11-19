@@ -2,6 +2,7 @@
 
 Kept apart from pipeline.py because the home page asks every few seconds, and this loads no image library.
 """
+import hashlib
 import json
 import re
 from collections import Counter
@@ -91,7 +92,10 @@ def scan_changes(project, cfg=None):
     none = {"lines": [], "letters": None, "changed": False, "reworded": {}}
     if not key_path.is_file() or not inv_path.is_file():
         return none
-    stamp = tuple(p.stat().st_mtime_ns for p in (key_path, inv_path, project / "config.json") if p.is_file())
+    # the files' contents, not only their times: two writes within one tick of the clock (GitHub's Windows
+    # machines; FAT32 and exFAT keep times to 2 seconds) kept the result of the first (1.26.18)
+    stamp = tuple((p.stat().st_mtime_ns, hashlib.blake2b(p.read_bytes(), digest_size=16).digest())
+                  for p in (key_path, inv_path, project / "config.json") if p.is_file())
     if _scan_changes.get(str(project), (None,))[0] == stamp:
         return _scan_changes[str(project)][1]
     cfg = cfg or C.load(project)

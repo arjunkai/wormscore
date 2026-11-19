@@ -69,6 +69,27 @@ def test_the_reporter_gives_its_own_detector_and_its_own_phase_of_the_laser():
     assert meta["settings"] == "HV 475 V; offset 3; 561nm@0.5%"
 
 
+def test_a_reporter_that_names_another_fluorophore_is_flagged_not_changed():
+    """16 real FV3000 files (Figshare 33412420, CC BY) name their first channel mCherry but excite it at
+    488 nm only, so a GFP project took it as GFP by its laser line, without a word. The role stays (a
+    project scanned before keeps its reporter); the image is flagged so the person checks it."""
+    image = xml("chloroplasts.image").replace("<lsmimage:dyeName>EGFP<", "<lsmimage:dyeName>mCherry<", 1)
+    meta = R._oir_meta(image, [], GFP)
+    assert meta["channel_roles"] == ["MARKER", "OTHER", "OTHER", "BF"]
+    assert meta["flags"] == ["the GFP channel is named mCherry in the file, another fluorophore: check the channel roles"]
+    assert R._oir_meta(xml("chloroplasts.image"), [], GFP)["flags"] == []                   # EGFP: no flag
+    assert R._oir_meta(image, [], marker(preset="mCherry"))["flags"] == []                  # the reporter is mCherry
+    custom = R._oir_meta(image.replace(">mCherry<", ">Leica/EGFP<"), [], GFP)              # a dye wormscore does not know
+    assert custom["flags"] == []
+    assert R.other_fluorophore(["MARKER"], ["mcherry"], GFP) == [
+        "the GFP channel is named mcherry in the file, another fluorophore: check the channel roles"]
+    assert R.other_fluorophore(["OTHER", "MARKER"], [None, ""], GFP) == []
+    ident = copy.deepcopy(GFP)
+    ident["identity"] = {**C.PRESETS["mCherry"]}
+    assert R.other_fluorophore(["MARKER", "IDENTITY"], ["EGFP", "TagBFP"], ident) == [
+        "the mCherry channel is named TagBFP in the file, another fluorophore: check the channel roles"]
+
+
 def test_transmitted_light_is_read_from_the_detector_not_from_the_position():
     image = xml("chloroplasts.image")
     assert R._oir_meta(image, [], GFP)["channel_roles"][3] == "BF"

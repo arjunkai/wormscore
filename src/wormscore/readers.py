@@ -161,6 +161,23 @@ def prefer_named_dye(roles, fluors, cfg):
     return roles
 
 
+def other_fluorophore(roles, fluors, cfg):
+    """Flags for a reporter or identity channel whose dye in the file is one wormscore knows as another
+    fluorophore, for example a channel named mCherry taken as GFP by its 488 nm laser line (16 real FV3000
+    files did so). The role is kept, as before: a project scanned earlier keeps its reporter."""
+    out = []
+    for role, m in (("MARKER", cfg["marker"]), ("IDENTITY", cfg.get("identity"))):
+        i = pick(roles, role) if m else None
+        dye = (fluors[i] or "").strip() if i is not None and i < len(fluors) else ""
+        own = {d.casefold() for d in m.get("dye_names") or []} if m else set()
+        if not dye or dye.casefold() in own:
+            continue
+        if any(dye.casefold() in {d.casefold() for d in p["dye_names"]} and not own & {d.casefold() for d in p["dye_names"]}
+               for p in C.PRESETS.values()):
+            out.append(f"the {m['label']} channel is named {dye} in the file, another fluorophore: check the channel roles")
+    return out
+
+
 def with_extras(roles, cfg, match):
     """Channels left as OTHER that match an extra identity channel (1.23.0, for example NeuroPAL's) get
     the role IDENTITY2, IDENTITY3, ... in the order config.json lists them. match(i, settings) -> bool.
@@ -482,6 +499,7 @@ def _zeiss_meta(md, cfg):
         bits = "8" if own("PixelType") == "Gray8" else "16"
         if bits == "16":
             flags = _no_bits_flag(system, cfg, 65535)
+    flags = flags + other_fluorophore(roles, fluors, cfg)
     return {"system": system, "objective": objective, "pixel_um": round(scale.get("X", 0), 4),
             "z_step_um": round(scale.get("Z", 0), 3), "bits": int(bits), "channel_roles": roles, "channel_names": names,
             "settings": _zeiss_settings(chans[mi], md) if mi is not None else "",
@@ -718,6 +736,7 @@ def ome_images(path, cfg):
             n_c = shape[axes.index("C")] if "C" in axes else 1
             names, roles = [""] * n_c, ["UNRESOLVED"] * n_c
             flags.append(f"{CHANNELS_NOT_STATED} (an OME schema from before 2009)")
+        flags += other_fluorophore(roles, [c.get("Fluor") for c in px.findall("o:Channel", OME_NS)], cfg)
         pixel_um, z_step_um = _ome_um(px, "X", flags), _ome_um(px, "Z", flags)
         out.append({
             "format": "OME-TIFF", "system": system,
@@ -932,7 +951,8 @@ def olympus_images(path, cfg):
         "pixel_um": round(_olympus_number(ref.get("WidthConvertValue", 0)), 4), "z_step_um": round(z_step, 3),
         "bits": int(ref.get("ValidBitCounts") or 16), "channel_roles": roles, "channel_names": names,
         "settings": settings, "zoom": "", "acquired": str(acq.get("ImageCaputreDate", "")),
-        "stage_x": None, "stage_y": None, "flags": _extra_axes_flags(axes, shape), "_reader": ("oif", str(path), 0, axes),
+        "stage_x": None, "stage_y": None, "_reader": ("oif", str(path), 0, axes),
+        "flags": _extra_axes_flags(axes, shape) + other_fluorophore(roles, [c.get("DyeName") for c in chans], cfg),
     }]
 
 
@@ -1120,6 +1140,7 @@ def _oir_meta(xml, frames, cfg):
     else:
         roles = ["UNRESOLVED"] * len(chans)
         flags.append("the file does not state the order of its channels, or the settings of one of them")
+    flags += other_fluorophore(roles, dyes, cfg)
     mi = pick(roles, "MARKER")
     settings, varying = _oir_settings(chans[mi], root, frames) if mi is not None else ("", [])
     system = _said(root, "system/systemName")
