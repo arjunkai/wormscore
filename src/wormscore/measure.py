@@ -35,7 +35,12 @@ def identity_display(stack, cfg):
     p_lo, p_hi = cfg["display"]["identity_contrast_percentiles"]
     lo, hi = np.percentile(mip, [p_lo, p_hi])
     hi = max(hi, lo + 1)
-    return window(stack, lo, hi), window(mip, lo, hi)
+    # one plane at a time, a few on separate threads: the same values as window(stack, lo, hi), whose
+    # whole-stack float copies took about 3.5 GB and 18 s on a 2048 x 2048 x 50 stack
+    out = np.empty(stack.shape, np.uint8)
+    with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as pool:
+        list(pool.map(lambda z: out.__setitem__(z, window(stack[z], lo, hi)), range(stack.shape[0])))
+    return out, window(mip, lo, hi)
 
 
 def overlay(marker_display, bf_display):

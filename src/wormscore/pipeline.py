@@ -10,12 +10,14 @@ Both append what they did, with every parameter, to log.md.
 import csv
 import datetime as dt
 import json
+import os
 import random
 import re
 import secrets
 import shutil
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -518,6 +520,47 @@ def read_for_viewer(s, cfg, corr=None):
             "id_planes": id_planes, "id_mip": id_mip, "cands": cands, "sat_mask": sat_mask, "extra": extra}
 
 
+def viewer_images(v):
+    """The image files the viewer reads for one image, from what read_for_viewer returned: (name, a function
+    that returns the pixels) for each, so a packed plane is in memory only while it is being encoded."""
+    raw = v["raw"]
+    out = []
+    if v["sat_mask"] is not None:
+        out.append(("saturated.png", lambda: v["sat_mask"].astype(np.uint8) * 255))
+    out += [(f"planes/z{z:02d}.png", lambda z=z: M.pack16(raw[z])) for z in range(raw.shape[0])]
+    out.append(("mip.png", lambda: M.pack16(v["mip"])))
+    if v["bf"] is not None:
+        out.append(("brightfield.png", lambda: v["bf"]))
+    if v["has_identity"]:
+        out += [(f"identity/z{z:02d}.png", lambda z=z: v["id_planes"][z]) for z in range(v["id_planes"].shape[0])]
+        out.append(("identity_mip.png", lambda: v["id_mip"]))
+    for k, x in enumerate(v["extra"], start=2):     # only in projects with extra identity channels
+        if x is not None:
+            out += [(f"identity{k}/z{z:02d}.png", lambda x=x, z=z: x[0][z]) for z in range(x[0].shape[0])]
+            out.append((f"identity{k}_mip.png", lambda x=x: x[1]))
+    return out
+
+
+PNG_THREADS = min(8, os.cpu_count() or 1)
+
+
+def encode_images(images, put):
+    """put(name, picture) for each of viewer_images, several at a time on threads; returns what put
+    returned, in the order given. Build blind set saves each picture as a PNG file, Browse images keeps
+    the PNG's bytes. Each file is encoded exactly as it was one at a time (the same Pillow call, so the
+    same bytes: a test compares them); only the waiting is shared, as Pillow's PNG encoder leaves the
+    other threads free to run. On a 2048 x 2048 x 50 stack the planes took about 30 s of a build one at
+    a time. An error (a full disk) is raised here once the files being written have ended, and no more
+    are started."""
+    Image.preinit()                 # Pillow's file formats, registered once before the threads start
+    pool = ThreadPoolExecutor(max_workers=PNG_THREADS)
+    try:
+        jobs = [pool.submit(lambda name, make: put(name, Image.fromarray(make())), *job) for job in images]
+        return [job.result() for job in jobs]
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+
+
 BUILDING = "blind_building"     # the coded images of a build under way; moved into blind/ when all are made
 PREVIOUS = "blind_previous"     # the blind set a rebuild replaces, for the moment of the exchange
 
@@ -761,30 +804,17 @@ def _build(project, reassign, add, log, run):
         sat = saturation_for(s, cfg)
         v = read_for_viewer(s, cfg, corr)
         sat_mask = v["sat_mask"]          # None unless corrected: then saturation is read from this mask
-        if sat_mask is not None:
-            Image.fromarray(sat_mask.astype(np.uint8) * 255).save(d / "saturated.png")
         raw, filt, mip, bf_disp, cands, has_identity = v["raw"], v["filt"], v["mip"], v["bf"], v["cands"], v["has_identity"]
         px = s["pixel_um"]
         stats.setdefault(s["system"], []).append((float(np.median(mip)), float(np.percentile(mip, 99.9))))
 
-        for z in range(raw.shape[0]):
-            Image.fromarray(M.pack16(raw[z])).save(d / "planes" / f"z{z:02d}.png")
-        Image.fromarray(M.pack16(mip)).save(d / "mip.png")
-        if bf_disp is not None:
-            Image.fromarray(bf_disp).save(d / "brightfield.png")
-        if has_identity:
-            (d / "identity").mkdir()
-            for z in range(v["id_planes"].shape[0]):
-                Image.fromarray(v["id_planes"][z]).save(d / "identity" / f"z{z:02d}.png")
-            Image.fromarray(v["id_mip"]).save(d / "identity_mip.png")
-        for k, x in enumerate(v["extra"], start=2):     # only in projects with extra identity channels
-            if x is not None:
-                (d / f"identity{k}").mkdir()
-                for z in range(x[0].shape[0]):
-                    Image.fromarray(x[0][z]).save(d / f"identity{k}" / f"z{z:02d}.png")
-                Image.fromarray(x[1]).save(d / f"identity{k}_mip.png")
+        # the planes are saved several at a time (see encode_images); every file is as it was
+        pictures = viewer_images(v)
+        for folder in sorted({name.split("/")[0] for name, _ in pictures if "/" in name}):
+            (d / folder).mkdir(exist_ok=True)
+        encode_images(pictures, lambda name, picture: picture.save(d / name))
         s["_extra"] = [x is not None for x in v["extra"]]
-        del v
+        del v, pictures
 
         exclude = np.zeros(mip.shape, bool)
         for c in cands:

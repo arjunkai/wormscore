@@ -221,7 +221,7 @@ class Browse:
 
     def render(self, item_id, s):
         np, Image, _, M = heavy_imports()
-        from .pipeline import read_for_viewer, saturation_for
+        from .pipeline import encode_images, read_for_viewer, saturation_for, viewer_images
         if s.get("marker_channel") is None:
             raise ValueError(f"The {self.cfg['marker']['label']} channel of this image could not be identified, "
                              "so it cannot be shown.")
@@ -230,25 +230,14 @@ class Browse:
         raw, mip = v["raw"], v["mip"]
         sat = saturation_for(s, cfg)
 
-        def png(a):
+        def png(name, picture):
             buf = io.BytesIO()
-            Image.fromarray(a).save(buf, format="PNG")
+            picture.save(buf, format="PNG")
             return buf.getvalue()
-        files = {f"planes/z{z:02d}.png": png(M.pack16(raw[z])) for z in range(raw.shape[0])}
-        files["mip.png"] = png(M.pack16(mip))
-        if v["sat_mask"] is not None:
-            files["saturated.png"] = png(v["sat_mask"].astype(np.uint8) * 255)
-        if v["bf"] is not None:
-            files["brightfield.png"] = png(v["bf"])
-        if v["has_identity"]:
-            for z in range(v["id_planes"].shape[0]):
-                files[f"identity/z{z:02d}.png"] = png(v["id_planes"][z])
-            files["identity_mip.png"] = png(v["id_mip"])
-        for k, x in enumerate(v["extra"], start=2):
-            if x is not None:
-                for z in range(x[0].shape[0]):
-                    files[f"identity{k}/z{z:02d}.png"] = png(x[0][z])
-                files[f"identity{k}_mip.png"] = png(x[1])
+        # the same list of files Build saves, encoded the same way (several at a time), kept in memory
+        images = viewer_images(v)
+        files = dict(zip([name for name, _ in images], encode_images(images, png)))
+        del images
         # Build sets one Enhanced range per microscope from every included image. Before the build
         # there is none yet, so Enhanced uses the same formula on this image alone (and says so).
         lo = round(float(np.median(mip)))
