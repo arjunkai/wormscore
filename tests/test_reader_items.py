@@ -4,6 +4,8 @@ dimensions that are read only in part, pixel sizes in other units, older OME sch
 The sequential-scan fixtures follow the layout of a Stellaris file (LAS X 4.4, steps list their detectors
 with gain) and of an SP8 file (LAS X 3.5, steps list their detectors without gain), as read from public
 sample files; in both, the detection bands and the averaging are only in the master setting."""
+import hashlib
+
 import numpy as np
 import pytest
 import tifffile
@@ -185,3 +187,56 @@ def test_metadata_named_in_another_folder_is_not_opened(tmp_path):
         tifffile.imwrite(part, planes.reshape(-1, 32, 32), description=xml, metadata=None, photometric="minisblack")
         assert len(readers.ome_images(part, cfg)) == found, named
         (tmp_path / "set" / "meta.ome.tif").unlink(missing_ok=True)
+
+
+MM_COMPANION = """<?xml version="1.0" encoding="UTF-8" standalone="no" ?><OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06">\
+<Instrument ID="Instrument:0"><Objective ID="Objective:0" Immersion="Air" LensNA="0.95" NominalMagnification="40"/></Instrument>\
+<Image ID="Image:0" Name="pos1"><AcquisitionDate>2022-04-12T22:06:05.047450Z</AcquisitionDate><InstrumentRef ID="Instrument:0"/>\
+<Pixels BigEndian="false" DimensionOrder="XYZCT" ID="Pixels:0" PhysicalSizeX="0.1625" PhysicalSizeXUnit="µm" PhysicalSizeY="0.1625" \
+PhysicalSizeYUnit="µm" PhysicalSizeZ="1.7" PhysicalSizeZUnit="µm" SizeC="1" SizeT="1" SizeX="40" SizeY="30" SizeZ="{nz}" Type="uint16">\
+<Channel EmissionWavelength="525" ExcitationWavelength="466" ID="Channel:0:0" Name="GFP-LED" SamplesPerPixel="1"/>{tiffdata}\
+<Plane ExposureTime="0.16" ExposureTimeUnit="s" TheC="0" TheT="0" TheZ="0"/></Pixels></Image></OME>"""
+
+
+def write_mm_set(folder, nz=2, first_z=None, file_name=None):
+    """A Micro-Manager style set: the planes in a TIFF whose own description is only "OME-TIFF", the
+    metadata in <name>.companion.ome next to it (as in real files from a lab's Micro-Manager)."""
+    folder.mkdir(parents=True, exist_ok=True)
+    tif = folder / "worm_2022-04-12_230605_t0_p0.ome.tiff"
+    planes = (np.arange(nz * 30 * 40, dtype=np.uint16) * 7).reshape(nz, 30, 40)
+    with tifffile.TiffWriter(tif) as w:
+        for k, p in enumerate(planes):
+            w.write(p, description="OME-TIFF" if k == 0 else None, metadata=None, photometric="minisblack")
+    first_z = list(range(nz)) if first_z is None else first_z
+    td = "".join(f'<TiffData FirstC="0" FirstT="0" FirstZ="{z}" IFD="{k}" PlaneCount="1"><UUID FileName="{file_name or tif.name}">'
+                 f'urn:uuid:0</UUID></TiffData>' for k, z in enumerate(first_z))
+    (folder / "worm_2022-04-12_230605.companion.ome").write_text(MM_COMPANION.format(nz=nz, tiffdata=td), encoding="utf-8")
+    return tif, planes
+
+
+def test_a_micro_manager_z_stack_with_its_metadata_in_a_companion_file_is_read_whole(tmp_path):
+    """The TIFF alone looks like a plain sequence of pages; the companion file says they are z-planes.
+    Before, only the first plane was read and the image was flagged "illuminations (2)"."""
+    cfg = C.merge(C.DEFAULTS, {})
+    tif, planes = write_mm_set(tmp_path / "set")
+    [img] = readers.ome_images(tif, cfg)
+    flags = [f for f in img["flags"] if readers.NO_BITS not in f]      # the file does not record its bit depth
+    assert (img["n_z"], img["n_t"], flags) == (2, 1, [])
+    assert img["channel_names"] == ["GFP-LED"] and img["z_step_um"] == 1.7
+    assert np.array_equal(readers.read(img, 0), planes)
+    # the pixel checksum that finds the same image in two files is the same as before
+    with tifffile.TiffFile(tif) as f:
+        assert readers.pixel_sha256(img) == hashlib.sha256(np.ascontiguousarray(f.asarray()).tobytes()).hexdigest()
+
+
+def test_pages_the_companion_file_does_not_place_are_flagged_plainly(tmp_path):
+    """When the companion file does not say which page is which plane, the first page is read and the
+    flag says what is known, not "illuminations"."""
+    cfg = C.merge(C.DEFAULTS, {})
+    for name, kwargs in (("swapped", {"first_z": [1, 0]}), ("other file", {"file_name": "another.ome.tiff"})):
+        tif, planes = write_mm_set(tmp_path / name, **kwargs)
+        [img] = readers.ome_images(tif, cfg)
+        assert img["n_z"] == 1, name
+        flags = [f for f in img["flags"] if readers.NO_BITS not in f]
+        assert flags == ["2 images in one file that the metadata does not place: only the first is read"], name
+        assert not any("illumination" in f for f in img["flags"])

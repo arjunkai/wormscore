@@ -206,11 +206,45 @@ AXIS_NAMES = {"M": "tile scan ({n} tiles)", "H": "phases ({n})", "R": "rotations
               "Q": "extra dimension ({n})"}
 
 
-def _extra_axes_flags(axes, shape, known="CZYXT"):
+def _extra_axes_flags(axes, shape, known="CZYXT", names=AXIS_NAMES):
     """1.26.8: an image with a dimension wormscore does not use (the tiles of a tile scan, the wavelengths
     of a lambda scan, Airyscan phases). Only its first entry is read, as before, and now a flag says so."""
-    return [f"{AXIS_NAMES.get(a, 'extra dimension ' + a + ' ({n})').format(n=n)}: {FIRST_ONLY}"
+    return [f"{names.get(a, 'extra dimension ' + a + ' ({n})').format(n=n)}: {FIRST_ONLY}"
             for a, n in zip(axes, shape) if a not in known and n > 1]
+
+
+# tifffile names a plain run of pages "I" (a sequence), where Zeiss files use I for illuminations (1.26.18)
+OME_AXIS_NAMES = dict(AXIS_NAMES, I="{n} images in one file that the metadata does not place")
+
+
+def _pages_placed(px, axes, shape, path):
+    """1.26.18: a Micro-Manager set keeps its metadata in a .companion.ome file and its planes in TIFFs whose
+    own description is only "OME-TIFF". tifffile then sees a plain run of pages ("IYX"), and only the first
+    was read, flagged as illuminations. The companion file says which page is which plane (TiffData). When
+    it names this file for every page, in the order its DimensionOrder gives, and only one of z, channels
+    and time points has more than one entry, the pages are that axis. Otherwise the axes are kept as they
+    were (the first page is read, and flagged)."""
+    if axes != "IYX":
+        return axes
+    sizes = {a: int(px.get(f"Size{a}") or 1) if (px.get(f"Size{a}") or "1").isdigit() else 0 for a in "ZCT"}
+    order = (px.get("DimensionOrder") or "")[2:]
+    big = [a for a in "ZCT" if sizes[a] != 1]
+    if sorted(order) != ["C", "T", "Z"] or len(big) != 1 or sizes[big[0]] != shape[0]:
+        return axes
+    covered = []
+    for td in px.findall("o:TiffData", OME_NS):
+        uuid = td.find("o:UUID", OME_NS)
+        if uuid is None or uuid.get("FileName") != Path(path).name:
+            return axes
+        try:
+            ifd, count = int(td.get("IFD", "0")), int(td.get("PlaneCount", "1"))
+            first = {a: int(td.get(f"First{a}", "0")) for a in "ZCT"}
+        except ValueError:
+            return axes
+        if first[big[0]] != ifd or any(first[a] for a in "ZCT" if a != big[0]):
+            return axes
+        covered += range(ifd, ifd + count)
+    return big[0] + "YX" if sorted(covered) == list(range(shape[0])) else axes
 
 
 LEICA_DIMS = {5: "L", 9: "L", 10: "M"}      # DimID: lambda, excitation lambda, mosaic (tiles)
@@ -619,7 +653,8 @@ def ome_images(path, cfg):
                     cut.add(k)
                     break
     md = _ome_root(ET.fromstring(xml)) if xml else None
-    if md is None or md.find(".//o:Pixels", OME_NS) is None:
+    companion_used = md is None or md.find(".//o:Pixels", OME_NS) is None
+    if companion_used:
         # the metadata is in another file: the one the file names (1.26.8), or <name>.companion.ome next to it
         named = md.find("o:BinaryOnly", OME_NS).get("MetadataFile") if md is not None and md.find("o:BinaryOnly", OME_NS) is not None else None
         companion = Path(re.sub(r"(_t\d+_p\d+)?\.ome\.tiff?$", ".companion.ome", str(path)))
@@ -648,6 +683,8 @@ def ome_images(path, cfg):
     for i, (axes, shape, dtype) in enumerate(series):
         img = images[i] if i < len(images) else images[0]
         px = img.find("o:Pixels", OME_NS)
+        if companion_used and len(series) == 1:
+            axes = _pages_placed(px, axes, shape, path)
         names, roles = [], []
         for c in px.findall("o:Channel", OME_NS):
             names.append(c.get("Name", ""))
@@ -664,7 +701,7 @@ def ome_images(path, cfg):
         if not px.get("SignificantBits") and bits == 16:
             flags += _no_bits_flag(system, cfg, 65535)
         chan = px.findall("o:Channel", OME_NS)[mi] if mi is not None else None
-        flags += _extra_axes_flags(axes, shape)
+        flags += _extra_axes_flags(axes, shape, names=OME_AXIS_NAMES)
         n_z = shape[axes.index("Z")] if "Z" in axes else 1
         if len(flags) == len([INCOMPLETE] if i in cut else []) + (1 if any(NO_BITS in x for x in flags) else 0) \
                 and (px.get("SizeZ") or "").isdigit() and int(px.get("SizeZ")) != n_z:
