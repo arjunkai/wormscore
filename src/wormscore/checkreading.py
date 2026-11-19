@@ -16,6 +16,9 @@ documentation; where it does not name the field, the line names the window and n
 - Zeiss ZEN: "The Information View is a view type that shows a summary information sheet of all relevant
   image acquisition parameters", with the list used below (LSM 880 operating manual, ZEN black, 6.21).
   "Info View" (ZEN knowledge base). "ZEN lite is the free, unlicensed edition of ZEN" (Zeiss).
+  The field names were then read off ZEN 3.15 (ZEN lite) for the real-worm demo's LSM 880 file (19
+  November 2026): every value matched. Its Lasers row lists only the first track's lasers; the file
+  records the reporter's (here 488 nm at 12% on track 2) with its channel.
 - Nikon NIS-Elements: File > Image Properties and its tabs; the image window's status bar (NIS-Elements
   AR online help). "NIS-Elements Viewer is a free, standalone application" (Nikon).
 - Olympus FV3000: "Select the [Property] tab and check the acquiring conditions" (FV3000 operation
@@ -59,12 +62,13 @@ VENDOR = {
         "Zeiss ZEN",
         "Open the .czi in ZEN (ZEN lite is the free edition) and choose the image's Info view "
         "(Information View in ZEN black).",
-        {"objective": "Info view, the objective lens", "pixel": "Info view, the pixel scaling in X and Y",
-         "zstep": "Info view, the pixel scaling in Z", "planes": "Info view, the image dimensions (pixels in x-y-z)",
-         "bits": "Info view, the image dimensions (bit depth)", "channels": "Info view, the image dimensions (channels)",
-         "gain": "Info view, the Gain (Master) of the channel; Digital Gain is listed with it",
-         "laser": "Info view, the lasers used, each with its setting",
-         "light": "Info view", "averaging": "Info view, the average mode", "exposure": "Info view"}),
+        # the field names as ZEN 3.15 (ZEN lite) shows them for a real LSM 880 file (19 November 2026)
+        {"objective": "Info view, Objective (by its model name)", "pixel": "Info view, Scaling (per Pixel), first two",
+         "zstep": "Info view, Scaling (per Pixel), third", "planes": "Info view, Z-Stack (slices)",
+         "bits": "Info view, Bit Depth", "channels": "Info view, channel table, Channel Name",
+         "gain": "Info view, channel table, Detector Gain",
+         "laser": "Info view, Lasers (first track only)",
+         "light": "Info view", "averaging": "Info view, Averaging", "exposure": "Info view"}),
     "Nikon ND2": (
         "Nikon NIS-Elements",
         "Open the .nd2 in NIS-Elements (NIS-Elements Viewer is free) and choose File > Image Properties.",

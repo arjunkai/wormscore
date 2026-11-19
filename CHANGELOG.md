@@ -5,6 +5,15 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.19
+
+**Check the reading, held against ZEN lite.**
+- Check the reading names the fields of ZEN's Info view as ZEN 3.15 (ZEN lite) shows them, checked
+  on a real Zeiss LSM 880 file: every value matched. ZEN names the objective by its model (for example
+  C-Apochromat 40x/1.2 W Korr FCS M27, where wormscore writes 40x/1.2 Water), and its Lasers row lists
+  the first scan track's lasers only; the reporter's laser and power are in the file with its channel.
+- **Who is affected:** nobody's results change; only the text of Check the reading.
+
 ## 1.26.18
 
 **Check the reading of a file against the microscope software; Micro-Manager z-stacks read whole; faster builds.**

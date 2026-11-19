@@ -129,6 +129,30 @@ def test_leica_lines_name_the_sections_of_the_properties_window(tmp_path):
     assert len(rows) == 9 and max(len(line) for line in rows) <= 72      # none wraps in the app's dialog
 
 
+def test_zeiss_lines_name_what_zen_lite_shows(tmp_path):
+    """Names as ZEN 3.15 (ZEN lite) shows them in the Info view for the real-worm demo's LSM 880 file
+    (19 November 2026). Every value matched; two lines misled. ZEN names the objective by its model
+    ("C-Apochromat 40x/1.2 W Korr FCS M27" where wormscore writes "40x/1.2 Water"), and its Lasers row
+    lists the first track's lasers only (561 and 405 nm), not the 488 nm of the reporter's track 2,
+    which the file records per channel (12%)."""
+    path = lif(tmp_path / "one.lif", NAMES[:1])
+    img = K._images(path, K.default_settings(), None)[0]
+    zeiss = dict(img, format="Zeiss CZI", system="Zeiss LSM 880, AxioObserver", settings="gain 550; 488nm@12.00%; avg 2")
+    text = "\n".join(K.describe(zeiss, K.default_settings(), path))
+    where = text[text.index("Where to find these in Zeiss ZEN"):]
+    assert value(where, "Objective") == "Info view, Objective (by its model name)"
+    assert value(where, "Pixel size") == "Info view, Scaling (per Pixel), first two"
+    assert value(where, "Z-step") == "Info view, Scaling (per Pixel), third"
+    assert value(where, "Planes") == "Info view, Z-Stack (slices)"
+    assert value(where, "Bit depth") == "Info view, Bit Depth"
+    assert value(where, "Channels") == "Info view, channel table, Channel Name"
+    assert value(where, "Detector gain or voltage") == "Info view, channel table, Detector Gain"
+    assert value(where, "Laser lines and power") == "Info view, Lasers (first track only)"
+    assert value(where, "Averaging") == "Info view, Averaging"
+    rows = where.split("\n\n")[0].splitlines()[2:]
+    assert max(len(line) for line in rows) <= 72
+
+
 def test_nothing_is_written_anywhere(tmp_path, monkeypatch):
     home_dir, data = tmp_path / "home", tmp_path / "data"
     project = make_demo(tmp_path / "project", n_per_group=1, log=quiet)
