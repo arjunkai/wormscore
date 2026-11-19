@@ -122,7 +122,8 @@ shows. If anything differs, [open an issue](https://github.com/arjunkai/wormscor
 - [Methods](https://github.com/arjunkai/wormscore/blob/main/docs/METHODS.md): how everything is read, measured and tested, in plain language,
   for adapting into a Methods section.
 - [Comparison with other tools](https://github.com/arjunkai/wormscore/blob/main/docs/COMPARISON.md).
-- [Roadmap and what changed in each version](https://github.com/arjunkai/wormscore/blob/main/ROADMAP.md).
+- [Changelog](https://github.com/arjunkai/wormscore/blob/main/CHANGELOG.md): what changed in each version, and who is affected.
+- [Roadmap](https://github.com/arjunkai/wormscore/blob/main/ROADMAP.md): what is planned.
 
 Something wrong, unclear or missing? [Open an issue](https://github.com/arjunkai/wormscore/issues/new)
 with what you did and what you saw. The project's `log.md` helps; it never names a code's genotype.

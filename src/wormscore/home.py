@@ -27,7 +27,7 @@ HOME_FILES = {"home.js": "text/javascript; charset=utf-8", "form.js": "text/java
               "icon.svg": "image/svg+xml",
               "icon-192.png": "image/png", "icon-512.png": "image/png",
               "manifest.webmanifest": "application/manifest+json"}
-GUIDE_URL = "https://github.com/arjunkai/wormscore#readme"
+GUIDE_URL = "https://github.com/arjunkai/wormscore/blob/main/docs/GUIDE.md"     # the manual; the README is the front page
 IDLE_EXIT_S = 1800        # without window tracking: close this long after the page last checked in
 WINDOW_GONE_S = 45        # with window tracking: close this long after the last app window closed
 # Fixed ports: a window left open while wormscore was not running reconnects by itself the next
