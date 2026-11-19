@@ -248,8 +248,8 @@ fieldset.neuron > select.side { position: absolute; top: -19px; right: 10px; wid
 #saveMsg.err, #roiMsg.err { color: var(--danger); }
 /* another window saved this image's outlines: a warning on its own row above the button, at most two lines */
 .actions.warned { flex-wrap: wrap; }
-#roiMsg.warn { flex: 1 0 100%; display: flex; align-items: flex-start; gap: 6px; color: var(--text); line-height: 1.4; }
-#roiMsg.warn svg { flex: none; color: var(--warn); margin-top: 1px; }
+#roiMsg.warn, #saveMsg.warn { flex: 1 0 100%; display: flex; align-items: flex-start; gap: 6px; color: var(--text); line-height: 1.4; }
+#roiMsg.warn svg, #saveMsg.warn svg { flex: none; color: var(--warn); margin-top: 1px; }
 
 .small { color: var(--muted); font-size: var(--text-xs); margin: 0 0 10px; }
 .item .small { margin: 0; }

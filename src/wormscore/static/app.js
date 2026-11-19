@@ -124,6 +124,7 @@ async function checkIn() {
   try { await api("/api/ping"); } catch { ok = false; }
   if (ok) setConnected(true);
   if (ok) checkOutlines();
+  if (ok) checkScore();
   if (!st.otherProject) st.checkTimer = setTimeout(checkIn, ok ? 20000 : 2000);
 }
 
@@ -516,7 +517,7 @@ async function openWorm(code) {
   if (seq !== st.openSeq) return;
   Object.assign(st, {
     code, meta: r.meta, imgV: r.img_v, score: r.score, rois: r.rois || [], roisDirty: false, formDirty: false,
-    roisV: r.rois_v || null, roisElsewhere: null,
+    roisV: r.rois_v || null, roisElsewhere: null, scoreV: r.score_v || null, scoreElsewhere: null,
     view: "mip", z: Math.floor(r.meta.n_z / 2), planes: new Array(r.meta.n_z), planeFailed: new Set(),
     drawing: null, mip: null, bfVals: null, angle: 0, tilt: 0, rot: new Map(), mipDepth: null, planesDone: false,
     rendering: null, vol: null,
@@ -1041,7 +1042,11 @@ function toRaw(e) {
 
 // err: true for an error, "warn" for a warning (an icon, "Warning:" for screen readers, and a row of its own)
 function roiMessage(text, err = false) {
-  const msg = $("#roiMsg"), warn = err === "warn";
+  showMessage($("#roiMsg"), text, err);
+}
+
+function showMessage(msg, text, err) {
+  const warn = err === "warn";
   msg.textContent = warn ? "" : text;
   msg.className = warn ? "warn" : err ? "err" : "";
   msg.parentElement.classList.toggle("warned", warn);
@@ -1226,9 +1231,21 @@ function renderFlags() {
   }));
 }
 
+// err as for roiMessage: true for an error, "warn" for a warning
 function saveMessage(text, err = false) {
-  $("#saveMsg").textContent = text;
-  $("#saveMsg").className = err ? "err" : "";
+  showMessage($("#saveMsg"), text, err);
+}
+
+// The same check for the score: another window saved a score for this image since this window loaded it
+// or last saved it (st.scoreV). Said once for each change.
+async function checkScore() {
+  if (browsing() || !st.ready || !st.code || !st.scoreV || st.loading || st.saving) return;
+  const code = st.code, had = st.scoreV;
+  let now;
+  try { now = (await api(`/api/worm/${code}/score-version`)).version; } catch { return; }
+  if (!now || st.code !== code || st.scoreV !== had || st.saving || now === had || now === st.scoreElsewhere) return;
+  st.scoreElsewhere = now;
+  saveMessage("Another window saved a different score for this image. Reopen it to see it, or save yours.", "warn");
 }
 
 function fillForm() {
@@ -1328,13 +1345,19 @@ $("#scoreForm").addEventListener("submit", async e => {
   const rev = st.formRev;
   st.saving = true;
   try {
-    const r = await api(`/api/worm/${st.code}/score`, body);
+    const r = await api(`/api/worm/${st.code}/score`, { ...body, ...(st.scoreV ? { loaded: st.scoreV } : {}) });
     st.saving = false;
     st.score = { ...body, saved: r.saved };
+    if (r.version) Object.assign(st, { scoreV: r.version, scoreElsewhere: null });
     if (st.formRev === rev) {
       clearTimeout(st.draftTimer);
       st.formDirty = false;
-      saveMessage(`Saved ${r.saved}`);
+      if (r.replaced) {
+        // the later save wins; it replaced a score another window saved after this window opened the image.
+        // The window stays on this image, so the warning is read.
+        st.saveAndNext = false;
+        saveMessage("Score saved, replacing a score saved in another window. Use one scoring window at a time.", "warn");
+      } else saveMessage(`Saved ${r.saved}`);
     } else {
       // an answer was changed while saving: that change is not in the saved score yet
       st.saveAndNext = false;

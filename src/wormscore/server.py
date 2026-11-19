@@ -319,6 +319,17 @@ class Project:
         rois = (self.load("rois.json", {}).get(code) if rois is None else rois) or []
         return hashlib.sha256(json.dumps(rois, sort_keys=True).encode()).hexdigest()[:12]
 
+    NOT_READ = object()
+
+    def score_version(self, code, score=NOT_READ):
+        """The same for the score saved for a code (rois_version for outlines): a short name worked out
+        from scores.json, nothing more stored. Each save has its own time, so each save gets a new name.
+        Given the score just read (None: no score), it names that one, so a save landing between two
+        reads cannot pair the old score with the new name (found by review)."""
+        if score is self.NOT_READ:
+            score = self.load("scores.json", {}).get(code)
+        return hashlib.sha256(json.dumps(score, sort_keys=True).encode()).hexdigest()[:12]
+
     def save_rois_in_order(self, code, rois, rows, ticket):
         """Write the outlines unless a request that arrived later has already written this code's
         (call with the lock held). Returns whether they were written. The last click wins whatever
@@ -472,12 +483,17 @@ def make_handler(project):
                     and (project.blind / parts[2]).is_dir():
                 code = parts[2]
                 rois = project.load("rois.json", {}).get(code, [])
-                return self.send_json({"meta": project.meta(code), "img_v": project.image_version(code), "score": project.load("scores.json", {}).get(code),
+                score = project.load("scores.json", {}).get(code)
+                return self.send_json({"meta": project.meta(code), "img_v": project.image_version(code), "score": score,
                                        "rois": rois, "rois_v": project.rois_version(code, rois),
+                                       "score_v": project.score_version(code, score),
                                        "draft": project.drafts().get(code)})
             if parts[:2] == ["api", "worm"] and len(parts) == 4 and parts[3] == "rois-version" and CODE.match(parts[2])                     and (project.blind / parts[2]).is_dir():
                 # which outlines are saved now: a window asks when it is looked at again
                 return self.send_json({"version": project.rois_version(parts[2])})
+            if parts[:2] == ["api", "worm"] and len(parts) == 4 and parts[3] == "score-version" and CODE.match(parts[2]) \
+                    and (project.blind / parts[2]).is_dir():
+                return self.send_json({"version": project.score_version(parts[2])})
             self.send_error(404)
 
         def post(self):
@@ -525,7 +541,16 @@ def make_handler(project):
                 return self.send_json({"ok": True, "n_regions": len(rois), **told})
             with project.lock:
                 if what == "score":
-                    return self.send_json({"ok": True, "saved": project.save_score(code, body)})
+                    # As for outlines: the later save wins, and is told when it replaced a score saved since its
+                    # window loaded the image ("loaded"). "loaded" is not part of the score, so it is not stored.
+                    loaded, told = body.pop("loaded", None), {}
+                    before = project.score_version(code) if isinstance(loaded, str) else None
+                    saved = project.save_score(code, body)
+                    if before is not None:
+                        told["version"] = project.score_version(code, body)     # the score just written
+                        if before != loaded:
+                            told["replaced"] = True
+                    return self.send_json({"ok": True, "saved": saved, **told})
                 if what == "draft":
                     values = body.get("values")
                     if body.get("discard") is True:

@@ -332,3 +332,117 @@ def test_the_outline_warnings_keep_to_two_lines_in_a_narrow_window(playwright, f
         browser.close()
         srv.shutdown()
         srv.server_close()
+
+
+ANSWER_UNUSABLE = """reason => {
+  const f = document.querySelector('#scoreForm');
+  f.querySelector('input[name=usable][value=no]').click();
+  const sel = document.querySelector('#reasonSelect');
+  sel.value = [...sel.options].filter(o => o.value)[reason].value;
+  sel.dispatchEvent(new Event('change', {bubbles: true}));
+  for (const fl of st.meta.flags) f.querySelector(`input[name="flag_${fl.id}"]`)?.click();
+}"""
+SAVE_WARNING = WARNING_BOX.replace("#roiMsg", "#saveMsg").replace("#saveRois", "#scoreForm button[type=submit]")
+
+
+def test_two_windows_that_save_a_score_one_after_the_other_both_say_so(playwright, fresh_project):
+    """As for outlines: one window saved an image's score, then another window that had the image open
+    before that saved its own. The later save is the saved one, as before, and neither window said anything.
+    Now the second says it replaced a score saved elsewhere, and the first says so when it is looked at again."""
+    try:
+        browser = playwright.chromium.launch()
+    except Exception as exc:
+        pytest.skip(f"chromium is not installed for Playwright ({type(exc).__name__})")
+    srv = make_server(fresh_project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}/"
+    context = browser.new_context(viewport={"width": 1536, "height": 785}, device_scale_factor=1.25)
+
+    def opened():
+        page = context.new_page()
+        page.goto(url)
+        page.wait_for_function("document.querySelector('#codeTitle').textContent.startsWith('W') && !st.loading")
+        return page
+    try:
+        one, two = opened(), opened()
+        code = one.evaluate("st.code")
+        assert two.evaluate("st.code") == code
+        save = lambda page: page.locator("#scoreForm button[type=submit]").click()
+        one.evaluate(ANSWER_UNUSABLE, 0)
+        save(one)
+        one.wait_for_function("document.querySelector('#saveMsg').textContent.startsWith('Saved ')")
+        assert not one.evaluate("document.querySelector('#saveMsg').classList.contains('warn')")    # one window: as before
+        one.evaluate("checkIn()")                                    # looked at again: its own score is the saved one
+        one.wait_for_timeout(300)
+        assert not one.evaluate("document.querySelector('#saveMsg').classList.contains('warn')")
+
+        two.evaluate(ANSWER_UNUSABLE, 1)
+        save(two)                                                    # the later save wins and says what it replaced
+        two.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
+        w = two.evaluate(SAVE_WARNING)
+        saved = srv.project.load("scores.json", {})[code]
+        assert w["said"] == "Score saved, replacing a score saved in another window. Use one scoring window at a time."
+        assert saved["unusable_reason"] == two.evaluate("document.querySelector('#reasonSelect').value") \
+            != one.evaluate("document.querySelector('#reasonSelect').value")
+        assert two.evaluate("st.code") == code and two.evaluate("st.formDirty") is False
+
+        one.evaluate("window.dispatchEvent(new Event('focus'))")     # the first window is looked at again
+        one.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
+        v = one.evaluate(SAVE_WARNING)
+        assert v["said"] == "Another window saved a different score for this image. Reopen it to see it, or save yours."
+        for box in (w, v):
+            assert box["sr"] == "Warning: " and box["role"] == "status" and box["lines"] <= 2
+            assert box["icon"]["right"] > box["icon"]["left"] >= box["msg"]["left"]
+            assert box["panel"]["left"] <= box["msg"]["left"] and box["msg"]["right"] <= box["panel"]["right"]
+            assert box["msg"]["bottom"] <= box["button"]["top"] + 1 and box["button"]["bottom"] <= 785
+            assert box["scroll"][0] <= box["scroll"][1] and box["color"] == box["text"]
+        # said once, and opening the image again shows the saved score and clears the warning
+        one.evaluate("checkIn()")
+        one.wait_for_timeout(300)
+        assert one.evaluate(SAVE_WARNING)["said"] == v["said"]
+        one.evaluate("openWorm(st.code)")
+        one.wait_for_function("document.querySelector('#saveMsg').textContent.startsWith('Saved ')")
+        assert one.evaluate("document.querySelector('#reasonSelect').value") == saved["unusable_reason"]
+        assert not one.evaluate("document.querySelector('#scoreForm .actions').classList.contains('warned')")
+    finally:
+        context.close()
+        browser.close()
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_the_score_warnings_keep_to_two_lines_in_a_narrow_window(playwright, fresh_project):
+    """Below 1100 px the side panel is 320 px wide: both score warnings still take at most two lines."""
+    try:
+        browser = playwright.chromium.launch()
+    except Exception as exc:
+        pytest.skip(f"chromium is not installed for Playwright ({type(exc).__name__})")
+    srv = make_server(fresh_project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}/"
+    context = browser.new_context(viewport={"width": 1024, "height": 700}, device_scale_factor=1.25)
+    try:
+        pages = []
+        for _ in range(2):
+            page = context.new_page()
+            page.goto(url)
+            page.wait_for_function("document.querySelector('#codeTitle').textContent.startsWith('W') && !st.loading")
+            pages.append(page)
+        one, two = pages
+        for page, reason in ((one, 0), (two, 1)):
+            page.evaluate(ANSWER_UNUSABLE, reason)
+            page.locator("#scoreForm button[type=submit]").click()
+            page.wait_for_function("document.querySelector('#saveMsg').textContent.startsWith('Saved ') "
+                                   "|| document.querySelector('#saveMsg').classList.contains('warn')")
+        one.evaluate("window.dispatchEvent(new Event('focus'))")
+        one.wait_for_function("document.querySelector('#saveMsg').classList.contains('warn')")
+        for page in (one, two):
+            box = page.evaluate(SAVE_WARNING)
+            assert box["sr"] == "Warning: " and box["lines"] <= 2, box["said"]
+            assert box["panel"]["left"] <= box["msg"]["left"] and box["msg"]["right"] <= box["panel"]["right"]
+            assert box["scroll"][0] <= box["scroll"][1]
+    finally:
+        context.close()
+        browser.close()
+        srv.shutdown()
+        srv.server_close()
