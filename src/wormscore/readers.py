@@ -237,7 +237,9 @@ def _pages_placed(px, axes, shape, path):
         if uuid is None or uuid.get("FileName") != Path(path).name:
             return axes
         try:
-            ifd, count = int(td.get("IFD", "0")), int(td.get("PlaneCount", "1"))
+            # OME: a TiffData with neither IFD nor PlaneCount stands for every page of the file
+            ifd = int(td.get("IFD", "0"))
+            count = shape[0] if td.get("IFD") is None and td.get("PlaneCount") is None else int(td.get("PlaneCount", "1"))
             first = {a: int(td.get(f"First{a}", "0")) for a in "ZCT"}
         except ValueError:
             return axes

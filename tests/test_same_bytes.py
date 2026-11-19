@@ -71,3 +71,26 @@ def test_a_full_disk_while_saving_together_says_what_it_said_before(tmp_path, mo
         said.append(str(e.value).replace(str(p), "<project>"))
         assert not (p / "blind").exists() and not (p / pipeline.BUILDING).exists()
     assert said[0] == said[1] and "could not be written" in said[0]
+
+
+def test_no_file_is_started_after_one_failed(tmp_path):
+    """encode_images went on starting files after one had failed, while it waited for an earlier one
+    (more writes onto a full disk). It now starts none, and still raises the error (independent review)."""
+    import threading
+    import time
+    import numpy as np
+    started, lock = [], threading.Lock()
+
+    def put(name, picture):
+        with lock:
+            started.append(name)
+        if name == "slow":
+            time.sleep(0.5)
+        if name == "fails":
+            raise OSError(28, "No space left on device")
+        time.sleep(0.01)
+    plane = np.zeros((4, 4), np.uint8)
+    images = [("slow", lambda: plane), ("fails", lambda: plane)] + [(f"z{k}", lambda: plane) for k in range(200)]
+    with pytest.raises(OSError):
+        pipeline.encode_images(images, put)
+    assert len(started) < 40

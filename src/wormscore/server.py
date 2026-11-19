@@ -310,11 +310,13 @@ class Project:
             self.roi_arrived += 1
             return self.roi_arrived
 
-    def rois_version(self, code):
+    def rois_version(self, code, rois=None):
         """A short name for the outlines now saved for a code, worked out from rois.json (nothing more is
         stored). A scoring window keeps the one it loaded or last saved; if another window has saved
-        other outlines since, the names differ. The same outlines always give the same name."""
-        rois = self.load("rois.json", {}).get(code) or []
+        other outlines since, the names differ. The same outlines always give the same name. Given the
+        outlines just read, it names those, so a save landing between two reads cannot pair old outlines
+        with the new name."""
+        rois = (self.load("rois.json", {}).get(code) if rois is None else rois) or []
         return hashlib.sha256(json.dumps(rois, sort_keys=True).encode()).hexdigest()[:12]
 
     def save_rois_in_order(self, code, rois, rows, ticket):
@@ -469,8 +471,9 @@ def make_handler(project):
             if parts[:2] == ["api", "worm"] and len(parts) == 3 and CODE.match(parts[2]) \
                     and (project.blind / parts[2]).is_dir():
                 code = parts[2]
+                rois = project.load("rois.json", {}).get(code, [])
                 return self.send_json({"meta": project.meta(code), "img_v": project.image_version(code), "score": project.load("scores.json", {}).get(code),
-                                       "rois": project.load("rois.json", {}).get(code, []), "rois_v": project.rois_version(code),
+                                       "rois": rois, "rois_v": project.rois_version(code, rois),
                                        "draft": project.drafts().get(code)})
             if parts[:2] == ["api", "worm"] and len(parts) == 4 and parts[3] == "rois-version" and CODE.match(parts[2])                     and (project.blind / parts[2]).is_dir():
                 # which outlines are saved now: a window asks when it is looked at again

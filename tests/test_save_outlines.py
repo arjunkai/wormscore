@@ -278,3 +278,28 @@ def test_what_is_stored_is_the_same_with_and_without_the_version(fresh_project, 
             srv.server_close()
         stored.append({p.name: p.read_bytes() for p in sorted((project / "scoring").iterdir())})
     assert stored[0] == stored[1] and sorted(stored[0]) == ["roi_measurements.csv", "roi_measurements.json", "rois.json"]
+
+
+def test_the_version_sent_with_an_image_names_the_outlines_sent_with_it(fresh_project, monkeypatch):
+    """The image's outlines and their version were two reads of rois.json. A save landing between them gave
+    a window the old outlines with the new version: it was then never told that its save replaced them
+    (independent review of 1.26.18)."""
+    srv, port = running(fresh_project)
+    try:
+        project = srv.project
+        real, calls = project.load, []
+
+        def load(name, default):
+            out = real(name, default)
+            if name == "rois.json":
+                calls.append(1)
+                if len(calls) == 2:          # another window's save lands after the first read
+                    out = {"W0001": LATER}
+            return out
+        monkeypatch.setattr(project, "load", load)
+        got = get(port, "/api/worm/W0001")[1]
+        monkeypatch.setattr(project, "load", real)
+        assert got["rois_v"] == project.rois_version("W0001", got["rois"])
+    finally:
+        srv.shutdown()
+        srv.server_close()

@@ -16,6 +16,7 @@ import re
 import secrets
 import shutil
 import sys
+import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -553,9 +554,24 @@ def encode_images(images, put):
     a time. An error (a full disk) is raised here once the files being written have ended, and no more
     are started."""
     Image.preinit()                 # Pillow's file formats, registered once before the threads start
+    failed = threading.Event()
+
+    def one(name, make):
+        if failed.is_set():         # another file failed: start no more (a full disk)
+            return None
+        try:
+            return put(name, Image.fromarray(make()))
+        except BaseException:
+            failed.set()
+            raise
+
     pool = ThreadPoolExecutor(max_workers=PNG_THREADS)
     try:
-        jobs = [pool.submit(lambda name, make: put(name, Image.fromarray(make())), *job) for job in images]
+        jobs = [pool.submit(one, *job) for job in images]
+        for job in jobs:            # wait for all, then raise the first error in the order given
+            exc = job.exception()
+            if exc is not None:
+                raise exc
         return [job.result() for job in jobs]
     finally:
         pool.shutdown(wait=True, cancel_futures=True)

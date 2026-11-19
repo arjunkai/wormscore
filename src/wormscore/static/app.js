@@ -137,7 +137,7 @@ async function checkOutlines() {
   try { now = (await api(`/api/worm/${code}/rois-version`)).version; } catch { return; }
   if (!now || st.code !== code || st.roisV !== had || st.roisSaving || now === had || now === st.roisElsewhere) return;
   st.roisElsewhere = now;
-  roiMessage("Another window saved other outlines for this image. Open the image again to see them, or save these instead.", "warn");
+  roiMessage("Another window saved other outlines for this image. Reopen it to see them, or save yours.", "warn");
 }
 
 for (const ev of ["focus", "online"]) window.addEventListener(ev, checkIn);

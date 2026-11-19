@@ -338,3 +338,16 @@ def test_a_project_scanned_before_2016_dev0_was_read_gets_the_image_only_when_ad
     assert [r["file"] for r in rows if r["added_on"]] == [dev.name]
     assert {r["code"]: r["local_path"] for r in rows if not r["added_on"]} == \
         {r["code"]: r["local_path"] for r in before}
+
+
+def test_a_tiffdata_without_ifd_or_plane_count_covers_every_page(tmp_path):
+    """OME: a TiffData with neither IFD nor PlaneCount stands for every page of the file (independent review)."""
+    cfg = C.merge(C.DEFAULTS, {})
+    tif, planes = write_mm_set(tmp_path / "set", nz=3)
+    comp = tmp_path / "set" / "worm_2022-04-12_230605.companion.ome"
+    xml = comp.read_text(encoding="utf-8")
+    import re as _re
+    one = f'<TiffData><UUID FileName="{tif.name}">urn:uuid:0</UUID></TiffData>'
+    comp.write_text(_re.sub(r"(<TiffData .*?</TiffData>)+", one, xml, count=1), encoding="utf-8")
+    [img] = readers.ome_images(tif, cfg)
+    assert img["n_z"] == 3 and np.array_equal(readers.read(img, 0), planes)

@@ -283,7 +283,7 @@ def test_two_windows_that_save_outlines_one_after_the_other_both_say_so(playwrig
         one.evaluate("window.dispatchEvent(new Event('focus'))")     # the first window is looked at again
         one.wait_for_function("document.querySelector('#roiMsg').classList.contains('warn')")
         v = one.evaluate(WARNING_BOX)
-        assert v["said"] == "Another window saved other outlines for this image. Open the image again to see them, or save these instead."
+        assert v["said"] == "Another window saved other outlines for this image. Reopen it to see them, or save yours."
         for box in (w, v):
             assert box["sr"] == "Warning: " and box["role"] == "status"
             assert box["lines"] <= 2                                 # at most two lines
@@ -305,6 +305,30 @@ def test_two_windows_that_save_outlines_one_after_the_other_both_say_so(playwrig
         assert one.evaluate("document.querySelector('.tab[data-tab=mark] .actions').classList.contains('warned')") is False
     finally:
         context.close()
+        browser.close()
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_the_outline_warnings_keep_to_two_lines_in_a_narrow_window(playwright, fresh_project):
+    """Below 1100 px the side panel is 320 px wide; the warning about another window's outlines wrapped to
+    three lines there (independent review of 1.26.18). Warnings are at most two lines."""
+    browser = playwright.chromium.launch()
+    srv = make_server(fresh_project, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        page = browser.new_page(viewport={"width": 1024, "height": 700}, device_scale_factor=1.25)
+        page.goto(f"http://127.0.0.1:{srv.server_address[1]}/")
+        page.wait_for_function("document.querySelector('#codeTitle').textContent.startsWith('W')")
+        page.evaluate("api(`/api/worm/${st.code}/score`, {usable: 'no', unusable_reason: 'x', flag_answers: {}})"
+                      ".then(() => openWorm(st.code))")
+        page.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
+        page.locator("#markTab").click()
+        for text in ("Another window saved other outlines for this image. Reopen it to see them, or save yours.",
+                     "Saved 12 outlines, replacing outlines saved in another window. Use one scoring window at a time."):
+            page.evaluate("t => roiMessage(t, 'warn')", text)
+            assert page.evaluate(WARNING_BOX)["lines"] <= 2, text
+    finally:
         browser.close()
         srv.shutdown()
         srv.server_close()
