@@ -313,7 +313,10 @@ def test_two_windows_that_save_outlines_one_after_the_other_both_say_so(playwrig
 def test_the_outline_warnings_keep_to_two_lines_in_a_narrow_window(playwright, fresh_project):
     """Below 1100 px the side panel is 320 px wide; the warning about another window's outlines wrapped to
     three lines there (independent review of 1.26.18). Warnings are at most two lines."""
-    browser = playwright.chromium.launch()
+    try:
+        browser = playwright.chromium.launch()
+    except Exception as exc:          # the Mac check installs WebKit only
+        pytest.skip(f"chromium is not installed for Playwright ({type(exc).__name__})")
     srv = make_server(fresh_project, port=0)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
@@ -464,7 +467,10 @@ def test_the_score_warnings_show_for_a_usable_image(playwright, fresh_project):
     """After saving a usable image the page moves to Outline cells, which hid the Score tab and the warning
     in it: neither window's score warning could be seen in the usual case (second review of 1.26.18). The
     window that replaced a score now stays on the Score tab, and the other returns to it to say so."""
-    browser = playwright.chromium.launch()
+    try:
+        browser = playwright.chromium.launch()
+    except Exception as exc:          # the Mac check installs WebKit only
+        pytest.skip(f"chromium is not installed for Playwright ({type(exc).__name__})")
     srv = make_server(fresh_project, port=0)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     context = browser.new_context(viewport={"width": 1536, "height": 785}, device_scale_factor=1.25)
@@ -501,7 +507,10 @@ def test_the_score_warnings_show_for_a_usable_image(playwright, fresh_project):
 def test_a_replaced_score_is_said_when_an_answer_changed_while_it_saved(playwright, fresh_project):
     """A save that replaced another window's score, during which an answer was changed, said only "you
     changed an answer while it saved", and the next save did not mention the replaced score."""
-    browser = playwright.chromium.launch()
+    try:
+        browser = playwright.chromium.launch()
+    except Exception as exc:          # the Mac check installs WebKit only
+        pytest.skip(f"chromium is not installed for Playwright ({type(exc).__name__})")
     srv = make_server(fresh_project, port=0)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     context = browser.new_context(viewport={"width": 1024, "height": 700}, device_scale_factor=1.25)

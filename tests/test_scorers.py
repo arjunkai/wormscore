@@ -142,7 +142,8 @@ def test_import_keeps_the_scores_apart_from_the_primary_ones(made):
 
 def damage_image(pkg):
     f = next(p for p in (pkg / "blind").rglob("*") if p.is_file() and p.suffix != ".json")
-    f.write_bytes(f.read_bytes()[:-1] + b"\x00")
+    data = f.read_bytes()
+    f.write_bytes(data[:-1] + bytes([data[-1] ^ 0xFF]))     # a changed last byte (one that was already 0 stayed the same)
 
 
 def add_code(pkg):
