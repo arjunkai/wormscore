@@ -1,9 +1,12 @@
 # How wormscore compares to other tools
 
 For researchers deciding whether wormscore fits their project. Claims about other tools were checked
-against each tool's own documentation, repository or paper in November 2026; statements marked
-**(inference)** are our reading, not something a source says. wormscore is young, has one developer,
-and has not yet been used in a published study; weigh that accordingly.
+against each tool's own documentation, repository or paper in November 2026, and each names its source.
+How wormscore's own reading of microscope files was checked is recorded in
+[METHODS.md, How the reading was checked](METHODS.md#how-the-reading-was-checked): the automated tests,
+Check the reading compared value by value with LAS X, ZEN, NIS-Elements Viewer and OlyVIA, files from
+33 public datasets read against what their authors wrote, and the parity runs comparing the released
+version's reading with the new one.
 
 ## Short answer
 
@@ -25,9 +28,7 @@ compare genotypes with Fisher's exact test ([Yemini et al. 2021](https://doi.org
 are judgements, and unblinded judgements are biased. In a text-mining study of life-science papers,
 about 14% reported blind scoring; in 83 matched pairs of evolutionary-biology experiments, the non-blind
 ones reported effects about 27% larger ([Holman et al. 2015](https://doi.org/10.1371/journal.pbio.1002190)).
-The NeuroPAL paper states that "Mutant analysis studies were not blinded" (Yemini et al. 2021), which
-suggests blinding is not yet routine in this kind of work **(inference from one paper; we found no
-survey of C. elegans papers)**. ARRIVE 2.0 item 5 asks authors to report who knew group allocation at
+The NeuroPAL paper states that "Mutant analysis studies were not blinded" (Yemini et al. 2021). ARRIVE 2.0 item 5 asks authors to report who knew group allocation at
 each stage, including outcome assessment ([Percie du Sert et al. 2020](https://doi.org/10.1371/journal.pbio.3000411)).
 
 ## Tools compared
@@ -46,7 +47,6 @@ each stage, including outcome assessment ([Percie du Sert et al. 2020](https://d
 | **CellProfiler** ([repo](https://github.com/CellProfiler/CellProfiler)) | Batch segmentation and measurement pipelines | None described | Through segmentation, not identity | Yes | BSD-3-Clause |
 | **ilastik** ([repo](https://github.com/ilastik/ilastik)) | Interactive machine-learning pixel and object classification | No | Through classification | Yes | GPL-2.0 or later |
 | **Cellpose**, **StarDist** ([cellpose](https://github.com/MouseLand/cellpose), [stardist](https://github.com/stardist/stardist)) | Deep-learning segmentation of cells or nuclei | No | Segmentation only | Through other tools | BSD-3-Clause |
-| **Vendor software** (Leica LAS X, Zeiss ZEN, Nikon NIS-Elements), **Imaris**, **arivis** | Acquisition and commercial analysis | We found no documented blinding feature **(inference)** | Varies | Yes | Commercial |
 
 Smaller blinding helpers also exist: the [Filename Randomizer](https://wsr.imagej.net/macros/Filename_Randomizer.txt)
 ImageJ macro (its copies keep the original name in the image header), the R packages
@@ -95,9 +95,9 @@ hides names only in its own viewer).
   There is no chromatic-shift correction. Flat-field correction is applied when you supply slide images.
 - **Single computer.** Scoring is local. A second scorer elsewhere gets a package folder to score on
   their own computer; many scorers working at once are better served by a web-based tool such as Tyche.
-- **Maturity.** Fiji, CellProfiler and QuPath have large user communities and years of fixes. wormscore
-  does not. GitHub builds the Windows and Mac apps on every change and installs an update over them,
-  but it has few users so far.
+- **Maturity.** wormscore's first release was 0.1.0, in October 2026; [CHANGELOG.md](../CHANGELOG.md)
+  lists every version since. GitHub runs the tests and builds the Windows and Mac apps on every change,
+  and checks that the app's updater installs a newer build over an older one.
 
 ## Community threads
 
@@ -123,6 +123,3 @@ in November 2026 the forums blocked automated access, so the quotes were not che
   reads raw files but cannot recover it from TIFFs that lack it.
 - Normalizing across days when settings had to change
   ([image.sc 117835](https://forum.image.sc/t/rescaleintensity-module/117835)).
-
-We found almost no community discussion of rater reliability in worm scoring, and no reviews of the
-Blind Analysis Tools plugin.

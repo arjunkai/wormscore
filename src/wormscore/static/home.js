@@ -39,6 +39,14 @@ function warnNote(text, extra = {}) {
   return h("p", { class: "warn-note", ...extra }, icon("warn", 16), h("span", { class: "sr" }, "Warning: "), h("span", {}, text));
 }
 
+// What the last scan reads differently, one line per change (1.26.21)
+function scanNote(lines) {
+  const head = "The last scan reads coded images differently";
+  if (lines.length === 1) return warnNote(`${head}. ${lines[0]}`);
+  return h("div", { class: "warn-note scan-note" }, icon("warn", 16), h("span", { class: "sr" }, "Warning: "),
+    h("div", {}, h("p", {}, `${head}:`), h("ul", {}, lines.map(t => h("li", {}, t)))));
+}
+
 function icon(name, size = 16) {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   s.setAttribute("viewBox", "0 0 24 24");
@@ -315,8 +323,8 @@ function renderMain(d) {
   // image folders or genotype rules changed after the last Scan data or Build (1.26.4)
   const fs = p.folders_stale, fsScan = !!fs?.scan, fsBuild = !!fs && !fs.scan && !!fs.build;
   // a new scan reads coded images differently than the key records (1.26.7): what a rebuild would change
+  // 1.26.21: every line, each with its own next step (rescan.scan_change_lines)
   const sc = p.scan_changes || [];
-  const scanDiff = sc.length ? sc[0] + (sc.length > 1 ? ` (and ${sc.length - 1} more)` : "") : "";
   const s1 = stepRunning("scan") ? "running" : msScan || fsScan ? "next" : scanned ? "done" : "next";
   const sF = f?.changed_after_lock ? "changed" : formDone ? "done" : scanned ? "next" : "wait";
   const s2 = building ? "running" : msBuild || fsBuild ? "next" : built ? "done" : scanned && formDone && !msScan ? "next" : "wait";
@@ -345,7 +353,7 @@ function renderMain(d) {
         !built ? "Build blind set" : p.scoring_started ? "Add or rebuild..." : "Rebuild...")],
       msBuild && built && !building ? warnNote("The markers changed. Rebuild, keeping the current codes, to use them.")
         : fsBuild && built && !building ? warnNote("The image folders or rules changed. Rebuild to use them.")
-        : scanDiff && built && !building ? warnNote(`The last scan reads coded images differently: ${scanDiff}. Rebuild, keeping the current codes, to use it.`) : null),
+        : sc.length && built && !building ? scanNote(sc) : null),
     stepCard(4, s3, ["Score", wsHelp(h, "score", "Score")], "Score each coded image. File names and genotypes stay hidden.",
       building ? "Available when the blind set is built." : built ? `Scored ${p.scored} of ${p.coded}.` : null,
       [h("button", { class: s3 === "next" ? "primary" : "btn", "data-k": "step3", disabled: busy || !built, onclick: score },
@@ -1040,7 +1048,7 @@ function formSection(info) {
         { "aria-label": `Question ${j + 1}: level ${k + 1}`, onchange: () => drawAll() }),
       tools(q.options, k, `level ${k + 1}`, 2)), h("div", { class: "sf-level-def" }, answerDef(q, j, lv))]),
     q.options.length > (info.warn_levels || 5) ? h("div", { class: "pv warn sf-levels-warn" },
-      `${q.options.length} levels. Scorers usually agree less above about ${info.warn_levels || 5} (Gibson-Corley et al. 2013). `
+      `${q.options.length} levels. Scales with many levels are prone to reduced repeatability; 4 to 5 levels has been suggested (Gibson-Corley et al. 2013). `
       + "Keep a published scale as it is. Hidden repeats or a second scorer then report a weighted kappa for it.") : null,
     off || q.options.length >= info.max_levels ? null : h("button", { class: "btn subtle add sm", onclick: () => {
       q.options.push("");
@@ -1510,7 +1518,7 @@ async function openProjectSettings(section) {
           h("span", { class: "f-help an-unit" }, "times the background noise (0 = off)")),
         h("div", { class: "f-help" }, "At unblinding, counts the outlined neurons below this signal for each call. Calls are never changed."),
         h("div", { class: "f-label" }, "Compare across microscopes"),
-        h("div", { class: "f-help" }, "Usually genotypes are compared only within one microscope. Tick a result to pool each genotype's animals over microscopes."),
+        h("div", { class: "f-help" }, "By default, genotypes are compared only within one microscope. Tick a result to pool each genotype's animals over microscopes."),
         h("div", { class: "sf-opts" }, an.outcomes.map(o => box(a.allow_cross_microscope.includes(o), outcomeName(o),
           v => { a.allow_cross_microscope = an.outcomes.filter(x => x === o ? v : a.allow_cross_microscope.includes(x)); }))),
         a.allow_cross_microscope.length ? h("div", {},
@@ -1700,7 +1708,7 @@ function renderUpdate(d) {
     kids = [head(u.phase === "restarting" ? "Restarting wormscore" : `Updating to ${u.latest}`, versions),
       h("div", { class: "bar" + (u.phase === "downloading" && pct === null ? " indet" : "") },
         h("div", { style: `transform:scaleX(${(u.phase === "restarting" ? 100 : pct ?? 0) / 100})` })),
-      h("p", { class: "ud-msg" }, st.closing ? "wormscore is restarting. This window reconnects by itself in a few seconds."
+      h("p", { class: "ud-msg" }, st.closing ? "wormscore is restarting. This window reconnects by itself when it is back."
         : u.message || "Starting the download...")];
     // The new version answers on the same address, and refresh() reloads this page when it does.
     if (u.phase === "restarting") st.closing = true;
@@ -1898,7 +1906,7 @@ async function sideAction(which) {
   if (which === "demo") {
     const real = await ask("Try a demo", "Pick the kind of demo, then choose an empty folder for it.", [
       { value: "sim", label: "Simulated worms", desc: "20 heads with known normal, dim and missing cells. Instant, works offline." },
-      { value: "real", label: "Real worm images", desc: "4 larval heads with the BAG neurons marked, from Sun and Hobert 2021 (Zenodo, CC BY 4.0). Downloads about 230 MB once." },
+      { value: "real", label: "Real worm images", desc: "4 larval heads with the BAG neurons marked, from Sun and Hobert 2021 (Zenodo, CC BY 4.0). Downloads 231 MB once." },
     ]);
     if (!real) return;
     st.log = []; st.since = 0;

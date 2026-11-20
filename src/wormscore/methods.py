@@ -19,6 +19,17 @@ def _date(path):
     return dt.datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d") if path.exists() else "[date]"
 
 
+def coded_date(project):
+    """The day the codes were assigned: key/coded_on.txt (written by Build from 1.26.21), else the modified
+    time of key/seed.txt, as before (a copy that does not keep file times changes that one)."""
+    try:
+        day = (Path(project) / "key" / "coded_on.txt").read_text(encoding="utf-8").strip()
+        dt.date.fromisoformat(day)
+        return day
+    except (OSError, ValueError):
+        return _date(Path(project) / "key" / "seed.txt")
+
+
 def versions_used(project, current=__version__):
     """Every wormscore version log.md records from the build of the current blind set on, plus the one
     running now (1.26.9). Scan data, Build and Add new images each write a "Software:" line. An update
@@ -167,10 +178,29 @@ def definition_sentences(cfg):
     return out
 
 
-def images_table(key_rows, excluded_rows, notes):
-    """Per genotype and microscope: objective, source, images included and excluded."""
+def microscope_models(project):
+    """1.26.21: the model a file names where the project's microscope name is shorter (a Leica TCS SP5 file
+    is keyed "Leica"), per image, from inventory.csv's model column. Empty for an inventory from before."""
+    path = Path(project) / "outputs" / "inventory.csv"
+    if not path.is_file():
+        return {}
+    from .files import read_csv
+    return {(r["local_path"], r["location_in_file"]): r["model"] for r in read_csv(path) if r.get("model")}
+
+
+def images_table(key_rows, excluded_rows, notes, models=None):
+    """Per genotype and microscope: objective, source, images included and excluded. models: the model each
+    image's file names, where the microscope's name is shorter (microscope_models)."""
+    models = models or {}
     inc = Counter((r["genotype"], r["system"]) for r in key_rows)
     exc = Counter((r["genotype"], r["system"]) for r in excluded_rows)
+
+    def named(g, s):
+        # the included images' models; the excluded ones' only for a row with no included image (found by
+        # review: an SP2 image left out named its model in the SP5 row)
+        mine = lambda rows: [r for r in rows if (r["genotype"], r["system"]) == (g, s)]
+        rows = mine(key_rows) or mine(excluded_rows)
+        return "; ".join(sorted({models.get((r.get("local_path"), r.get("location_in_file"))) or s for r in rows})) or s
     rows = ["| Genotype | Microscope | Objective | Source | Included | Excluded |", "|---|---|---|---|---|---|"]
     for g, s in sorted(set(inc) | set(exc)):
         objs = sorted({r["objective"].strip() for r in key_rows if (r["genotype"], r["system"]) == (g, s)}) or ["[see excluded.csv]"]
@@ -178,7 +208,7 @@ def images_table(key_rows, excluded_rows, notes):
         objs = [o for o in objs if same_reading("", o) == o or same_reading("", o) not in objs]
         srcs = sorted({r["source"] for r in key_rows if (r["genotype"], r["system"]) == (g, s)})
         src = "; ".join(x + ("*" if x in notes else "") for x in srcs) or "[source]"
-        rows.append(f"| {g} | {s} | {'; '.join(' '.join(o.split()) for o in objs)} | {src} | {inc[(g, s)]} | {exc[(g, s)]} |")
+        rows.append(f"| {g} | {named(g, s)} | {'; '.join(' '.join(o.split()) for o in objs)} | {src} | {inc[(g, s)]} | {exc[(g, s)]} |")
     rows += [""] + [f"*{name}: {note}" for name, note in sorted(notes.items())]
     return rows
 
@@ -198,11 +228,10 @@ def reliability_sentences(cfg, n_repeats, reliability):
                 else "kappa (" + ("quadratic weights for neuron calls, linear weights for cells seen"
                                   if cfg["reliability"]["call_weights"] == "quadratic" else
                                   "no weights for neuron calls, linear weights for cells seen") + "): ")
-             + "; ".join(parts) + ". With this few pairs, kappa "
-             "is imprecise."
-             + (" Because kappa can be low when most animals get the same answer, 95% bootstrap intervals for "
-                "kappa, PABAK and Gwet's AC1 are also given in reliability.csv."
-                if cfg["reliability"].get("extra_statistics") else "")) if parts
+             + "; ".join(parts) + "."
+             + (" Because kappa can be low when most animals get the same answer (Feinstein and Cicchetti 1990), "
+                "95% bootstrap intervals for kappa, PABAK and Gwet's AC1 are also given in reliability.csv."
+                if cfg["reliability"].get("extra_statistics") else " No confidence interval was computed for kappa.")) if parts
             else "[No repeat was scored together with its original.]"]
     return [blind], stat
 
@@ -395,7 +424,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         + (". After scoring began, " + "; ".join(f"{n} image{'s were' if n != 1 else ' was'} left out because "
                                                   f"{why.rstrip('.') or '[reason]'}" for why, n in sorted(late_excluded.items()))
            + " (by exclusion rules changed after scoring began)" if late_excluded else "")
-        + f". On {_date(project / 'key' / 'seed.txt')}, "
+        + f". On {coded_date(project)}, "
         f"{who('coded_by', '[name]')} assigned every included image a random code; the key linking codes to "
         "files and genotypes was kept in a separate folder that the scoring software does not read. "
         + "".join(f"{n} image{'s' if n != 1 else ''} added on {d} received new codes after the existing ones, "
@@ -444,7 +473,8 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
           if cfg["unblinding"].get("methods_notes") else []),
         "## Images per genotype and microscope",
         "",
-        *images_table(key_rows, excluded_rows, {s.get("name"): s["note"] for s in cfg["sources"] if s.get("note")}),
+        *images_table(key_rows, excluded_rows, {s.get("name"): s["note"] for s in cfg["sources"] if s.get("note")},
+                      microscope_models(project)),
         "",
         "## Who knew the genotype at each stage (ARRIVE 2.0 item 5)",
         "",

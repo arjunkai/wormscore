@@ -89,7 +89,7 @@ def scan_changes(project, cfg=None):
     that really change group are named. It holds counts and group letters only, never a genotype."""
     project = Path(project)
     key_path, inv_path = project / "key" / "key.csv", project / "outputs" / "inventory.csv"
-    none = {"lines": [], "letters": None, "changed": False, "reworded": {}}
+    none = {"lines": [], "kinds": [], "letters": None, "changed": False, "reworded": {}}
     if not key_path.is_file() or not inv_path.is_file():
         return none
     # the files' contents, not only their times: two writes within one tick of the clock (GitHub's Windows
@@ -102,7 +102,7 @@ def scan_changes(project, cfg=None):
     images = {(s["local_path"], s["location_in_file"]): s for s in read_csv(inv_path)}
     rows = [r for r in read_csv(key_path) if not r.get("repeat_of") and (r["local_path"], r["location_in_file"]) in images]
     pairs = [(r, images[(r["local_path"], r["location_in_file"])]) for r in rows]
-    out = dict(none)
+    out = {**none, "lines": [], "kinds": []}
     # 1.26.13: settings that are only worded differently (reworded) are not a change
     out["reworded"] = reworded(pairs)
     out["changed"] = out["reworded"] is None
@@ -146,6 +146,7 @@ def scan_changes(project, cfg=None):
                      if str(r.get("n_z") or "").isdigit() and str(s.get("n_z") or "").isdigit() and int(r["n_z"]) != int(s["n_z"]))
     out["lines"] += [f"the number of planes of {n} coded image{'s' if n != 1 else ''} changes from {a} to {b}"
                      for (a, b), n in sorted(planes.items())]
+    out["kinds"] = ["rebuild"] * len(out["lines"])      # each of these a rebuild that keeps the codes applies
     # 1.26.18: dates written day first with AM/PM have a flat-field day only from a new scan (acquired_day)
     if isinstance(cfg.get("flat_field"), dict):
         from .flatfield import DAY_COLUMN, acquired_day
@@ -175,6 +176,7 @@ def scan_changes(project, cfg=None):
         if leica:
             out["lines"] += [f"the flat-field imaging day of {leica} coded Leica image{'s' if leica != 1 else ''} is now "
                              f"read from the file; choose the slide images again so theirs are read the same way"]
+            out["kinds"].append("slides")
         # 1.26.20: a Zeiss laser scanning microscope's scan zoom is read (before, a detector's: 1). An image
         # whose zoom the slide images were not read with: slide images of its settings and objective at
         # another zoom, none at its own; until they are chosen again (the summary then says scan_zoom), also
@@ -195,10 +197,12 @@ def scan_changes(project, cfg=None):
         if zoomed:
             out["lines"] += [f"the flat-field zoom of {zoomed} coded image{'s' if zoomed != 1 else ''} is now the "
                              f"scan zoom; choose the slide images again so theirs are read the same way"]
+            out["kinds"].append("slides")
         if utc:
             out["lines"] += [f"the flat-field imaging day of {utc} coded image{'s' if utc != 1 else ''} changes: the file "
                              f"records the time in UTC, now read in this computer's time zone; choose the slide images "
                              f"again so theirs are read the same way"]
+            out["kinds"].append("slides")
         # a Leica (or UTC) date is given in the time zone of the computer that runs Scan data (found by
         # review): a scan elsewhere can move an image to the day before or after
         moved = sum(1 for r, s in pairs if s.get("format") in ("Leica LIF",) + UTC_FORMATS
@@ -209,10 +213,48 @@ def scan_changes(project, cfg=None):
             out["lines"] += [f"the flat-field imaging day of {moved} coded image{'s' if moved != 1 else ''} changes: "
                              f"this computer is in another time zone than the one that ran Scan data before; scan there, "
                              f"or choose the slide images again"]
+            out["kinds"].append("zone")
         if days:
             out["lines"] += [f"the flat-field imaging day of {days} coded image{'s' if days != 1 else ''} is now read "
                              f"from {'their' if days != 1 else 'its'} date (written day first, with AM or PM); before "
                              f"scoring begins, this can change {'their' if days != 1 else 'its'} flat-field correction; choose "
                              f"the slide images again so theirs are read the same way"]
+            out["kinds"].append("day")
+    # 1.26.21: kinds says what each line asks for, for the Build card: "rebuild" (a rebuild that keeps the
+    # codes applies it, and the line goes); "slides" (it stays, also after a rebuild, until the slide images
+    # are chosen again, which rebuilds the blind set itself); "day" (a rebuild applies it with the nearest
+    # day's slide images; choosing them again gives the day its own); "zone" (a rebuild would apply the
+    # other time zone's day: scan on the computer that scanned before)
+    assert len(out["kinds"]) == len(out["lines"])
     _scan_changes[str(project)] = (stamp, out)
+    return out
+
+
+def scan_change_lines(project, changes):
+    """1.26.21: scan_changes' lines as the Build card shows them: every line, each a sentence with its own
+    next step (scan_changes' kinds). Once scoring has begun, choosing the slide images again is no longer
+    offered and a rebuild keeps every coded image's flat-field correction as recorded
+    (Correction.keep_coded), so a line about the flat-field day or zoom asks for nothing and is left out
+    (the Build log still says which images keep their correction)."""
+    from .flatfield import lock_reason
+    steps = {
+        "rebuild": "Rebuild, keeping the current codes, to use it.",
+        "slides": "Choose the slide images again to use it (Flat-field correction, Sessions..., Start again).",
+        "day": "Choose the slide images again to use it (Flat-field correction, Sessions..., Start again). "
+               "A rebuild alone uses it with the nearest day's slide images.",
+        "zone": "Scan again on the computer that scanned before, or choose the slide images again. "
+                "Do not rebuild before that.",
+    }
+    locked = None
+    out = []
+    for line, kind in zip(changes["lines"], changes["kinds"]):
+        if kind != "rebuild":
+            if locked is None:
+                locked = bool(lock_reason(project))
+            if locked:
+                continue
+        what = line
+        for cut in ("; before scoring begins,", "; choose the slide images again", "; scan there,"):
+            what = what.split(cut)[0]
+        out.append(f"{what[:1].upper()}{what[1:]}. {steps[kind]}")
     return out

@@ -41,7 +41,7 @@ INVENTORY_FIELDS = [
     "local_path", "original_path", "file_sha256", "objective", "n_z", "n_t", "width", "height", "pixel_um",
     "z_step_um", "bits", "channel_names", "channel_roles", "marker_channel", "bf_channel", "settings", "zoom",
     "acquired", "acquired_day", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes",
-    "pixel_sha256", "scanned_with",
+    "pixel_sha256", "scanned_with", "model",
 ]
 
 
@@ -397,7 +397,7 @@ def assign_codes(project, images, reassign, add=False, cfg=None, later=None, und
         if key_path.exists():
             old_dir = key_dir / f"superseded_{stamp}"
             old_dir.mkdir()
-            for f in ("key.csv", "seed.txt", "settings_groups.csv"):
+            for f in ("key.csv", "seed.txt", "settings_groups.csv", "coded_on.txt"):
                 if (key_dir / f).exists():
                     (key_dir / f).rename(old_dir / f)
         # Unsaved answers belong to the old codes; with new codes they would open on other images.
@@ -408,8 +408,9 @@ def assign_codes(project, images, reassign, add=False, cfg=None, later=None, und
         """Undo set_aside and the new seed, when the new images could not be put in place."""
         old_dir = key_dir / f"superseded_{stamp}"
         (key_dir / "seed.txt").unlink(missing_ok=True)
+        (key_dir / "coded_on.txt").unlink(missing_ok=True)
         if old_dir.is_dir():
-            for f in ("key.csv", "seed.txt", "settings_groups.csv"):
+            for f in ("key.csv", "seed.txt", "settings_groups.csv", "coded_on.txt"):
                 if (old_dir / f).exists():
                     (old_dir / f).replace(key_dir / f)
             if not any(old_dir.iterdir()):
@@ -423,6 +424,10 @@ def assign_codes(project, images, reassign, add=False, cfg=None, later=None, und
         undo.append(put_back)
     seed = secrets.randbits(32)
     do(lambda: (key_dir / "seed.txt").write_text(f"{seed}\n"))
+    # 1.26.21: the day the codes were assigned, for the Methods draft. It was the seed file's modified time
+    # only, which a copy to another disk or a restore from a backup can reset (found on a copy of a real
+    # project: the draft gave the day of the copy)
+    do(lambda: (key_dir / "coded_on.txt").write_text(f"{dt.date.today():%Y-%m-%d}\n"))
     fraction = C.repeat_fraction(cfg) if cfg else 0
     if not fraction:
         order = list(range(len(images)))
@@ -858,6 +863,8 @@ def _build(project, reassign, add, log, run):
         flags = []
         others = [c for c in by_field[s["field_group"]] if c != code]
         if others:
+            # (this text is in each coded image's meta.json, which the scorer sees: it stays as it is, so a
+            # rebuild does not change images already scored)
             flags.append({"id": "repeat", "text": f"Same stage position as {', '.join(others)}: probably the same "
                           f"animal imaged again. Count only one image per animal. Default: "
                           f"{'count this one' if s['counted_by_default'] else 'do not count this one'}."})

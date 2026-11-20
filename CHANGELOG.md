@@ -5,6 +5,48 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.21
+
+**Every scan change on the Build card, each with its own next step; lifetime images, near laser lines and the
+Leica TCS SP5 settled.**
+- The Build card lists every change the last scan found for coded images, not the first and "(and N more)".
+  Each line says its own next step. Only a change that a rebuild applies says Rebuild. A change to the
+  flat-field day or zoom says to choose the slide images again, which rebuilds the blind set itself. A
+  scan on a computer in another time zone says to scan on the first computer, and not to rebuild before
+  that. Once scoring has begun, flat-field lines are left out: coded images keep their correction.
+- The reporter also matches an excitation within 10 nm of its laser lines, together with the emission,
+  when no channel matches exactly and only one channel fits (the identity channel only exactly, so no
+  coded image gains one). The image is flagged so the scan shows it.
+  Found with idr0011's widefield LEDs (mRFP at 590 nm, mCherry's line 587 nm). Why 10 nm is in
+  METHODS.md (FPbase spectra).
+- Leica FLIM: the results LAS X computes from a lifetime scan (29 kinds in one public file: Fast Flim,
+  Phasor images, FlimDecayTime and others) were flagged "0 detectors for 1 channels". They are now flagged as lifetime results; they
+  were never scored. A scan's own series no longer lists the channels of the results nested in it. A
+  channel type wormscore does not know is flagged.
+- Leica TCS SP5 files (written by LAS AF) name their model in Check the reading, Browse images and the
+  Methods draft's table of images. The microscope's name for flat-field sessions, settings groups and
+  results stays "Leica", so nothing moves.
+- Zeiss files with only a CreationDate keep no acquisition date, now with the reason in METHODS.md. In
+  64 of 70 files checked, CreationDate is within 0.5 s of the acquisition time. The other 6 have only a
+  CreationDate: 4 are processing results, whose CreationDate can be when they were made, and nothing in
+  the other 2 can confirm theirs.
+- The Methods draft took the day the codes were assigned from the modified time of key/seed.txt, so a
+  copy of a project that did not keep file times gave the day of the copy. Build now also writes the day
+  in key/coded_on.txt. Found by recomputing a real project's results on a copy.
+- Slide and control images are read as the project's images were scanned, now also for a project scanned
+  by 1.26.20. Found by review.
+- METHODS.md says how the reading was checked (tests, the vendors' software, 33 public datasets, parity
+  runs). Docs and app text: guesses and unsourced claims replaced by facts with their source, measured
+  numbers, or a plain statement of what is not known.
+- **Who is affected:** projects scanned before this version read their files as before until Scan data
+  runs again. After it: images whose reporter was found only near a preset's line get a reporter and a
+  flag; Leica FLIM result series and SP5 files get the new flag or model; nothing else changes. A
+  rebuild keeps images already scored as they were. The results of a real project of 210 scored images
+  (Leica SP8, Zeiss LSM 800, widefield) were recomputed with this version, also after a new Scan data and
+  Build: every count, penetrance and p-value is the same; its SP8 images gain the acquisition date that
+  versions before 1.26.18 did not read. The Methods draft words two sentences differently (kappa,
+  gut autofluorescence) at its next unblinding; no number in it changes.
+
 ## 1.26.20
 
 **UTC times in the lab's time zone; Check the reading, held against NIS-Elements Viewer and OlyVIA.**
@@ -48,7 +90,7 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
   slide images, even if chosen again, are read as 1.26.19 read them. After the new Scan data, an image
   already scored keeps the slide images it was scored with (the session each build records for its code),
   through any number of builds. Found by review.
-- These, and the N-SIM laser below, were found by reading 21 public datasets and comparing what
+- These, and the N-SIM laser below, were found by reading 33 public datasets and comparing what
   wormscore reads with what their authors wrote about the acquisition.
 - **Who is affected:** projects whose reporter is named as above, and STELLARIS projects with lifetime
   channels: after the next Scan data their images can have a reporter where they had none.

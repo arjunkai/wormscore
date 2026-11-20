@@ -43,6 +43,7 @@ import csv
 import datetime as dt
 import hashlib
 import json
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -171,6 +172,27 @@ def zoom_from_scan(project):
         return False
 
 
+def reading(project):
+    """1.26.21: the reading for slide and control images: as the project's images were read, from the
+    oldest version in inventory.csv's scanned_with column (readers.reading_as). An inventory from before
+    1.26.20 has no such column (as 1.26.19); a project never scanned reads as this version."""
+    from . import readers as R
+    try:
+        with open(Path(project) / "outputs" / "inventory.csv", encoding="utf-8", newline="") as fh:
+            rows = list(csv.DictReader(fh))
+    except FileNotFoundError:
+        return R.reading_as(None)
+    except (OSError, csv.Error, UnicodeDecodeError):
+        return R.as_before()
+    if not rows or "scanned_with" not in rows[0]:
+        return R.reading_as("" if not zoom_from_scan(project) else None)
+    # a value that is no version (edited by hand) is passed over; with none at all the column says only that
+    # the project was scanned by 1.26.20 or later, read as this version, as before (found by review)
+    versions = [v for v in (tuple(int(x) for x in re.findall(r"\d+", r.get("scanned_with") or "")[:3]) for r in rows)
+                if len(v) == 3]
+    return R.reading_as(".".join(map(str, min(versions))) if versions else None)
+
+
 UNCLEAR_DATE = "day or month first: not known"
 
 
@@ -269,7 +291,8 @@ def check_folder(project, folder, cfg, what="slide images"):
                              f"Put the {what} in a folder of their own.")
 
 
-def _images(folder, cfg, log, skipped, new_days=False, leica_days=False, utc_days=False, scan_zoom=False):
+def _images(folder, cfg, log, skipped, new_days=False, leica_days=False, utc_days=False, scan_zoom=False,
+            project=None):
     """Every readable image in folder, with its marker plane averaged over z. new_days: the day is read as
     Scan data reads it now (days_from_scan), so slide images and images follow the same rule. leica_days:
     Leica slide images keep their date (leica_days_from_scan); otherwise they have none, as before. utc_days:
@@ -286,11 +309,9 @@ def _images(folder, cfg, log, skipped, new_days=False, leica_days=False, utc_day
         try:
             # 1.26.20: until the project's images are scanned with this version (scan_zoom), its slide images
             # are read as 1.26.19 read them, so their settings text matches the images' (found by review)
-            if scan_zoom:
+            # 1.26.21: and as 1.26.20 read them for a project scanned by 1.26.20 (reading)
+            with reading(project) if project is not None else (R.reading_as(None) if scan_zoom else R.as_before()):
                 images = R.images_in(path, cfg, source)
-            else:
-                with R.as_before():
-                    images = R.images_in(path, cfg, source)
         except Exception as exc:
             skipped.append(f"{rel}: could not be read ({type(exc).__name__})")
             continue
@@ -407,11 +428,11 @@ def measure(project, folder, dark_folder=None, across_field=True, between_sessio
     skipped = []
     new_days, leica_days, utc_days = days_from_scan(project), leica_days_from_scan(project), utc_days_from_scan(project)
     scan_zoom = zoom_from_scan(project)
-    refs = _images(folder, cfg, log, skipped, new_days, leica_days, utc_days, scan_zoom)
+    refs = _images(folder, cfg, log, skipped, new_days, leica_days, utc_days, scan_zoom, project)
     if not refs:
         raise SystemExit("No slide image could be read. " + ("; ".join(skipped[:3]) if skipped else
                                                             "The folder has no images wormscore can read."))
-    darks = _images(dark_folder, cfg, log, skipped, new_days, leica_days, utc_days, scan_zoom) if dark_folder else []
+    darks = _images(dark_folder, cfg, log, skipped, new_days, leica_days, utc_days, scan_zoom, project) if dark_folder else []
     if dark_folder and not darks:
         skipped.append("No dark image could be read, so the camera offset is taken as 0.")
     sessions, flats = _make_sessions(refs, _darks(darks, skipped), skipped)
@@ -454,7 +475,7 @@ def add_sessions(project, folder, log=print):
     check_folder(project, folder, cfg)
     skipped = []
     refs = _images(folder, cfg, log, skipped, days_from_scan(project), leica_days_from_scan(project),
-                   utc_days_from_scan(project), zoom_from_scan(project))
+                   utc_days_from_scan(project), zoom_from_scan(project), project)
     if not refs:
         raise SystemExit("No slide image could be read. " + ("; ".join(skipped[:3]) if skipped else
                                                             "The folder has no images wormscore can read."))

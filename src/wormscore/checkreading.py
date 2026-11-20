@@ -281,7 +281,7 @@ def describe(img, cfg, path):
     mi = R.pick(roles, "MARKER")
     said = lambda v, unit="": f"{v}{unit}" if v else "not recorded in the file"
     lines = [f"{img['format']}, {img['location_in_file']}",
-             _row("Microscope", said(img["system"])),
+             _row("Microscope", said(img.get("model") or img["system"])),
              _row("Acquired", said(img["acquired"])),
              _row("Objective", said(img["objective"]))]
     if img["zoom"]:

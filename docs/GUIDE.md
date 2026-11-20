@@ -180,7 +180,7 @@ scored or saved.
   and saved score.
 - **Brightness before the build.** Enhanced is set from each image alone until the blind set exists,
   so compare brightness between images with Standard.
-- **If the key folder is moved away during scoring** (some labs keep it elsewhere to keep it sealed),
+- **If the key folder is moved away during scoring** (for example to keep it sealed elsewhere),
   Browse stays off. Put the key back before you build again or unblind: once scores are saved, a build
   without the key is refused.
 
@@ -243,7 +243,8 @@ There are four answer types:
 | **Scale** | levels in order, best first and worst last (0 to 6, or full length / partial / short) | Mann-Whitney test, see below |
 | **Count** | whole numbers from a lowest to a highest, the last optionally "that many or more" (0 to 5+) | Mann-Whitney test, see below |
 
-Above 5 levels the builder warns that scorers usually agree less on long scales. It points to the
+Above 5 levels the builder warns, citing Gibson-Corley et al. 2013 (Vet Pathol 50:1007): a scale with
+many levels is prone to reduced repeatability, and 4 to 5 levels has been suggested. It points to the
 weighted kappa that unblinding reports when there are hidden repeats or a second scorer.
 
 ### How scales and counts are tested
@@ -355,7 +356,9 @@ All optional and off unless set. The outcomes come from the scoring criteria; th
   predict. The default model is independent effects (the product model); additive and same pathway
   are the others. A test set up in the app starts with the likelihood-ratio test, which allows for the
   single mutants' own sampling error. The binomial test (the default in `config.json`, kept for older
-  projects) treats their rates as exact and so finds an interaction too often with small groups.
+  projects) treats their rates as exact and so finds an interaction too often with small groups: in
+  17% of simulated runs with 30 animals per genotype and no interaction, against 7% for the
+  likelihood-ratio test (see Methods).
 - **Only the pairs I list** (`comparisons`): tests only those pairs, with an optional **direction**
   (`alternative`; one-sided tests need listed pairs). Bonferroni counts only them.
 - **Second definition of affected** (`secondary_defect_calls`): descriptive within one microscope
@@ -435,7 +438,7 @@ Before scoring. Evens out the reporter's light across the field and between imag
 cell at the edge of the field is not judged dimmer than one in the middle.
 
 1. In each imaging session, image a uniform fluorescent slide at the project's settings and, if you
-   can, a few dark images with the light off.
+   can, one or more dark images with the light off (their median is used).
 2. Choose the folder on the **Flat-field correction** card.
 3. Build. The correction is applied before anything is shown or measured. A blind set already built
    is rebuilt with the same codes.
@@ -453,7 +456,8 @@ It is recorded in `log.md` and the Methods draft.
 For projects with an identity channel. Measures how much of one marker's light lands in the other
 channel.
 
-1. Image a few animals that carry one marker only, at the project's settings.
+1. Image animals that carry one marker only, at the project's settings. The result is the median over
+   the images, with the range.
 2. Choose their folder on the **Bleed-through check** card.
 
 wormscore reports the bleed-through as a percentage and records it in `log.md` and the Methods draft.
@@ -554,7 +558,7 @@ controls with two normal cells, and mutants with cells that are normal, dim or m
 identity channel that marks every cell.
 
 **Real worms.** `wormscore demo my_demo --real`, or **Real worm images** in the demo dialog,
-downloads four larval heads with the flp-17::GFP reporter, about 230 MB, from
+downloads four larval heads with the flp-17::GFP reporter, 231 MB, from
 [Sun and Hobert 2021](https://doi.org/10.1038/s41586-021-04071-4)
 ([Zenodo 5602160](https://doi.org/10.5281/zenodo.5602160), CC BY 4.0).
 

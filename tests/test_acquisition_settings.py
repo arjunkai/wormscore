@@ -243,7 +243,8 @@ def test_a_new_scan_that_changes_settings_groups_warns_and_records_it(built_befo
     assert {r["settings_group"] for r in read_csv(built_before / "key" / "key.csv")} == {"A"}   # the scan alone changes nothing
     want = "1 coded image moves from settings group A to B"
     assert scan_changes(built_before)["lines"] == [want]
-    assert home.project_status(built_before)["scan_changes"] == [want]      # shown on the Build card
+    assert home.project_status(built_before)["scan_changes"] == [         # shown on the Build card, with its step
+        "1 coded image moves from settings group A to B. Rebuild, keeping the current codes, to use it."]
     lines = []
     prepare(built_before, log=lines.append)
     (warning,) = [line for line in lines if line.startswith("Warning:")]
@@ -266,7 +267,7 @@ def test_settings_text_that_changes_for_every_image_alike_moves_no_image(tmp_pat
         inventory(project, log=quiet)
     prepare(project, log=quiet)
     inventory(project, log=quiet)
-    assert scan_changes(project) == {"lines": [], "letters": {("OME-TIFF (instrument not named)", "gain 2; detector 600 V"): "A"},
+    assert scan_changes(project) == {"lines": [], "kinds": [], "letters": {("OME-TIFF (instrument not named)", "gain 2; detector 600 V"): "A"},
                                      "changed": True, "reworded": None}
     lines = []
     prepare(project, log=lines.append)
@@ -310,4 +311,5 @@ def test_adding_images_after_such_a_scan_says_the_groups_are_apart(built_before)
 
 def test_the_build_card_shows_the_warning():
     js = (Path(home.__file__).parent / "static" / "home.js").read_text(encoding="utf-8")
-    assert re.search(r"scanDiff && built && !building \? warnNote\(", js)
+    assert re.search(r"sc\.length && built && !building \? scanNote\(sc\)", js)
+    assert "and ${sc.length - 1} more" not in js            # every line, not the first (1.26.21)

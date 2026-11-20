@@ -1,6 +1,6 @@
 # Roadmap
 
-What is planned for wormscore, roughly in order. Plans change. What shipped in each version is in
+What is planned for wormscore. Plans change. What shipped in each version is in
 [CHANGELOG.md](CHANGELOG.md). Ideas and requests are welcome as
 [GitHub issues](https://github.com/arjunkai/wormscore/issues).
 

@@ -186,7 +186,7 @@ class Browse:
                 ("File", r.get("file", "")),
                 ("Image in file", r.get("location_in_file", "")),
                 ("Path", s.get("relative_path", "")) if s.get("relative_path") != r.get("file") else None,
-                ("Microscope", r.get("system", "")),
+                ("Microscope", s.get("model") or r.get("system", "")),
                 ("Settings group", r.get("settings_group", "")) if it["coded"] else None,
                 ("Settings", r.get("settings", "")),
                 ("Objective", r.get("objective", "")),

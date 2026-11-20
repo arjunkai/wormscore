@@ -51,3 +51,21 @@ def test_a_copied_project_still_names_the_version_that_built_it(fresh_project):
     log.write_text(old, encoding="utf-8")
     os.utime(fresh_project / "key" / "seed.txt")            # now: later than every build in the log
     assert methods.versions_used(fresh_project) == ["0.9.0", __version__]
+
+
+def test_the_day_the_codes_were_assigned_survives_a_copy(fresh_project):
+    """Found on a copy of a real project (1.26.21): the Methods draft took that day from the modified time of
+    key/seed.txt, so a copy that did not keep file times gave the day of the copy. Build now writes it."""
+    import datetime as dt
+    import os
+    key = fresh_project / "key"
+    assert (key / "coded_on.txt").read_text().strip() == f"{dt.date.today():%Y-%m-%d}"
+    (key / "coded_on.txt").write_text("2020-02-01\n")
+    os.utime(key / "seed.txt")                                 # a copy: the seed's time is now
+    assert methods.coded_date(fresh_project) == "2020-02-01"
+    (key / "coded_on.txt").unlink()                            # a key built before 1.26.21: as before
+    stamp = dt.datetime(2020, 3, 4, 12).timestamp()
+    os.utime(key / "seed.txt", (stamp, stamp))
+    assert methods.coded_date(fresh_project) == "2020-03-04"
+    (key / "coded_on.txt").write_text("not a date\n")
+    assert methods.coded_date(fresh_project) == "2020-03-04"

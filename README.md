@@ -55,7 +55,7 @@ into Applications. The app is not signed, so the first time macOS blocks it. To 
 
 1. Double-click `wormscore.app`. In the warning, click **Done** (not Move to Trash).
 2. Open **System Settings > Privacy & Security**, scroll down to Security, and click **Open Anyway**
-   next to wormscore. The button is there for about an hour after step 1.
+   next to wormscore. The button shows only after step 1; if it is not there, do step 1 again.
 3. Click **Open Anyway** again and confirm with your password or Touch ID.
 
 Or, instead of steps 1 to 3, run this once in Terminal. It removes the mark macOS puts on downloaded
@@ -69,8 +69,8 @@ xattr -dr com.apple.quarantine /Applications/wormscore.app
 `wormscore-launcher`. For Nikon files add the extra: `pip install "wormscore[nd2]"`.
 
 The Windows app has its own window. On a Mac and with pip it opens in your web browser: use a normal
-window, since private windows and some privacy settings change the image data (the scoring page warns
-if yours does).
+window, since Safari Private windows, Brave and Firefox with fingerprinting protection change the image
+data (the scoring page warns if yours does).
 
 ## Try it in two minutes
 

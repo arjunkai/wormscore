@@ -115,6 +115,39 @@ def as_before():
         _BEFORE.reset(token)
 
 
+# 1.26.21 changed how files are read again (the Leica model, FLIM results, a series' own channels, channel
+# types, near laser lines). A project scanned by 1.26.20 reads its slide and control images as 1.26.20
+# did until it scans again (found by review: the as_before gate told only before and after 1.26.20).
+_BEFORE_1_26_21 = ContextVar("read_as_1_26_20", default=False)
+
+
+def _before_1_26_21():
+    return _BEFORE.get() or _BEFORE_1_26_21.get()
+
+
+@contextmanager
+def as_1_26_20():
+    """Read files as 1.26.20 did: without the rules of 1.26.21."""
+    token = _BEFORE_1_26_21.set(True)
+    try:
+        yield
+    finally:
+        _BEFORE_1_26_21.reset(token)
+
+
+def reading_as(version):
+    """The reading for images read again for a project whose inventory was written by that version (the
+    scanned_with column): "" for an inventory from before 1.26.20 (as_before), a version before 1.26.21
+    (as_1_26_20), or the current reading."""
+    import contextlib
+    if version is None:
+        return contextlib.nullcontext()
+    parts = tuple(int(x) for x in re.findall(r"\d+", str(version))[:3])
+    if not parts:
+        return as_before()
+    return as_1_26_20() if parts < (1, 26, 21) else contextlib.nullcontext()
+
+
 def _dyes(m):
     """A marker's dye names; read as 1.26.19 (as_before), a preset's own list without the names added in
     1.26.20. A list the project wrote itself is kept whole (found by review)."""
@@ -236,6 +269,77 @@ def named_extras(roles, cfg, names, fluors, excitations, emissions):
                 roles[i] = "OTHER"
     return with_extras(roles, cfg, lambda i, m: _named_match(get(names, i) or "", get(fluors, i), get(excitations, i),
                                                              get(emissions, i), m))
+
+
+# 1.26.21: a preset matched an excitation only at its exact laser lines, so a widefield LED a few nm away
+# was not recognised (idr0011: TagYFP at 508 nm, YFP's lines 514 and 515; mRFP at 590 nm, mCherry's 587).
+# Within NEAR_NM of a preset's line, every preset protein is still excited at least 45% as well as at its
+# peak (FPbase excitation spectra of EGFP, mNeonGreen, EYFP, mCherry, TagRFP-T, mScarlet-I, mKate2, CyOFP1
+# and mTagBFP2; mNeptune2.5's far-red lines 633 and 640 nm are themselves at 22% and 12%).
+NEAR_NM = 10
+
+
+def _near_hits(roles, m, near_of):
+    """Channels left as OTHER that match m only near one of its lines: [(channel, excitation, line)]."""
+    hits = []
+    for i, r in enumerate(roles):
+        found = near_of(i, m) if r == "OTHER" else None
+        if found:
+            hits.append((i, *found))
+    return hits
+
+
+def near_match(roles, cfg, near_of):
+    """1.26.21: a reporter channel no channel matched at the preset's exact lines, found by an
+    excitation within NEAR_NM of one, together with the emission (the recorded emission wavelength, or a
+    Leica detection band, within the preset's range). Only when exactly one channel fits, and always with
+    a flag, so the scan shows that a near match was used. near_of(i, m) -> (excitation, line) or None.
+    Returns (roles, flags). Read as 1.26.20 read (as_1_26_20, as_before): not tried."""
+    if _before_1_26_21():
+        return roles, []
+    out, flags = list(roles), []
+    # the reporter only: an image without one was never coded, so no image already scored can change. An
+    # identity channel found this way would be drawn on a coded image that had none (found by review)
+    for role, m in (("MARKER", cfg["marker"]),):
+        if not m or role in out:
+            continue
+        hits = _near_hits(out, m, near_of)
+        if len(hits) == 1:
+            i, ex, line = hits[0]
+            out[i] = role
+            flags.append(f"{m['label']} channel found by its emission and an excitation of {ex:g} nm "
+                         f"({abs(ex - line):g} nm from the preset's {line:g} nm line)")
+    return out, flags
+
+
+def named_near(excitations, emissions):
+    """near_of for files that record a channel's excitation and emission wavelength."""
+    def near_of(i, m):
+        ex = _num(excitations[i] if i < len(excitations) else None)
+        em = _num(emissions[i] if emissions and i < len(emissions) else None)
+        rng = m.get("emission_nm")
+        if ex is None or em is None or not rng or not rng[0] <= em <= rng[1]:
+            return None
+        lines = [float(x) for x in m.get("excitation_nm") or [] if abs(ex - float(x)) <= NEAR_NM]
+        return (ex, min(lines, key=lambda x: abs(ex - x))) if lines else None
+    return near_of
+
+
+def leica_near(at, luts):
+    """near_of for Leica channels: a laser line within NEAR_NM of the preset's, with the detection band
+    starting in the preset's range (and its colour table, if the preset names one), as _leica_match."""
+    def near_of(i, m):
+        ch = at[i] if i < len(at) else None
+        if ch is None:
+            return None
+        lo = float(ch["band"].split("-")[0]) if ch["band"] else 0
+        b0, b1 = m["emission_band_start_nm"]
+        if not b0 <= lo <= b1 or (m.get("leica_lut") and luts[i] != m["leica_lut"]):
+            return None
+        pairs = [(float(ln), float(x)) for ln, _ in ch["lasers"] for x in m.get("excitation_nm") or []
+                 if abs(float(ln) - float(x)) <= NEAR_NM]
+        return min(pairs, key=lambda p: abs(p[0] - p[1])) if pairs else None
+    return near_of
 
 
 def _strong_match(name, fluor, emission, m):
@@ -467,6 +571,24 @@ def _with_acquired(img, text):
 
 
 LIFETIME_CHANNELS = ("MeanArrivalTime",)
+# 1.26.21: the channel types LAS X writes for light that was measured (S-BIAD961, Zenodo 6606445's
+# Project007, Zenodo 13752242's FLIM files). No public file or document lists the other types (TauSense
+# gating or separation, for example), so an image with a channel of another type is flagged.
+MEASURED_CHANNELS = ("PhotonCounting", "PhotonIntegration")
+# 1.26.21: LAS X FLIM keeps what it computed from a lifetime scan (Fast Flim, Phasor, FlimDecayTime,
+# FretEfficiency and so on: 29 kinds in Zenodo 13752242's FLIM250523.lif) as series inside the scan's
+# "FLIM Compressed" folder. They were left unresolved as "0 detectors for 1 channels".
+FLIM_RESULTS = "FLIM Compressed"
+
+
+def _own(elem):
+    """A series without the series nested in it (1.26.21): LAS X FLIM nests its computed results inside the
+    scan's element, and a search through the whole element found their channels and settings too (the
+    IRF series of FLIM250523.lif, one channel, listed ten channel names)."""
+    import xml.etree.ElementTree as ET
+    own = ET.Element(elem.tag, elem.attrib)
+    own.extend(c for c in elem if c.tag != "Children")
+    return own
 
 
 def _leica_without_lifetime(elem, chans):
@@ -490,21 +612,47 @@ def _leica_without_lifetime(elem, chans):
 def leica_images(path, cfg):
     lf = _lif(path)
     system = next((a.get("SystemTypeName") for a in lf.xml_element.iter("Attachment") if a.get("SystemTypeName")), "")
+    # 1.26.21: a file without a SystemTypeName (LAS AF, TCS SP5) names its model as the scanner's SystemType.
+    # It is shown where people read the microscope (Check the reading, Browse, the Methods draft); the
+    # microscope's name as the project keys it (flat-field sessions, settings groups, results tables) stays
+    # "Leica", so no existing session or group moves. Bio-Formats reads the same place (Microscope Model).
+    model = "" if system or _before_1_26_21() else next(
+        (r.get("Variant", "").strip() for r in lf.xml_element.iter("ScannerSettingRecord")
+         if r.get("Identifier") == "SystemType" and r.get("Variant", "").strip()), "")
     out = []
     for i, im in enumerate(_lif_series(lf)):
         st, elem = im["settings"], im["element"]
+        if not _before_1_26_21():
+            elem = _own(elem)
         luts = [c.get("LUTName") for c in elem.iter("ChannelDescription")]
         chans = _leica_channels(elem)
         flags = _extra_axes_flags([a for a, _ in im["extra"]], [v for _, v in im["extra"]])
         at = chans if len(chans) == im["channels"] else None if _BEFORE.get() else _leica_without_lifetime(elem, chans)
         if at is not None and len(at) != im["channels"]:
             at = None           # the descriptions found are not this image's channels (found by review)
-        if at is not None:
+        result = not _before_1_26_21() and FLIM_RESULTS in im["name"].split("/")[:-1]
+        if result:
+            roles = ["OTHER"] * im["channels"]
+            flags.append("lifetime result computed by LAS X (FLIM), not scored")
+        elif at is not None:
             roles = [marker_from_leica(c, l, cfg) if c is not None else "OTHER" for c, l in zip(at, luts)]
             roles = with_extras(roles, cfg, lambda i, m: at[i] is not None and _leica_match(at[i], luts[i], m))
+            roles, near = near_match(roles, cfg, leica_near(at, luts))
+            flags += near
             computed = sum(1 for c in at if c is None)
             if computed:
                 flags.append(f"{computed} lifetime channel{'s' if computed != 1 else ''} computed by LAS X, not scored")
+            if not _before_1_26_21():
+                # every channel here has its own detector (a computed channel adds channels beyond the
+                # detectors, and such an image is set aside above or left unresolved), so the roles stay;
+                # the flag shows the type, so it can be checked (found by review: turning the channel's role
+                # to OTHER could, after a new scan, drop an image already scored)
+                kinds = [{p.findtext("Key"): (p.findtext("Value") or "").strip() for p in c.iter("ChannelProperty")}
+                         .get("ChannelType") or "" for c in elem.iter("ChannelDescription")]
+                unknown = sorted({k for k in kinds if k and k not in MEASURED_CHANNELS + LIFETIME_CHANNELS})
+                if unknown:
+                    flags.append(f"channel type {', '.join(unknown)} not known to wormscore: check that the "
+                                 "reporter channel holds measured light")
         else:
             roles = ["UNRESOLVED"] * im["channels"]
             flags.append(f"{len(chans)} detectors for {im['channels']} channels")
@@ -513,7 +661,7 @@ def leica_images(path, cfg):
         sx, sz = im["scale_x"], im["scale_z"]
         bits = max(im["bit_depth"])
         out.append({
-            "format": "Leica LIF", "system": f"Leica {system}".strip(),
+            "format": "Leica LIF", "system": f"Leica {system}".strip(), **({"model": f"Leica {model}"} if model else {}),
             "location_in_file": f"series {i} ({im['name']})",
             "objective": st.get("ObjectiveName", "").strip(),
             "n_z": im["z"], "n_t": im["t"], "width": im["x"], "height": im["y"],
@@ -611,6 +759,8 @@ def _zeiss_meta(md, cfg):
     roles = prefer_named_dye(roles, fluors, cfg)
     roles = named_extras(roles, cfg, names_for_roles, fluors, [c.findtext("ExcitationWavelength") for c in chans],
                          [None] * len(roles))
+    roles, near = near_match(roles, cfg, named_near([c.findtext("ExcitationWavelength") for c in chans],
+                                                    [c.findtext("EmissionWavelength") for c in chans]))
     names = shown
     mi = pick(roles, "MARKER")
     objective = text("ObjectiveName")
@@ -629,7 +779,7 @@ def _zeiss_meta(md, cfg):
         bits = "8" if own("PixelType") == "Gray8" else "16"
         if bits == "16":
             flags = _no_bits_flag(system, cfg, 65535)
-    flags = flags + other_fluorophore(roles, fluors, cfg)
+    flags = flags + near + other_fluorophore(roles, fluors, cfg)
     # 1.26.20: the scan zoom of a laser scanning microscope (LaserScanInfo/ZoomX, as ZEN shows it). The first
     # element named Zoom, read before, is a detector's and is 1 whatever the scan zoom (found by holding
     # wormscore against what two datasets' authors wrote: Zenodo 7994589, "scan magnification: 0.6").
@@ -857,6 +1007,9 @@ def ome_images(path, cfg):
         roles = prefer_named_dye(roles, [c.get("Fluor") for c in px.findall("o:Channel", OME_NS)], cfg)
         roles = named_extras(roles, cfg, names, [c.get("Fluor") for c in px.findall("o:Channel", OME_NS)],
                              [c.get("ExcitationWavelength") for c in px.findall("o:Channel", OME_NS)], None)
+        roles, near = near_match(roles, cfg, named_near(
+            [c.get("ExcitationWavelength") for c in px.findall("o:Channel", OME_NS)],
+            [c.get("EmissionWavelength") for c in px.findall("o:Channel", OME_NS)]))
         mi = pick(roles, "MARKER")
         exposures = sorted({p.get("ExposureTime") for p in px.findall("o:Plane", OME_NS)
                             if p.get("TheC") == str(mi) and p.get("ExposureTime")})
@@ -875,6 +1028,7 @@ def ome_images(path, cfg):
             n_c = shape[axes.index("C")] if "C" in axes else 1
             names, roles = [""] * n_c, ["UNRESOLVED"] * n_c
             flags.append(f"{CHANNELS_NOT_STATED} (an OME schema from before 2009)")
+        flags += near if not px.get("ChannelsNotStated") else []
         flags += other_fluorophore(roles, [c.get("Fluor") for c in px.findall("o:Channel", OME_NS)], cfg)
         pixel_um, z_step_um = _ome_um(px, "X", flags), _ome_um(px, "Z", flags)
         out.append(_with_acquired({
@@ -1050,6 +1204,8 @@ def nikon_images(path, cfg):
     camera = capturing.split("\n", 1)[0].strip()
     roles = named_extras(prefer_named_dye(roles, [None] * len(roles), cfg), cfg, names, None,
                          [c.channel.excitationLambdaNm for c in chans], [c.channel.emissionLambdaNm for c in chans])
+    roles, near = near_match(roles, cfg, named_near([c.channel.excitationLambdaNm for c in chans],
+                                                    [c.channel.emissionLambdaNm for c in chans]))
     mi = pick(roles, "MARKER")
     settings = _nikon_settings(text.get("description") or "", capturing, names[mi] if mi is not None else None, len(chans),
                                chans[mi].channel.excitationLambdaNm if mi is not None else None)
@@ -1070,7 +1226,7 @@ def nikon_images(path, cfg):
             "stage_x": stage.x, "stage_y": stage.y,
             # 1.26.8: an uncalibrated file reads as 1 um per pixel, which sets the display scale and the cell search
             "flags": ([] if calibrated else [f"pixel size {NOT_CALIBRATED} (1 um per pixel is a placeholder)"])
-            + _extra_axes_flags(dims.replace("P", ""), [n for a, n in sizes.items() if a != "P"]),
+            + _extra_axes_flags(dims.replace("P", ""), [n for a, n in sizes.items() if a != "P"]) + near,
             "_reader": ("nd2", str(path), p, dims),
         })
     return out
@@ -1122,8 +1278,11 @@ def olympus_images(path, cfg):
     roles = prefer_named_dye(roles, [c.get("DyeName") for c in chans], cfg)
     roles = named_extras(roles, cfg, [str(c.get("DyeName", "")) for c in chans], [c.get("DyeName") for c in chans],
                          [c.get("ExcitationWavelength") for c in chans], [c.get("EmissionWavelength") for c in chans])
+    roles, near = near_match(roles, cfg, named_near([c.get("ExcitationWavelength") for c in chans],
+                                                    [c.get("EmissionWavelength") for c in chans]))
     if len(chans) != size.get("C", 1):
         roles = ["UNRESOLVED"] * size.get("C", 1)
+        near = []
     mi = pick(roles, "MARKER")
     ref = md.get("Reference Image Parameter", {})
     zaxis = next((a for k, a in md.items() if k.startswith("Axis ") and a.get("AxisCode") == "Z"), {})
@@ -1158,7 +1317,7 @@ def olympus_images(path, cfg):
         "settings": settings, "zoom": zoom, **({"_zoom_before": ""} if zoom else {}),
         "acquired": str(acq.get("ImageCaputreDate", "")),
         "stage_x": None, "stage_y": None, "_reader": ("oif", str(path), 0, axes),
-        "flags": _extra_axes_flags(axes, shape) + other_fluorophore(roles, [c.get("DyeName") for c in chans], cfg),
+        "flags": _extra_axes_flags(axes, shape) + near + other_fluorophore(roles, [c.get("DyeName") for c in chans], cfg),
     }]
 
 
@@ -1343,6 +1502,8 @@ def _oir_meta(xml, frames, cfg):
         roles = [marker_from_named(n, d, ex, c["transmitted"], cfg, em)
                  for c, n, d, ex, em in zip(chans, named, dyes, excitation, emission)]
         roles = named_extras(prefer_named_dye(roles, dyes, cfg), cfg, named, dyes, excitation, emission)
+        roles, near = near_match(roles, cfg, named_near(excitation, emission))
+        flags += near
     else:
         roles = ["UNRESOLVED"] * len(chans)
         flags.append("the file does not state the order of its channels, or the settings of one of them")

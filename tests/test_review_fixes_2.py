@@ -62,7 +62,7 @@ def test_new_codes_whose_images_cannot_be_put_in_place_leave_the_key_and_drafts(
             with pytest.raises(SystemExit, match="could not be put in place .*as they were. Close other programs"):
                 prepare(project, log=quiet, **kind)
         assert snapshot(project) == before and consistent(project)
-        assert sorted(x.name for x in (project / "key").iterdir()) == ["key.csv", "seed.txt", "settings_groups.csv"]
+        assert sorted(x.name for x in (project / "key").iterdir()) == ["coded_on.txt", "key.csv", "seed.txt", "settings_groups.csv"]
         assert not (project / pipeline.BUILDING).exists() and not (project / pipeline.PREVIOUS).exists()
     prepare(project, log=quiet)
 

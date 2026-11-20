@@ -185,9 +185,9 @@ def project_status(path):
     # the Build card says what a rebuild would change. Counts and group letters only.
     st["scan_changes"] = []
     if not info:
-        from .rescan import scan_changes
+        from .rescan import scan_change_lines, scan_changes
         try:
-            st["scan_changes"] = scan_changes(p)["lines"]
+            st["scan_changes"] = scan_change_lines(p, scan_changes(p))
         except (Exception, SystemExit):
             pass
     inv = p / "outputs" / "inventory.csv"

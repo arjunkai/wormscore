@@ -1,6 +1,6 @@
 # What wormscore does, step by step
 
-Written so it can be adapted into a Methods section. Every number named here is a setting in the
+Written so it can be adapted into a Methods section. Every setting named here is in the
 project's `config.json`, and the values actually used are copied into `log.md` on every run.
 
 1. [Inventory](#1-inventory): which files and images are found, and their acquisition settings
@@ -67,6 +67,49 @@ saved in a 16-bit file saturates at 4095). A 16-bit Zeiss or OME-TIFF file that 
 flagged "bit depth not recorded" and its saturation level is taken as 65535; state the true level per
 microscope under `saturation_value` in `config.json`.
 
+### How the reading was checked
+
+- **Automated tests.** The test suite (`tests/`, 749 tests in 1.26.21) runs on GitHub
+  for every change ([tests.yml](../.github/workflows/tests.yml)).
+- **The microscope software.** Check the reading was compared field by field with the vendor's software
+  on real files, and every value matched:
+  - LAS X Office, on a TCS SP8 file (1.26.18).
+  - ZEN 3.15 (ZEN lite), on an LSM 880 file (1.26.19) and an idr0011 file (1.26.20).
+  - NIS-Elements Viewer 6.10, on two Nikon files, a spinning disk with a Kinetix camera and a DS-Fi3
+    z-stack (1.26.20).
+  - OlyVIA 5.1, on an FV3000 bead file (figshare 11512431) and a FluoView 1.3 file (1.26.20).
+
+  The one difference found, a UTC time shown without conversion, was fixed in 1.26.20. Check the
+  reading names where the vendor's software shows each value.
+- **Bio-Formats.** [tools/bioformats_referee.py](../tools/README.md) compares wormscore's reading of
+  each file with Bio-Formats' and prints every difference. On 12 of the dataset files below, 23 of
+  their 28 images read the same. The other differences are things one reader lists and the other sets
+  aside or flags, such as the wavelengths of a lambda scan or Leica colour tables against dye names.
+- **The datasets' authors.** For files from 33 public datasets, wormscore's reading was compared with
+  what the authors wrote about the acquisition: record text, paper Methods and figure legends (1.26.20).
+  Where the file and the text disagreed, the file was checked and is followed. The datasets are:
+  - Zenodo 4662053, 5602160, 7994589, 10666482, 12773657, 13752242, 15175309, 17235949, 18609221 and
+    18851060.
+  - figshare 8159180, 18130010 and 27638175.
+  - BioImage Archive S-BIAD961, S-BIAD1480, S-BIAD1612, S-BIAD1687, S-BIAD1944 (two files), S-BIAD2252,
+    S-BIAD2396, S-BIAD2548, S-BIAD3119, S-BIAD3345 and S-BIAD3899.
+  - Nine datasets already among the sample files, idr0011 and figshare 11512431 among them.
+- **Parity runs.** A project that has not run Scan data again reads its slide images and bleed-through
+  control images as its own images were read: as 1.26.19 (`readers.as_before()`) for an inventory
+  from before 1.26.20, as 1.26.20 (`readers.as_1_26_20()`) for one from 1.26.20. For 1.26.20 and
+  1.26.21, the sample files were read with the released version and with the new one under that gate,
+  and the two had to agree on every field:
+  - 1.26.20: 289 files, no differences; an independent reviewer's run of 358 files in 5 marker
+    settings, no differences.
+  - 1.26.21: 360 files in 3 marker settings (GFP, YFP, mCherry) under `as_before()`, no
+    differences. An independent reviewer's run of 423 files in 6 marker settings (GFP, YFP, mCherry,
+    TagRFP, mNeptune2.5, BFP): released 1.26.20 against 1.26.21 under `as_1_26_20()`, and both
+    under `as_before()`, no differences.
+
+  With the new reading, every difference was in the cases the release meant to change. The images
+  themselves are read the new way only by a new Scan data; the Build card then lists what changes
+  for coded images, and images already scored keep their flat-field correction.
+
 ## 2. Which channel is the marker
 
 The marker is the reporter channel that is scored and measured (`marker` in `config.json`). It is found
@@ -86,6 +129,27 @@ Brightfield is the transmitted-light detector. Current LAS X (SP8 3.5, Stellaris
 step only what differs from the image's master setting, so a step's detection band, averaging and
 (where the step gives none) gain are taken from the master.
 
+**Lifetime images.** A STELLARIS with TauContrast adds a channel of mean arrival times (channel type
+MeanArrivalTime) to each photon-counting channel. These channels are set aside and never scored (from
+1.26.20). LAS X FLIM keeps what it computed from a lifetime scan as series inside the scan's "FLIM
+Compressed" folder. Zenodo 13752242's FLIM250523.lif has 29 kinds: Intensity, Fast Flim, Standard
+Deviation, Phasor images, FlimDecayTime, FlimAmplitude, FretEfficiencyPercentage, ChiSquare and others.
+From 1.26.21 they are flagged "lifetime result computed by LAS X (FLIM), not scored"; before, they were
+flagged "0 detectors for 1 channels". Either way they were never scored. The channel types known to hold
+measured light are PhotonCounting and PhotonIntegration, the only ones in the public files checked. No
+file or document found lists the other types LAS X can write (for TauSense gating or separation, for
+example), so an image with a channel of any other type is flagged with the type's name. Its channel
+roles are kept: each of its channels has its own detector, while computed channels add channels beyond
+the detectors, and such an image is set aside as above or left unresolved.
+
+**Microscope model.** A file without a system type name (LAS AF, TCS SP5) was named "Leica". From
+1.26.21 its model, which the file records as the scanner's SystemType ("TCS SP5"; Bio-Formats reads the
+same field), is shown in Check the reading, Browse images and the Methods draft's table of images. The
+microscope's name as the project uses it (flat-field sessions, settings groups, the results tables)
+stays "Leica", so no session or group of an existing project moves. In Zenodo 13752242 one file
+(Fig6c) is from a TCS SP5 with LAS AF and the SP5's argon, 561 and 633 nm lines, while the record's
+text describes a TCS SP8X with LAS X; the file is followed.
+
 ### Zeiss and OME-TIFF
 
 The marker is the channel whose fluorophore, channel name or excitation wavelength matches the
@@ -100,6 +164,21 @@ exactly one of them names a configured dye (EGFP, GFP), that one is the marker.
 
 If the file gives no objective name, the objective is written from its magnification, NA and
 immersion.
+
+The date is AcquisitionDateAndTime. A file without it has no date, even if it has a CreationDate.
+Checked in 1.26.21 on 70 Zeiss files (11 public sample files and 59 files from one lab's LSM 800):
+
+- 64 files have both dates, all saved by ZEN blue (2012, 2.3, 2.6, 3.1, 3.9). In each, CreationDate
+  is within 0.5 s of AcquisitionDateAndTime. In the four whose planes were checked, the planes' own
+  times start 0.2 to 2.3 s after it.
+- 6 files have only CreationDate. Four are processing results (three named Airyscan Processing; in
+  one, from ZEN 2.3, the planes have no real time): their CreationDate can be when the result was
+  made, not when the image was taken. ZEN also shows a cropped copy's creation time as the time of
+  the copy. The other two were saved by ZEN black, with no other absolute time in the file to check
+  against and no time zone.
+
+So CreationDate is not read. Such an image uses its microscope's only flat-field session, or the
+average of its sessions (section 5).
 
 ### Nikon and Olympus FluoView
 
@@ -206,6 +285,27 @@ and its display color, from FPbase peaks. For example mCherry 587/610 nm: lasers
 band starting 575 to 625 nm, emission 595 to 645 nm. Any field given next to the preset overrides it.
 Without a preset the GFP settings above are used, as before presets existed, so GFP projects build the
 same blind set.
+
+**A line near the preset's (from 1.26.21).** A widefield LED or a white light laser line can differ
+from a preset's laser line (by 3 to 6 nm in idr0011: TagYFP at 508 nm, where YFP's lines are 514 and 515; mRFP at 590 nm,
+where mCherry's are 561, 587 and 594). If no channel of an image matches the reporter's lines exactly
+(a preset's, or the project's own), a channel whose excitation is within 10 nm of one of them is taken
+as the reporter, but only if:
+
+- its emission also fits: the recorded emission wavelength is in the reporter's emission range, or the
+  Leica detection band starts in its range;
+- it is the only channel that fits.
+
+The image is then flagged ("... channel found by its emission and an excitation of 590 nm (3 nm from
+the preset's 587 nm line)"), so the scan shows where this was used. The identity channel is matched
+at its exact lines only: a coded image without one must not gain one after a new scan. GFP has no
+emission range, so in Nikon and Olympus files it is matched at 488 nm only, as before; in Leica files
+the detection band applies. Why 10 nm: within 10 nm
+of any preset line, every preset protein is still excited at least 45% as well as at its peak. This was
+measured on the FPbase excitation spectra of EGFP, mNeonGreen, EYFP, mCherry, TagRFP-T, mScarlet-I,
+mKate2, CyOFP1 and mTagBFP2. mNeptune2.5's far-red lines (633 and 640 nm) are the exception; they
+excite it at only 22% and 12% of its peak themselves. Images scanned before 1.26.21 are read as before
+until Scan data runs again.
 
 The reporter and identity channel can be chosen from these presets in Project settings, which writes
 the same `preset` entries; a channel with its own settings is kept as it is. A change is written to
@@ -523,8 +623,8 @@ CFP, 405 or UV is preferred). Each counted image's saved outlines (or, without o
 suggested cell) are measured in that channel:
 
 - without filtering, so the noise is not shrunk;
-- in the reporter's sharpest plane for the region and the planes either side (a small depth shift
-  between colours);
+- in the reporter's sharpest plane for the region and the planes either side (to allow for a depth
+  shift between colours, which is not measured);
 - as signal to noise = (mean in the region - median of the background ring) / robust SD of the ring
   (1.4826 x median absolute deviation), the ring as in section 6;
 - keeping the highest of the three planes.
@@ -538,8 +638,8 @@ flag per image could hint at a genotype while scoring.
 
 ### Flat-field correction
 
-Optional, set before scoring. Most microscopes light the middle of the field more than the edges, and
-lamp or laser power changes from day to day. With the correction on, Build blind set corrects the
+Optional, set before scoring. The light can be uneven across the field, and lamp or laser power can
+change from day to day. With the correction on, Build blind set corrects the
 reporter channel of every image before anything is shown, suggested or measured, using images of a
 uniform fluorescent reference slide taken at the project's settings in each imaging session.
 
@@ -584,8 +684,9 @@ size from the same microscope:
   those sessions (or the one session, if there is only one).
 
 Its light across the field is then corrected, its brightness between sessions is not. An image with
-no usable slide images at all is used as recorded. Images with no acquisition date (ImageJ TIFF, and
-Leica LIF scanned before 1.26.18 or without time stamps) use the microscope's only session directly.
+no usable slide images at all is used as recorded. Images with no acquisition date (ImageJ TIFF, Zeiss
+files without AcquisitionDateAndTime, and Leica LIF scanned before 1.26.18 or without time stamps) use the
+microscope's only session directly.
 
 **What is recorded.** Pixels at the detector maximum are found on the raw stack and stored per image
 (`saturated.png`), so `saturated_px_mip` still counts them. Raw files are never changed. Each
@@ -638,8 +739,9 @@ Regions come from the scorer (drawn circle or outline, or an accepted suggestion
 found automatically:
 
 1. The filtered projection is smoothed with a Gaussian (1.5 um).
-2. Local maxima are taken brightest first. Each is the brightest point of the 6 um square around it,
-   so maxima about 3 um or more apart are kept.
+2. Local maxima are taken brightest first. Each is the brightest point of the 6 um square around it
+   (rounded to an odd number of pixels), so a maximum within half that width of a brighter one along
+   both x and y is dropped.
 3. Each is grown to every connected pixel at or above half of its height above the local background
    (median of a ring 6 to 10 um away), within 8 um (full width at half maximum).
 4. Regions of at least 4 um^2 are kept.
@@ -826,8 +928,8 @@ said in the summary).
 
 **Who is left out.**
 
-- `worst` and `sum` need every neuron assessed, because the worst of four neurons tends to be higher
-  than the worst of three. Otherwise the animal is left out, except that an animal whose assessed
+- `worst` and `sum` need every neuron assessed, because the worst of four neurons is never lower
+  than the worst of three of them. Otherwise the animal is left out, except that an animal whose assessed
   neuron already has the worst level counts under `worst`.
 - "Can't tell" is never a level: that neuron is unclear (under `mean`, `"unclear": "exclude_animal"`
   leaves out the animal instead).
@@ -845,9 +947,9 @@ the Mann-Whitney (Wilcoxon rank-sum) statistic on the animal values.
 - The p-value comes from permuting the pooled midranks, so ties are handled correctly: exact (every
   rearrangement) when there are at most 100,000 rearrangements, otherwise 100,000 random ones with
   seed 1404 (recorded in the table).
-- scipy's default for tied data is a normal approximation, which gave p-values about half the correct
-  size on short scales with many ties in checks made for this feature; GraphPad Prism also reports
-  exact p-values with ties.
+- scipy's default for tied data is a normal approximation. On 12 controls all scored 0 against 12
+  mutants (0, 0, 0, 0, 0, 0, 1, 2, 3, 3, 4, 6) it gives p = 0.0070, against 0.013 by permutation
+  (`tests/test_ranks.py`). GraphPad Prism also reports exact p-values with ties.
 - If every animal has the same value, p = 1.
 - Bonferroni within each outcome.
 - Normality is not tested because a rank test is used (ARRIVE 2.0 item 7b).
@@ -863,8 +965,8 @@ test (rows marked with the cutoff in `definition`).
 `per_neuron.csv` gets each neuron's answer and the animal's value. Rank outcomes cannot be used by
 `interaction` or `allow_cross_microscope`.
 
-Left out on purpose: Brunner-Munzel (its p-values were far too small at 5 animals per group, and scipy
-has no permuted version), t-tests on counts, and regression or mixed models.
+Left out on purpose: Brunner-Munzel (scipy gives t and normal approximations, not a permuted version, and
+how accurate they are with 5 animals per group was not measured here), t-tests on counts, and regression or mixed models.
 
 #### interaction_test.csv
 
@@ -890,15 +992,16 @@ likelihood-ratio test below). The observed count in the double is compared with 
 share by a two-sided one-sample binomial test (`scipy.stats.binomtest`), only within a microscope
 where all three genotypes were scored (Bonferroni if more than one). The expected value treats P1 and
 P2 as exact and ignores their sampling error, so the test is anti-conservative when the single mutant
-groups are small: in simulations with 30 animals per genotype and no interaction, it was significant
-at 0.05 in about 7 to 19% of runs.
+groups are small: in the 300 simulated runs of `tests/test_audit_options.py` (seed 1; 30 animals per
+genotype, single-mutant shares 0.2 and 0.3, product model, no interaction), it was significant at 0.05
+in 50 (17%).
 
 **The likelihood-ratio test** (`interaction.test: "likelihood_ratio"`, recommended for new projects;
 part of the analysis plan) instead fits the three genotypes together. Under the model the double's
 share is the model's function of P1 and P2, fitted with them by maximum likelihood, and the likelihood
 ratio G is compared with chi-square on 1 degree of freedom (for a one-sided alternative, the signed
-square root of G with the normal distribution). It allows for the singles' sampling error and stayed
-near 5% in the same simulations. The table then has `likelihood_ratio_g` and
+square root of G with the normal distribution). It allows for the singles' sampling error and was
+significant in 20 of the same 300 runs (7%). The table then has `likelihood_ratio_g` and
 `p_likelihood_ratio_*`.
 
 ### Optional analysis settings
@@ -943,8 +1046,8 @@ the analysis plan.
 - It is a contrast-to-noise visibility check (is the cell distinguishable from its own surroundings),
   not a comparison with control brightness.
 - It needs drawn regions: outline every visible neuron if you set it.
-- Regions whose ring has no measurable noise (robust SD 0, common in 8-bit or low-count images) cannot
-  be checked; the summary counts them.
+- Regions whose ring has no measurable noise (robust SD 0: more than half the ring's pixels have the
+  same value, as can happen in 8-bit or low-count images) cannot be checked; the summary counts them.
 
 **`primary_outcome`** (`calls`, a `question_outcomes` name or a `rank_outcomes` name; part of the
 analysis plan): adds an `outcome_role` column (primary or secondary) to every test file, a line in the
@@ -968,7 +1071,8 @@ number.
 **Reading kappa.**
 
 - Kappa is undefined when every answer is the same.
-- With few pairs, kappa is imprecise; kappa below 0.60 is usually considered inadequate
+- Kappa from few pairs is imprecise; the Methods draft gives no interval for it unless
+  `extra_statistics` is on (below). McHugh 2012 calls kappa below 0.60 inadequate agreement
   ([McHugh 2012](https://doi.org/10.11613/BM.2012.031)).
 - The same scorer seeing an image twice measures consistency, not agreement between people.
 - When most animals get the same answer (for example few affected animals), kappa can be low even with
@@ -1058,15 +1162,15 @@ Check every sentence before use.
   so no correction between settings is attempted.
 - **Calls** are human judgements made on fixed display ranges; the software records but does not make
   them.
-- **Filter size and background ring** are common choices, not values from a published protocol; they
-  are settings and are logged.
+- **Filter size and background ring** are not taken from a published protocol; they are settings and
+  are logged.
 - **One version per project.** `log.md` records the wormscore version at every step. Updating between
   Build blind set and Unblind would put two versions in the Methods; the app warns before such an
   update and defaults to Not now. If it happens, the Methods draft names every version `log.md`
   records from the build of the current blind set to unblinding (Scan data, Build and Add new images
   each record one), and says which one computed the results.
-- **Identity channel.** No correction is made for bleed-through between channels or for the small
-  depth shift between colors (chromatic aberration). Acquire channels sequentially, image
+- **Identity channel.** No correction is made for bleed-through between channels or for the
+  depth shift between colors (chromatic aberration), which is not measured. Acquire channels sequentially, image
   single-label controls, and remember that gut autofluorescence shows in red too, so a suggestion on
   the identity channel can still land on gut granules.
 - **Files you open.** XML metadata is parsed with Python's standard library, which does not fetch

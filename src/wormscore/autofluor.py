@@ -196,7 +196,9 @@ def methods_sentence(project):
     if not s:
         return ""
     per = "; ".join(f"{g}, {v['flagged']} of {v['regions']}" for g, v in s["by_genotype"].items())
-    return (f"{METHODS_HEAD} Gut granules fluoresce in every channel, while the reporter does not. Each scored "
+    return (f"{METHODS_HEAD} Gut granules fluoresce across the spectrum, brightest with a DAPI-type "
+            "filter set (Pincus et al. 2016, Aging 8:889; Coburn et al. 2013, PLoS Biol 11:e1001613), "
+            "while the reporter does not. Each scored "
             f"region was therefore also measured in the {s['channel']} channel, which carries no label, in the "
             "reporter's sharpest plane for the region and the planes either side of it, without filtering: the "
             "background-subtracted mean divided by the robust SD of the background ring. Regions at or above "
