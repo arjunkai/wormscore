@@ -151,6 +151,11 @@ def test_zeiss_lines_name_what_zen_lite_shows(tmp_path):
     assert value(where, "Averaging") == "Info view, Averaging"
     rows = where.split("\n\n")[0].splitlines()[2:]
     assert max(len(line) for line in rows) <= 72
+    # the scan zoom, as ZEN 3.15 shows it for the owner's LSM 800 file (Scan Zoom 1.0; 20 November 2026)
+    zoomed = "\n".join(K.describe(dict(zeiss, zoom="1"), K.default_settings(), path))
+    zoomed = zoomed[zoomed.index("Where to find these in Zeiss ZEN"):]
+    assert value(zoomed, "Zoom") == "Info view, track table, Scan Zoom"
+    assert "Scan Zoom" not in where or zeiss.get("zoom")                         # shown only with a zoom
 
 
 def test_one_place_for_every_value_is_said_once(tmp_path):

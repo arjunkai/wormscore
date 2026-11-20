@@ -35,6 +35,9 @@ Leica TCS SP5 settled.**
   in key/coded_on.txt. Found by recomputing a real project's results on a copy.
 - Slide and control images are read as the project's images were scanned, now also for a project scanned
   by 1.26.20. Found by review.
+- Check the reading says where ZEN shows the scan zoom (Info view, track table, Scan Zoom). Checked in
+  ZEN lite 3.15 on an LSM 800 file: zoom, date, scaling, planes, bit depth, objective, detector voltage
+  and laser all matched; ZEN's Scan Zoom 1.0 is the value wormscore reads since 1.26.20.
 - METHODS.md says how the reading was checked (tests, the vendors' software, 33 public datasets, parity
   runs). Docs and app text: guesses and unsourced claims replaced by facts with their source, measured
   numbers, or a plain statement of what is not known.

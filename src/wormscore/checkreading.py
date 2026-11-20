@@ -75,7 +75,10 @@ VENDOR = {
          "laser": "Info view, Lasers (first track only)",
          "light": "Info view", "averaging": "Info view, Averaging", "exposure": "Info view",
          # ZEN 3.15 shows a UTC time in the computer's time zone, as wormscore now gives it (19 November 2026)
-         "acquired": "Info view, Acquisition Start"}),
+         "acquired": "Info view, Acquisition Start",
+         # ZEN 3.15 on the owner's LSM 800 file: Scan Zoom 1.0 in the track table, as wormscore reads it
+         # since 1.26.20 (20 November 2026)
+         "zoom": "Info view, track table, Scan Zoom"}),
     # the tab and field names as NIS-Elements Viewer 6.10 shows them for two real files (19 November 2026)
     "Nikon ND2": (
         "Nikon NIS-Elements",
@@ -323,6 +326,8 @@ def describe(img, cfg, path):
         lines += [f"Where to find these in {software}", f"  {how}"]
         if img["acquired"] and "acquired" in where:     # in the order of the values above
             lines.append(_row("Acquired", where["acquired"], 26))
+        if img["zoom"] and "zoom" in where:
+            lines.append(_row("Zoom", where["zoom"], 26))
         places = {where[v] for v in shown}
         if len(places) == 1 and not (img["acquired"] and "acquired" in where):   # say one place once
             lines.append(f"  All of these are {places.pop()}.")
