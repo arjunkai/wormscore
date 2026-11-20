@@ -137,6 +137,21 @@ def leica_days_from_scan(project):
         return False
 
 
+def utc_days_from_scan(project):
+    """Whether the project's images were scanned with UTC times given in the computer's time zone (1.26.20:
+    Zeiss, FV3000 2.x and OME times written in UTC). The scan then wrote such a date with its offset
+    ("2019-12-16 11:45:40 -05:00"). Until then slide images are read with the UTC time as before, so the
+    project corrects as before; a project with no such date is read as before as well."""
+    from .readers import UTC_FORMATS
+    import re
+    try:
+        with open(Path(project) / "outputs" / "inventory.csv", encoding="utf-8", newline="") as fh:
+            return any(r.get("format") in UTC_FORMATS and re.search(r" [+-]\d\d:\d\d$", r.get("acquired") or "")
+                       for r in csv.DictReader(fh))
+    except OSError:
+        return False
+
+
 UNCLEAR_DATE = "day or month first: not known"
 
 
@@ -211,10 +226,11 @@ def check_folder(project, folder, cfg, what="slide images"):
                              f"Put the {what} in a folder of their own.")
 
 
-def _images(folder, cfg, log, skipped, new_days=False, leica_days=False):
+def _images(folder, cfg, log, skipped, new_days=False, leica_days=False, utc_days=False):
     """Every readable image in folder, with its marker plane averaged over z. new_days: the day is read as
     Scan data reads it now (days_from_scan), so slide images and images follow the same rule. leica_days:
-    Leica slide images keep their date (leica_days_from_scan); otherwise they have none, as before."""
+    Leica slide images keep their date (leica_days_from_scan); otherwise they have none, as before. utc_days:
+    a time written in UTC is given in the computer's time zone (utc_days_from_scan); otherwise as before."""
     from . import readers as R
     from .bleed import control_files
     from .pipeline import saturation_for
@@ -242,6 +258,8 @@ def _images(folder, cfg, log, skipped, new_days=False, leica_days=False):
                 continue
             if not leica_days and img.get("format") == "Leica LIF":
                 img["acquired"] = ""
+            if not utc_days and "_acquired_before" in img:
+                img["acquired"] = img["_acquired_before"]
             if new_days:
                 img[DAY_COLUMN] = scanned_day(img.get("acquired", ""))
             out.append({"where": where, "path": path, "key": session_key(img),
@@ -336,12 +354,12 @@ def measure(project, folder, dark_folder=None, across_field=True, between_sessio
     if dark_folder:
         check_folder(project, dark_folder, cfg, "dark images")
     skipped = []
-    new_days, leica_days = days_from_scan(project), leica_days_from_scan(project)
-    refs = _images(folder, cfg, log, skipped, new_days, leica_days)
+    new_days, leica_days, utc_days = days_from_scan(project), leica_days_from_scan(project), utc_days_from_scan(project)
+    refs = _images(folder, cfg, log, skipped, new_days, leica_days, utc_days)
     if not refs:
         raise SystemExit("No slide image could be read. " + ("; ".join(skipped[:3]) if skipped else
                                                             "The folder has no images wormscore can read."))
-    darks = _images(dark_folder, cfg, log, skipped, new_days, leica_days) if dark_folder else []
+    darks = _images(dark_folder, cfg, log, skipped, new_days, leica_days, utc_days) if dark_folder else []
     if dark_folder and not darks:
         skipped.append("No dark image could be read, so the camera offset is taken as 0.")
     sessions, flats = _make_sessions(refs, _darks(darks, skipped), skipped)
@@ -358,7 +376,7 @@ def measure(project, folder, dark_folder=None, across_field=True, between_sessio
                 "reference_sha256": _sha([r["path"] for r in refs]),
                 "dark_sha256": _sha([r["path"] for r in darks]) if darks else "", "skipped": skipped[:50],
                 "measured": f"{dt.datetime.now():%Y-%m-%d %H:%M}",
-                **({"leica_days": True} if leica_days else {})}
+                **({"leica_days": True} if leica_days else {}), **({"utc_days": True} if utc_days else {})}
     _save(project, summary_, flats, {"across_field": bool(across_field), "between_sessions": bool(between_sessions)})
     cfg = C.load(project)
     lines = log_lines(project, cfg)
@@ -382,7 +400,8 @@ def add_sessions(project, folder, log=print):
     corr = Correction(project, cfg)          # checks that the stored correction is intact
     check_folder(project, folder, cfg)
     skipped = []
-    refs = _images(folder, cfg, log, skipped, days_from_scan(project), leica_days_from_scan(project))
+    refs = _images(folder, cfg, log, skipped, days_from_scan(project), leica_days_from_scan(project),
+                   utc_days_from_scan(project))
     if not refs:
         raise SystemExit("No slide image could be read. " + ("; ".join(skipped[:3]) if skipped else
                                                             "The folder has no images wormscore can read."))
@@ -537,7 +556,7 @@ class Correction:
         # image is held to the session list that gives that session. For a key built before, the words are
         # all there is: if they fit more than one session, the image is counted as one that may change.
         recorded = used_record(self.project) if getattr(self, "project", None) else {}
-        self.pins, self.held_day = {}, set()
+        self.pins, self.held_day, self.held_acquired = {}, set(), {}
         kept = changed = 0
         for img in images:
             row = rows.get(_ident(img))
@@ -556,12 +575,17 @@ class Correction:
             fits = fitting(img)
             # 1.26.18: a scan that now reads the image's day (DAY_COLUMN) where 1.26.17 read none: the image
             # keeps the correction it was scored with, from the day as it was read then
+            # 1.26.20: and from the date as key.csv recorded it (a UTC time was then given as written, a Leica
+            # date not at all), not from the date the new scan gives
             was = {k: v for k, v in img.items() if k != DAY_COLUMN}
+            if "acquired" in row:
+                was["acquired"] = row["acquired"]
             held = False
             if not fits and DAY_COLUMN in img and session_key(was) != session_key(img):
                 fits = fitting(was)
                 if fits:
                     self.held_day.add(_ident(img))
+                    self.held_acquired[_ident(img)] = was.get("acquired", "")
                     held = True
             if code not in recorded:
                 # a key from before 1.26.16: slide images added after the image got its code cannot be the
@@ -583,9 +607,21 @@ class Correction:
         self.kept_changed = bool(changed)
         return kept, changed
 
+    def recorded_acquired(self, img):
+        """The date key.csv gets: for an image held to its old day, the date it was recorded with, so the
+        next build holds it again (found by review: a second build after a new scan used to change images
+        already scored)."""
+        return getattr(self, "held_acquired", {}).get(_ident(img), img.get("acquired", ""))
+
     def _as_recorded(self, img):
-        """The image as keep_coded holds it: without the day of a new scan if it keeps the old one."""
-        return {k: v for k, v in img.items() if k != DAY_COLUMN} if _ident(img) in self.held_day else img
+        """The image as keep_coded holds it: without the day of a new scan, and with the date key.csv
+        recorded, if it keeps the old one."""
+        if _ident(img) not in self.held_day:
+            return img
+        was = {k: v for k, v in img.items() if k != DAY_COLUMN}
+        if _ident(img) in getattr(self, "held_acquired", {}):
+            was["acquired"] = self.held_acquired[_ident(img)]
+        return was
 
     def session_for(self, img, sessions=None):
         """The image's own session, or None: same microscope and settings, and the same day, or the only

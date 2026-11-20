@@ -157,19 +157,36 @@ def scan_changes(project, cfg=None):
         # images are read with theirs (the flat-field summary says so), also after a rebuild
         read = bool((summary(project) or {}).get("leica_days"))
         leica = 0 if read else sum(1 for r, s in pairs if s.get("format") == "Leica LIF" and lacks(r, s))
-        days = sum(1 for r, s in pairs if s.get("format") != "Leica LIF" and lacks(r, s)
+        zone = lambda a: (a or "")[-6:] if (a or "")[-6:-5] in ("+", "-") else ""
+        # 1.26.20: a time written in UTC (Zeiss, FV3000 2.x, OME) is given in the computer's time zone; the
+        # line stays until the slide images are read the same way (the flat-field summary says so)
+        from .readers import UTC_FORMATS
+        # (only such a time gets an offset in these formats; the build has not used its day yet, also after a
+        # rebuild, until the slide images are read the same way: found by review)
+        now_local = lambda r, s: s.get("format") in UTC_FORMATS and zone(s.get("acquired"))
+        # the build corrected the image with another day's slide images ("nearest day, 2026-03-06")
+        elsewhere = lambda r, s: (r.get("flat_field") or "same session") != "same session" and s.get(DAY_COLUMN)             and s[DAY_COLUMN] not in (r.get("flat_field") or "")
+        other_zone = lambda r, s: zone(r.get("acquired")) and zone(r["acquired"]) != zone(s.get("acquired"))
+        utc = 0 if (summary(project) or {}).get("utc_days") else sum(
+            1 for r, s in pairs if now_local(r, s) and not other_zone(r, s) and (lacks(r, s) or elsewhere(r, s)))
+        # (a date with a time zone is never one written day first)
+        days = sum(1 for r, s in pairs if s.get("format") != "Leica LIF" and not zone(s.get("acquired")) and lacks(r, s)
                    and s[DAY_COLUMN] != acquired_day(r.get("acquired", "")))
         if leica:
             out["lines"] += [f"the flat-field imaging day of {leica} coded Leica image{'s' if leica != 1 else ''} is now "
                              f"read from the file; choose the slide images again so theirs are read the same way"]
-        # a Leica date is given in the time zone of the computer that runs Scan data (found by review): a
-        # scan elsewhere can move an image to the day before or after
-        zone = lambda a: (a or "")[-6:] if (a or "")[-6:-5] in ("+", "-") else ""
-        moved = sum(1 for r, s in pairs if s.get("format") == "Leica LIF" and r.get("acquired") and s.get("acquired")
+        if utc:
+            out["lines"] += [f"the flat-field imaging day of {utc} coded image{'s' if utc != 1 else ''} changes: the file "
+                             f"records the time in UTC, now read in this computer's time zone; choose the slide images "
+                             f"again so theirs are read the same way"]
+        # a Leica (or UTC) date is given in the time zone of the computer that runs Scan data (found by
+        # review): a scan elsewhere can move an image to the day before or after
+        moved = sum(1 for r, s in pairs if s.get("format") in ("Leica LIF",) + UTC_FORMATS
+                    and zone(r.get("acquired")) and zone(s.get("acquired"))
                     and zone(r["acquired"]) != zone(s["acquired"]) and s.get(DAY_COLUMN)
                     and s[DAY_COLUMN] != acquired_day(r["acquired"]))
         if moved:
-            out["lines"] += [f"the flat-field imaging day of {moved} coded Leica image{'s' if moved != 1 else ''} changes: "
+            out["lines"] += [f"the flat-field imaging day of {moved} coded image{'s' if moved != 1 else ''} changes: "
                              f"this computer is in another time zone than the one that ran Scan data before; scan there, "
                              f"or choose the slide images again"]
         if days:

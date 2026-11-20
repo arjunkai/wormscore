@@ -5,6 +5,24 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.20
+
+**UTC times in the lab's time zone; Check the reading, held against NIS-Elements Viewer and OlyVIA.**
+- Zeiss, the FV3000 software 2.x and some OME-TIFF files record the acquisition time in UTC. wormscore
+  showed it unchanged, so an FV3000 image that OlyVIA shows as 11:45 AM on a computer in US Eastern
+  time was shown as 16:45 (ZEN shows a Zeiss file's Acquisition Start the same way), and an evening session in the Americas (or a morning one in Asia) was put on
+  the next or the previous day. Scan data now gives such a time in the computer's time zone, as it
+  does for Leica (for example 2019-12-16 11:45:40 -05:00). Times written with their own offset (older
+  FluoView) or with no zone are unchanged.
+- Check the reading names the fields of NIS-Elements Viewer and of OlyVIA (Evident's free viewer), as
+  checked on real Nikon and Olympus files: every value matched. For example, a Nikon channel's gain
+  and exposure are under Image Fields, Capturing, and its laser power under Description.
+- **Who is affected:** projects with Zeiss, FV3000 or OME-TIFF images whose time is in UTC and that use
+  the flat-field correction. Nothing changes until Scan data runs again. If a new scan moves coded images
+  to another day, the Build card says so; choose the slide images again so theirs are read the same way.
+  Images already scored keep the correction they were scored with. The date shown in Browse and
+  `imaging_date` follow the next Scan data and Build.
+
 ## 1.26.19
 
 **Check the reading, held against ZEN lite.**

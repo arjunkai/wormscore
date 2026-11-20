@@ -387,8 +387,42 @@ def _leica_acquired(elem):
         local = when.astimezone(LOCAL_ZONE)
     except (AttributeError, IndexError, TypeError, ValueError, OverflowError, OSError):
         return ""
+    return _local_text(local)
+
+
+def _local_text(local):
     zone = local.strftime("%z")
     return local.strftime("%Y-%m-%d %H:%M:%S ") + zone[:3] + ":" + zone[3:5]
+
+
+UTC_FORMATS = ("Zeiss CZI", "Olympus OIR", "OME-TIFF")
+
+
+def _iso_acquired(text):
+    """(the date to show, the date as 1.26.19 and before gave it). ZEN and the FV3000 software 2.x write the
+    acquisition time in UTC ("2019-12-16T16:45:40.311Z"); it was shown as written, so an evening session in
+    the Americas (or a morning one in Asia) had the next or the previous day. Such a time is now given in
+    the scanning computer's time zone, as for Leica: "2019-12-16 11:45:40 -05:00", as OlyVIA shows it.
+    A time written with its own offset ("2015-10-28T16:29:23.944-04:00", older FluoView) is the lab's
+    clock already and is given as before, as is a time without a zone."""
+    import datetime as dt
+    before = text[:19].replace("T", " ")
+    if not text.endswith("Z") or len(text) < 19:
+        return before, before
+    try:
+        when = dt.datetime.strptime(before, "%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)
+        return _local_text(when.astimezone(LOCAL_ZONE)), before
+    except (ValueError, OverflowError, OSError):
+        return before, before
+
+
+def _with_acquired(img, text):
+    """Set the image's date from an ISO time; the date as given before, if other, is kept in _acquired_before
+    for the slide images of a project scanned before (flatfield._images)."""
+    img["acquired"], before = _iso_acquired(text)
+    if before != img["acquired"]:
+        img["_acquired_before"] = before
+    return img
 
 
 def leica_images(path, cfg):
@@ -531,7 +565,7 @@ def _zeiss_meta(md, cfg):
     return {"system": system, "objective": objective, "pixel_um": round(scale.get("X", 0), 4),
             "z_step_um": round(scale.get("Z", 0), 3), "bits": int(bits), "channel_roles": roles, "channel_names": names,
             "settings": _zeiss_settings(chans[mi], md) if mi is not None else "",
-            "zoom": text("Zoom").replace(",", "."), "acquired": text("AcquisitionDateAndTime")[:19].replace("T", " "),
+            "zoom": text("Zoom").replace(",", "."), "acquired": text("AcquisitionDateAndTime"),      # ISO, as written
             "flags": flags}
 
 
@@ -544,7 +578,7 @@ def zeiss_images(path, cfg):
     out = []
     for i, dims, shape in scenes:
         dims = "".join(dims)
-        out.append({
+        out.append(_with_acquired({
             "format": "Zeiss CZI", "system": meta["system"],
             "location_in_file": f"whole file (scene {i})" if len(scenes) == 1 else f"scene {i}",
             "objective": meta["objective"],
@@ -553,10 +587,10 @@ def zeiss_images(path, cfg):
             "width": shape[dims.index("X")], "height": shape[dims.index("Y")],
             "pixel_um": meta["pixel_um"], "z_step_um": meta["z_step_um"],
             "bits": meta["bits"], "channel_roles": meta["channel_roles"], "channel_names": meta["channel_names"],
-            "settings": meta["settings"], "zoom": meta["zoom"], "acquired": meta["acquired"],
+            "settings": meta["settings"], "zoom": meta["zoom"],
             "stage_x": None, "stage_y": None, "flags": list(meta["flags"]) + _extra_axes_flags(dims.replace("0", ""), [n for a, n in zip(dims, shape) if a != "0"]),
             "_reader": ("czi", str(path), i, dims),
-        })
+        }, meta["acquired"]))
     return out
 
 
@@ -766,7 +800,7 @@ def ome_images(path, cfg):
             flags.append(f"{CHANNELS_NOT_STATED} (an OME schema from before 2009)")
         flags += other_fluorophore(roles, [c.get("Fluor") for c in px.findall("o:Channel", OME_NS)], cfg)
         pixel_um, z_step_um = _ome_um(px, "X", flags), _ome_um(px, "Z", flags)
-        out.append({
+        out.append(_with_acquired({
             "format": "OME-TIFF", "system": system,
             "location_in_file": "whole file (series 0)" if len(series) == 1 else f"series {i}",
             "objective": objective,
@@ -776,10 +810,10 @@ def ome_images(path, cfg):
             "pixel_um": pixel_um, "z_step_um": z_step_um,
             "bits": bits, "channel_roles": roles, "channel_names": names,
             "settings": "; ".join(_ome_settings(chan, md) + (["exposure " + ",".join(exposures)] if exposures else [])),
-            "zoom": "", "acquired": (img.findtext("o:AcquisitionDate", namespaces=OME_NS) or img.findtext("o:AcquiredDate", namespaces=OME_NS) or "")[:19].replace("T", " "),
+            "zoom": "",
             "stage_x": None, "stage_y": None, "flags": flags,
             "_reader": ("ome", str(path), i, axes),
-        })
+        }, img.findtext("o:AcquisitionDate", namespaces=OME_NS) or img.findtext("o:AcquiredDate", namespaces=OME_NS) or ""))
     return out
 
 
@@ -1193,7 +1227,7 @@ def _oir_meta(xml, frames, cfg):
             "bits": max(bits) if bits else 0,
             "channel_roles": roles, "channel_names": [f"{c['name']} {c['dye'] or ('TD' if c['transmitted'] else '')}".strip() for c in chans],
             "channel_ids": [c["id"] for c in chans], "settings": settings,
-            "zoom": f"{zoom:g}" if zoom else "", "acquired": _said(root, "general/creationDateTime")[:19].replace("T", " "),
+            "zoom": f"{zoom:g}" if zoom else "", "acquired": _said(root, "general/creationDateTime"),      # ISO, as written
             "scan_size": (int(_num(_said(root, "imageInfo/width")) or 0), int(_num(_said(root, "imageInfo/height")) or 0)),
             "planned_z": planned[0] if planned else 0, "flags": flags + varying}
 
@@ -1309,15 +1343,15 @@ def oir_images(path, cfg):
     if not bits:
         bits = 16
         flags += _no_bits_flag(meta["system"], cfg, 65535)
-    return [{
+    return [_with_acquired({
         "format": "Olympus OIR", "system": meta["system"], "location_in_file": "whole file", "objective": meta["objective"],
         "n_z": n_z, "n_t": sizes.get("T", 1), "width": sizes["X"], "height": sizes["Y"],
         "pixel_um": meta["pixel_um"], "z_step_um": meta["z_step_um"] if n_z > 1 else 0.0,
         "bits": int(bits), "channel_roles": roles, "channel_names": names,
-        "settings": meta["settings"] if roles == meta["channel_roles"] else "", "zoom": meta["zoom"], "acquired": meta["acquired"],
+        "settings": meta["settings"] if roles == meta["channel_roles"] else "", "zoom": meta["zoom"],
         "stage_x": None, "stage_y": None, "flags": flags + _extra_axes_flags(axes, shape),
         "_reader": ("oir", str(path), 0, axes),
-    }]
+    }, meta["acquired"])]
 
 
 # ------------------------------------------------------------------ ImageJ hyperstack TIFF

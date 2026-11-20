@@ -149,7 +149,7 @@ def test_a_new_scan_reads_the_day_says_so_and_changes_nothing_until_the_slide_im
     assert rescan.scan_changes(p)["lines"] == []
 
 
-ZONE_LINE = ("the flat-field imaging day of 2 coded Leica images changes: this computer is in another time zone "
+ZONE_LINE = ("the flat-field imaging day of 2 coded images changes: this computer is in another time zone "
              "than the one that ran Scan data before; scan there, or choose the slide images again")
 
 

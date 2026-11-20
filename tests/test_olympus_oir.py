@@ -57,7 +57,8 @@ def test_four_channels_with_a_transmitted_detector_and_two_phases():
     assert meta["settings"] == "HV 500 V; offset 3; 488nm@1%"
     assert (meta["system"], meta["objective"]) == ("Olympus FV3000", "60x/1.2 (UPLSAPO 60XW)")
     assert (meta["pixel_um"], meta["z_step_um"], meta["bits"], meta["zoom"]) == (0.1057, 0.55, 12, "1.96")
-    assert meta["acquired"] == "2025-02-21 14:38:26"            # local time as the file writes it, like Zeiss
+    assert meta["acquired"] == "2025-02-21T14:38:26.620-06:00"  # as written: local time with its offset
+    assert R._iso_acquired(meta["acquired"])[0] == "2025-02-21 14:38:26"      # given as the lab's clock
     assert meta["planned_z"] == 34 and meta["flags"] == []
 
 

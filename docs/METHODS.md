@@ -550,7 +550,12 @@ with no time, is read day first when Scan data was run with 1.26.18 or later (th
 `acquired_day`). Slide images are read by the same rule as the project's images. Leica files have a
 date from 1.26.18: the series' start time, which LAS X shows as Start Time, in the time zone of the
 computer that ran Scan data. Leica slide images are read with their date only once the project's
-images have theirs (a Scan data with 1.26.18 or later).
+images have theirs (a Scan data with 1.26.18 or later). Zeiss, the FV3000 software 2.x and some
+OME-TIFF write the time in UTC (ending in Z); from 1.26.20 it is given in the time zone of the computer
+that ran Scan data, as OlyVIA shows it, so an evening session keeps its day. A time written with its
+own offset (older FluoView) is the lab's clock and is given as written. Slide images are read this way
+only once the project's images are (a Scan data with 1.26.20 or later); an image already scored keeps
+the session it was scored with.
 
     corrected = (raw - dark) / flat x factor + mean(dark)
 

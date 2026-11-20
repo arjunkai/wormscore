@@ -891,7 +891,7 @@ def _build(project, reassign, add, log, run):
             "location_in_file": s["location_in_file"], "file_sha256": s["file_sha256"], "file": s["file"],
             "objective": s["objective"], "settings_group": letters[(s["system"], s["settings"])],
             "settings": s["settings"], "pixel_um": px, "z_step_um": s["z_step_um"], "n_z": s["n_z"],
-            "acquired": s["acquired"], "stage_x_um": "" if s["stage_x"] is None else round(s["stage_x"], 1),
+            "acquired": corr.recorded_acquired(s) if corr is not None else s["acquired"], "stage_x_um": "" if s["stage_x"] is None else round(s["stage_x"], 1),
             "stage_y_um": "" if s["stage_y"] is None else round(s["stage_y"], 1),
             "same_field_group": s["field_group"], "counted_by_default": s["counted_by_default"],
             **({"identity_channel_used": has_identity} if ident else {}),

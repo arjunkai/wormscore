@@ -21,8 +21,13 @@ documentation; where it does not name the field, the line names the window and n
   records the reporter's (here 488 nm at 12% on track 2) with its channel.
 - Nikon NIS-Elements: File > Image Properties and its tabs; the image window's status bar (NIS-Elements
   AR online help). "NIS-Elements Viewer is a free, standalone application" (Nikon).
+  The names were then read off NIS-Elements Viewer 6.10 for two real files (a Kinetix spinning disk and a
+  DS-Fi3 z-stack, 19 November 2026): every value matched. The Experiment Data tab is there for a z-stack
+  only; gain and exposure are under Capturing, laser power under Description, per channel.
 - Olympus FV3000: "Select the [Property] tab and check the acquiring conditions" (FV3000 operation
-  manual). The free FV31S-SW Viewer (Boston University facility page).
+  manual). The names below are OlyVIA 5.1's (Evident's free viewer), read for an FV3000 file and an older
+  FluoView one (19 November 2026): every value matched once the FV3000 file's UTC time was given in the
+  computer's time zone, as OlyVIA gives it. OlyVIA names channels by detector (HSD1), the file by CH1.
 """
 import html
 import re
@@ -68,23 +73,34 @@ VENDOR = {
          "bits": "Info view, Bit Depth", "channels": "Info view, channel table, Channel Name",
          "gain": "Info view, channel table, Detector Gain",
          "laser": "Info view, Lasers (first track only)",
-         "light": "Info view", "averaging": "Info view, Averaging", "exposure": "Info view"}),
+         "light": "Info view", "averaging": "Info view, Averaging", "exposure": "Info view",
+         # ZEN 3.15 shows a UTC time in the computer's time zone, as wormscore now gives it (19 November 2026)
+         "acquired": "Info view, Acquisition Start"}),
+    # the tab and field names as NIS-Elements Viewer 6.10 shows them for two real files (19 November 2026)
     "Nikon ND2": (
         "Nikon NIS-Elements",
-        "Open the .nd2 in NIS-Elements (NIS-Elements Viewer is free) and choose File > Image Properties.",
-        {"objective": "Image Properties, Acquisition Details tab",
-         "pixel": "the first field of the image window's status bar (the calibration)",
-         "zstep": "Image Properties, Experiment Data tab (the z-stack settings)",
-         "planes": "Image Properties, Experiment Data tab (the z-stack settings)",
-         "bits": "the image window's status bar (bit depth, then image size)",
-         "channels": "Image Properties, Acquisition Details tab (wavelengths of each channel)",
-         "gain": "Image Properties", "laser": "Image Properties", "light": "Image Properties",
-         "averaging": "Image Properties", "exposure": "Image Properties"}),
+        "Open the .nd2 in NIS-Elements (NIS-Elements Viewer is free) and choose File > Image Properties. "
+        "Capturing and Description list each channel in turn (Sample 1 and Plane #1 are the first).",
+        {"objective": "Acquisition Details tab, Objective name",
+         "pixel": "status bar, first field (two decimals)",
+         "zstep": "Experiment Data tab, Z-Stack Loop, Z-Step",
+         "planes": "Experiment Data tab, Z-Stack Loop, Count",
+         "bits": "status bar (bit depth, then image size)",
+         "channels": "Acquisition Details tab, one Sample each",
+         "gain": "Image Fields tab, Capturing", "exposure": "Image Fields tab, Capturing",
+         "laser": "Image Fields tab, Description (Power)", "light": "Image Fields tab, Description",
+         "averaging": "Image Properties", "acquired": "Image Fields tab, Date"}),
+    # the names as OlyVIA 5.1 shows them for two real files, an FV3000 and an older FluoView one (19 November
+    # 2026); the FV software itself was not at hand
     "Olympus OIR": (
-        "the Olympus/Evident FluoView software",
-        "Open the .oir in the software of the FV3000 (FV31S-SW) or the FV4000, or in the free FV31S-SW Viewer, "
-        "and select the image's [Property] tab: it shows the acquiring conditions.",
-        _all("[Property] tab")),
+        "the Olympus/Evident software",
+        "Open the .oir in the software of the FV3000 (FV31S-SW) or the FV4000 and select the image's [Property] "
+        "tab, or open it in the free OlyVIA and see its Properties panel. The names below are OlyVIA's.",
+        dict(_all("Properties panel"),
+             pixel="Calibration (X), in nm/pixel", zstep="Z Spacing", planes="Z Dimension, first number",
+             bits="Adjust Display, Histogram", channels="Channel Count (named by detector)",
+             laser="Channel n, Laser Wavelength and Intensity",
+             acquired="Creation Time (this computer's time zone)")),
     "Olympus FluoView": (
         "Olympus FluoView (FV10-ASW)",
         "Open the file in FV10-ASW or the FV10-ASW Viewer.",
