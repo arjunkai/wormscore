@@ -16,7 +16,8 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
   FluoView) or with no zone are unchanged.
 - Check the reading names the fields of NIS-Elements Viewer and of OlyVIA (Evident's free viewer), as
   checked on real Nikon and Olympus files: every value matched. For example, a Nikon channel's gain
-  and exposure are under Image Fields, Capturing, and its laser power under Description.
+  and exposure are under Image Fields, Capturing, and its laser power under Description. For older
+  FluoView files, where every value is in the image's properties, one line says so instead of six.
 - Nikon N-SIM files: the reporter's laser line and power are read (for example 488nm@30), as the N-SIM
   records them only in the channel's camera settings. Before, two SIM sessions at different laser
   power shared a settings group. Found by comparing wormscore with what a dataset's authors wrote.
@@ -67,8 +68,8 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
   settings groups. Projects with Zeiss, FV3000 or OME-TIFF images whose time is in UTC and that use
   the flat-field correction. Nothing changes until Scan data runs again. If a new scan moves coded images
   to another day, the Build card says so; choose the slide images again so theirs are read the same way.
-  Images already scored keep the correction they were scored with. The date shown in Browse and
-  `imaging_date` follow the next Scan data and Build.
+  Images already scored keep the correction they were scored with, and their `imaging_date` keeps the
+  recorded day. For the other images, `imaging_date` follows the next Scan data and Build.
 
 ## 1.26.19
 

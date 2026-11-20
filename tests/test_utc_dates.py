@@ -200,3 +200,13 @@ def test_the_n_sim_laser_power_is_read():
     assert readers._nikon_sim_lasers(_SimFile({"0": on}), 0) == ["488nm@30"]
     assert readers._nikon_sim_lasers(_SimFile({}), 0) == []
     assert readers._nikon_sim_lasers(object(), 0) == []
+
+
+class _Broken:
+    def unstructured_metadata(self, include=None):
+        raise OSError("a damaged chunk")
+
+
+def test_the_n_sim_probe_never_fails_an_image():
+    """Any error reading the camera settings leaves the image readable (found by review, 20 November 2026)."""
+    assert readers._nikon_sim_lasers(_Broken(), 0) == []

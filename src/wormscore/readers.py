@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import struct
+import warnings
 import xml.etree.ElementTree as ET
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -634,7 +635,8 @@ def _zeiss_meta(md, cfg):
     # wormscore against what two datasets' authors wrote: Zenodo 7994589, "scan magnification: 0.6").
     before = text("Zoom").replace(",", ".")
     scan = None if _BEFORE.get() else _num(text("ZoomX").replace(",", "."))
-    zoom = f"{round(scan, 4):g}" if scan else before
+    # a scan zoom equal to the old value keeps the old text ("1.0"), so its session does not move (found by review)
+    zoom = before if not scan or _num(before) == round(scan, 4) else f"{round(scan, 4):g}"
     return {"system": system, "objective": objective, "pixel_um": round(scale.get("X", 0), 4),
             "z_step_um": round(scale.get("Z", 0), 3), "bits": int(bits), "channel_roles": roles, "channel_names": names,
             "settings": _zeiss_settings(chans[mi], md) if mi is not None else "",
@@ -997,15 +999,18 @@ def _nikon_sim_lasers(f, index):
     N-SIM records them only in the channel's camera settings (NSimLaser488Power), not in the description
     text the other Nikon systems use, so two SIM sessions at another laser power shared a settings group.
     Checked against Zenodo 15046688, whose authors write "488nm of excitation with 30% laser power"."""
+    # an extra: any error here leaves the image as 1.26.19 read it, never unreadable (found by review)
     try:
-        planes = f.unstructured_metadata(include={"ImageMetadataSeqLV|0"})["ImageMetadataSeqLV|0"]["SLxPictureMetadata"]["PicturePlanes"]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")     # nd2 warns when a file has no such block (most files)
+            planes = f.unstructured_metadata(include={"ImageMetadataSeqLV|0"})["ImageMetadataSeqLV|0"]["SLxPictureMetadata"]["PicturePlanes"]
         sample = planes["SampleSetting"]
         sample = sample[index] if isinstance(sample, list) else sample.get(str(index), sample.get(index, sample))
         props = sample["CameraSetting"]["PropertiesFast"]
-    except (KeyError, IndexError, TypeError, AttributeError, ValueError):
+        return [f"{int(m.group(1))}nm@{float(v):g}" for k, v in sorted(props.items())
+                for m in [re.fullmatch(r"NSimLaser(\d+)Power", str(k))] if m and isinstance(v, (int, float)) and v > 0]
+    except Exception:
         return []
-    return [f"{int(m.group(1))}nm@{float(v):g}" for k, v in sorted(props.items())
-            for m in [re.fullmatch(r"NSimLaser(\d+)Power", str(k))] if m and isinstance(v, (int, float)) and v > 0]
 
 
 def nikon_images(path, cfg):
@@ -1082,6 +1087,16 @@ def _olympus_number(v):
     return float(f"{m.group(1)}.{m.group(2)}") if m else float(v)
 
 
+def _olympus_or_none(v):
+    """_olympus_number, or None for a value that is missing or not a number."""
+    if v is None or v == "":
+        return None
+    try:
+        return _olympus_number(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _olympus_plane_info(f):
     """Objective lines from the first plane's property file (.pty)."""
     fs = f.filesystem
@@ -1124,8 +1139,9 @@ def olympus_images(path, cfg):
     # 1.26.20: the PMT gain when it is not 1x (AnalogPMTGain 1000), and the zoom (ZoomValue), as FV10-ASW shows
     # them; both were left out (found by holding wormscore against S-BIAD1612 and S-BIAD1944: "with gain set
     # at 1000", "with a 3.5x zoom"). Zoom is used only by the flat-field correction.
-    gain = _num(chans[mi].get("AnalogPMTGain")) if mi is not None and not _BEFORE.get() else None
-    zoom = None if _BEFORE.get() else _num(acq.get("ZoomValue"))
+    # (with _olympus_number: a computer set to a decimal comma writes '3,5.0'; found by review)
+    gain = _olympus_or_none(chans[mi].get("AnalogPMTGain")) if mi is not None and not _BEFORE.get() else None
+    zoom = None if _BEFORE.get() else _olympus_or_none(acq.get("ZoomValue"))
     zoom = f"{round(zoom, 4):g}" if zoom else ""
     settings = "; ".join(x for x in [
         f"PMT {chans[mi].get('AnalogPMTVoltage')} V" if mi is not None and chans[mi].get("AnalogPMTVoltage") else "",

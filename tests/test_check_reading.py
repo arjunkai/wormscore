@@ -153,6 +153,18 @@ def test_zeiss_lines_name_what_zen_lite_shows(tmp_path):
     assert max(len(line) for line in rows) <= 72
 
 
+def test_one_place_for_every_value_is_said_once(tmp_path):
+    """FluoView (FV10-ASW) shows every value in the image's properties: one line says so, not one line per
+    value repeating it (seen in the app's dialog, 20 November 2026; the repeated lines were 78 characters)."""
+    path = lif(tmp_path / "one.lif", NAMES[:1])
+    img = K._images(path, K.default_settings(), None)[0]
+    fv = dict(img, format="Olympus FluoView", system="Olympus FLUOVIEW FV1000", settings="HV 600 V; 488nm@5%")
+    text = "\n".join(K.describe(fv, K.default_settings(), path))
+    where = text[text.index("Where to find these in Olympus FluoView"):].split("\n\n")[0].splitlines()
+    assert where[2:] == ["  All of these are " + K.GENERIC + "."]
+    assert max(len(line) for line in where[2:]) <= 72
+
+
 def test_nothing_is_written_anywhere(tmp_path, monkeypatch):
     home_dir, data = tmp_path / "home", tmp_path / "data"
     project = make_demo(tmp_path / "project", n_per_group=1, log=quiet)

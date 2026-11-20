@@ -323,7 +323,11 @@ def describe(img, cfg, path):
         lines += [f"Where to find these in {software}", f"  {how}"]
         if img["acquired"] and "acquired" in where:     # in the order of the values above
             lines.append(_row("Acquired", where["acquired"], 26))
-        lines += [_row(NAMES[v], where[v], 26) for v in shown]
+        places = {where[v] for v in shown}
+        if len(places) == 1 and not (img["acquired"] and "acquired" in where):   # say one place once
+            lines.append(f"  All of these are {places.pop()}.")
+        else:
+            lines += [_row(NAMES[v], where[v], 26) for v in shown]
     else:
         wrote = written_by(path)
         lines.append(NO_VENDOR)

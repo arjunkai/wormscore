@@ -177,3 +177,21 @@ def test_read_as_before_forgets_only_the_names_the_presets_learned():
         assert readers._named_match("C1", "mCitrine", None, None, own)
         assert not readers._named_match("C1", "mCitrine", None, None, preset)
     assert readers._named_match("C1", "mCitrine", None, None, preset)
+
+
+def test_fluoview_zoom_and_gain_written_with_a_decimal_comma(monkeypatch):
+    """FluoView writes numbers as '3,5.0' on a computer set to a decimal comma (see _olympus_number); the zoom
+    was lost there (found by review, 20 November 2026)."""
+    from wormscore import config as C
+
+    class Comma(_FakeOif):
+        def __init__(self, path):
+            super().__init__(path)
+            self.mainfile["Acquisition Parameters Common"]["ZoomValue"] = "3,5.0"
+            self.mainfile["Channel 2 Parameters"]["AnalogPMTGain"] = "2000,0.0"
+    monkeypatch.setattr(readers.oiffile, "OifFile", Comma)
+    monkeypatch.setattr(readers, "_olympus_plane_info", lambda f: {})
+    cfg = C.merge(C.DEFAULTS, {})
+    cfg["marker"] = C.resolve_marker({"preset": "mCherry"})
+    img, = readers.olympus_images("x.oib", C.apply_identity(cfg, None))
+    assert (img["zoom"], img["settings"]) == ("3.5", "PMT 770 V; gain 2x; 488nm@16%")

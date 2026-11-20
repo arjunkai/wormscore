@@ -217,3 +217,17 @@ def test_a_hand_edit_of_between_sessions_is_not_hidden_by_the_recorded_session()
     assert FF.Correction._held(on, 0, row)["factor"] == 1.3
     assert FF.Correction._held(off, 0, row) is None
     assert FF.Correction._held(off, 0, {**row, "session_factor": "1.0"}) is not None
+
+
+def test_a_scan_zoom_equal_to_the_old_value_keeps_its_text():
+    """A detector's Zoom written "1.0" and a scan zoom of 1: nothing changed, so the text stays "1.0" and the
+    image keeps its flat-field session (found by review, 20 November 2026)."""
+    import xml.etree.ElementTree as ET
+    cfg = C.merge(C.DEFAULTS, {})
+    root = zeiss_confocal(800)
+    for info in root.iter("LaserScanInfo"):
+        info.append(ET.fromstring("<ZoomX>1</ZoomX>"))
+    root.find("Metadata").append(ET.fromstring(
+        "<Information><Instrument><Detectors><Detector><Zoom>1.0</Zoom></Detector></Detectors></Instrument></Information>"))
+    meta = readers._zeiss_meta(root, cfg)
+    assert meta["zoom"] == "1.0" and "_zoom_before" not in meta
