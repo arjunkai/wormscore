@@ -893,6 +893,22 @@ def _nikon_settings(description, capturing, name, n_channels, excitation=None):
     return "; ".join(parts)
 
 
+def _nikon_sim_lasers(f, index):
+    """The N-SIM's laser lines that are on, with their power, for channel index (1.26.20): "488nm@30". The
+    N-SIM records them only in the channel's camera settings (NSimLaser488Power), not in the description
+    text the other Nikon systems use, so two SIM sessions at another laser power shared a settings group.
+    Checked against Zenodo 15046688, whose authors write "488nm of excitation with 30% laser power"."""
+    try:
+        planes = f.unstructured_metadata(include={"ImageMetadataSeqLV|0"})["ImageMetadataSeqLV|0"]["SLxPictureMetadata"]["PicturePlanes"]
+        sample = planes["SampleSetting"]
+        sample = sample[index] if isinstance(sample, list) else sample.get(str(index), sample.get(index, sample))
+        props = sample["CameraSetting"]["PropertiesFast"]
+    except (KeyError, IndexError, TypeError, AttributeError, ValueError):
+        return []
+    return [f"{int(m.group(1))}nm@{float(v):g}" for k, v in sorted(props.items())
+            for m in [re.fullmatch(r"NSimLaser(\d+)Power", str(k))] if m and isinstance(v, (int, float)) and v > 0]
+
+
 def nikon_images(path, cfg):
     with _nd2().ND2File(str(path)) as f:
         sizes = dict(f.sizes)
@@ -911,6 +927,9 @@ def nikon_images(path, cfg):
         calibrated = bool(chans[0].volume.axesCalibrated[0])
         text = f.text_info
         bits = f.attributes.bitsPerComponentSignificant
+        # an N-SIM's laser power is not in the description text (only read where that text has no power)
+        sim = ({i: _nikon_sim_lasers(f, i) for i in range(len(chans))}
+               if not re.search(r"Power\s*:", text.get("description") or "") else {})
         positions = []
         for p in range(sizes.get("P", 1)):
             first = next((i for i, ix in enumerate(f.loop_indices) if ix.get("P", 0) == p), 0)
@@ -930,6 +949,8 @@ def nikon_images(path, cfg):
     mi = pick(roles, "MARKER")
     settings = _nikon_settings(text.get("description") or "", capturing, names[mi] if mi is not None else None, len(chans),
                                chans[mi].channel.excitationLambdaNm if mi is not None else None)
+    if mi is not None and sim.get(mi) and "nm@" not in settings:
+        settings = "; ".join(x for x in (settings, ";".join(sim[mi])) if x)
     dims = "".join(sizes)
     out = []
     for p, stage in enumerate(positions):

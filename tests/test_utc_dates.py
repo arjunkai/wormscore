@@ -177,3 +177,26 @@ def test_the_line_stays_after_a_rebuild_until_the_slide_images_are_chosen_again(
     assert LINE in rescan.scan_changes(p)["lines"]
     FF.measure(p, tmp_path / "ref", **QUIET)
     assert rescan.scan_changes(p)["lines"] == []
+
+
+# ------------------------------------------------------------------ the N-SIM's laser power (same release)
+
+class _SimFile:
+    def __init__(self, sample):
+        self.sample = sample
+
+    def unstructured_metadata(self, include=None):
+        return {"ImageMetadataSeqLV|0": {"SLxPictureMetadata": {"PicturePlanes": {"SampleSetting": self.sample}}}}
+
+
+def test_the_n_sim_laser_power_is_read():
+    """As the N-SIM file of Zenodo 15046688 records it; its authors write "488nm of excitation with 30%
+    laser power and 200ms of exposition"."""
+    on = {"CameraSetting": {"PropertiesFast": {"NSimLaser405Power": 0.0, "NSimLaser488Power": 30.0,
+                                               "NSimLaser561Power": 0.0, "NSimExLaserL1Power": 5.0}}}
+    off = {"CameraSetting": {"PropertiesFast": {"NSimLaser561Power": 12.5}}}
+    assert readers._nikon_sim_lasers(_SimFile([on, off]), 0) == ["488nm@30"]
+    assert readers._nikon_sim_lasers(_SimFile([on, off]), 1) == ["561nm@12.5"]
+    assert readers._nikon_sim_lasers(_SimFile({"0": on}), 0) == ["488nm@30"]
+    assert readers._nikon_sim_lasers(_SimFile({}), 0) == []
+    assert readers._nikon_sim_lasers(object(), 0) == []
