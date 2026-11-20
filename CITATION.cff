@@ -5,7 +5,7 @@ authors:
   - family-names: Bansal
     given-names: Arjun
 version: 1.26.20
-date-released: 2026-11-18
+date-released: 2026-11-20
 doi: 10.5281/zenodo.23520610
 license: MIT
 repository-code: "https://github.com/arjunkai/wormscore"
