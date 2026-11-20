@@ -555,7 +555,9 @@ OME-TIFF write the time in UTC (ending in Z); from 1.26.20 it is given in the ti
 that ran Scan data, as OlyVIA shows it, so an evening session keeps its day. A time written with its
 own offset (older FluoView) is the lab's clock and is given as written. Slide images are read this way
 only once the project's images are (a Scan data with 1.26.20 or later); an image already scored keeps
-the session it was scored with.
+the session it was scored with. For a Zeiss laser scanning microscope the zoom is the scan zoom, from
+1.26.20 (before, every image read as zoom 1); slide images are read with it once the project's images
+are, and an image already scored keeps its session.
 
     corrected = (raw - dark) / flat x factor + mean(dark)
 

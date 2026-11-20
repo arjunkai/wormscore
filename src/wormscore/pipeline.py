@@ -41,7 +41,7 @@ INVENTORY_FIELDS = [
     "local_path", "original_path", "file_sha256", "objective", "n_z", "n_t", "width", "height", "pixel_um",
     "z_step_um", "bits", "channel_names", "channel_roles", "marker_channel", "bf_channel", "settings", "zoom",
     "acquired", "acquired_day", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes",
-    "pixel_sha256",
+    "pixel_sha256", "scanned_with",
 ]
 
 
@@ -115,7 +115,9 @@ def inventory(project, log=print, progress=None):
                      "stage_x": "" if img["stage_x"] is None else round(img["stage_x"], 2),
                      "stage_y": "" if img["stage_y"] is None else round(img["stage_y"], 2),
                      "flags": flags, "reader_kind": rk[0], "reader_index": rk[2],
-                     "reader_axes": rk[3] if len(rk) > 3 else "", "pixel_sha256": pixels})
+                     "reader_axes": rk[3] if len(rk) > 3 else "", "pixel_sha256": pixels,
+                     # 1.26.20: the version that scanned, so a later reading rule can tell an inventory from before it
+                     "scanned_with": __version__})
     # Settings that differ from the most common value on the same microscope.
     for system in {r["system"] for r in rows}:
         same = [r for r in rows if r["system"] == system]

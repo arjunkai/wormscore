@@ -562,10 +562,17 @@ def _zeiss_meta(md, cfg):
         if bits == "16":
             flags = _no_bits_flag(system, cfg, 65535)
     flags = flags + other_fluorophore(roles, fluors, cfg)
+    # 1.26.20: the scan zoom of a laser scanning microscope (LaserScanInfo/ZoomX, as ZEN shows it). The first
+    # element named Zoom, read before, is a detector's and is 1 whatever the scan zoom (found by holding
+    # wormscore against what two datasets' authors wrote: Zenodo 7994589, "scan magnification: 0.6").
+    before = text("Zoom").replace(",", ".")
+    scan = _num(text("ZoomX").replace(",", "."))
+    zoom = f"{round(scan, 4):g}" if scan else before
     return {"system": system, "objective": objective, "pixel_um": round(scale.get("X", 0), 4),
             "z_step_um": round(scale.get("Z", 0), 3), "bits": int(bits), "channel_roles": roles, "channel_names": names,
             "settings": _zeiss_settings(chans[mi], md) if mi is not None else "",
-            "zoom": text("Zoom").replace(",", "."), "acquired": text("AcquisitionDateAndTime"),      # ISO, as written
+            "zoom": zoom, "acquired": text("AcquisitionDateAndTime"),      # ISO, as written
+            **({"_zoom_before": before} if zoom != before else {}),
             "flags": flags}
 
 
@@ -588,6 +595,7 @@ def zeiss_images(path, cfg):
             "pixel_um": meta["pixel_um"], "z_step_um": meta["z_step_um"],
             "bits": meta["bits"], "channel_roles": meta["channel_roles"], "channel_names": meta["channel_names"],
             "settings": meta["settings"], "zoom": meta["zoom"],
+            **({"_zoom_before": meta["_zoom_before"]} if "_zoom_before" in meta else {}),
             "stage_x": None, "stage_y": None, "flags": list(meta["flags"]) + _extra_axes_flags(dims.replace("0", ""), [n for a, n in zip(dims, shape) if a != "0"]),
             "_reader": ("czi", str(path), i, dims),
         }, meta["acquired"]))
@@ -841,9 +849,30 @@ def _nikon_block(description, name, n_channels):
     if len(blocks) > 1:
         tail = re.split(r"^\s*(?:Time Loop|Z Stack Loop|XY Loop|Multipoint Loop)\b", blocks[-1], flags=re.M)[0]
         mine = [b for b in blocks[1:-1] + [tail] if re.search(r"^\s*Name:\s*(.*?)\s*$", b, re.M)
-                and re.search(r"^\s*Name:\s*(.*?)\s*$", b, re.M).group(1) == name]
+                and re.search(r"^\s*Name:\s*(.*?)\s*$", b, re.M).group(1) == name.strip()]   # " mCherry" (1.26.20)
         return mine[0] if len(mine) == 1 else None
     return text if n_channels == 1 and text.strip() else None
+
+
+def _without_closed_sources(block):
+    """The channel's description without the laser lines of a light source whose shutter is closed (1.26.20):
+    "NIDAQ, Shutter(AOTF): Closed" then "NIDAQ, MultiLaser(AOTF): Line:1; ExW:488; Power:100.0; On". Such a
+    line lit nothing but was read as in use, so a source left on behind a closed shutter could split one
+    session into two settings groups. Found in a Ti2 file with three light sources (Zenodo 18609221)."""
+    closed = {(d.strip(), n) for d, n in re.findall(r"^\s*([^,\n]+),\s*Shutter\(([^)]*)\):\s*Closed\s*$", block, re.M)}
+    if not closed:
+        return block
+    out, skip = [], False
+    for line in block.split("\n"):
+        source = re.match(r"^\s*([^,\n]+),\s*MultiLaser\(([^)]*)\):\s*$", line)
+        if source:
+            skip = (source.group(1).strip(), source.group(2)) in closed
+        elif not re.match(r"^\s*Line:", line):
+            skip = skip and not line.strip()      # a blank line does not end the source's list (found by review)
+        elif skip:
+            continue
+        out.append(line)
+    return "\n".join(out)
 
 
 A1_CHANNEL = re.compile(r"CH(\d+)\s*\{Laser Wavelength\}:\s*([\d.]+)\s*\{Laser Power\}:\s*([\d.]+)"
@@ -879,7 +908,8 @@ def _nikon_settings(description, capturing, name, n_channels, excitation=None):
         return "; ".join(f"{k.lower()} {v.strip()}" for k, v in re.findall(CAMERA_LINE, capturing))
     # some files list the camera once for all channels, under the first: then the file's camera text stands
     parts = [f"{k.lower()} {v.strip()}" for k, v in re.findall(CAMERA_LINE, block) or re.findall(CAMERA_LINE, capturing)]
-    lines = re.findall(r"Line:\s*\d+;\s*(?:ExW|Excitation wavelength):\s*([\d.]+);[^\n]*?Power:\s*([\d.]+)(?:;\s*(\w+))?", block)
+    lines = re.findall(r"Line:\s*\d+;\s*(?:ExW|Excitation wavelength):\s*([\d.]+);[^\n]*?Power:\s*([\d.]+)(?:;\s*(\w+))?",
+                       _without_closed_sources(block))
     marked = any(state for _, _, state in lines)       # some files mark the lines in use (Active, On), some list only those
     lasers = [f"{float(w):g}nm@{float(p):g}" for w, p, state in lines
               if float(p) > 0 and (state in ("Active", "On") if marked else True)]

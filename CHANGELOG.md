@@ -20,6 +20,24 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
 - Nikon N-SIM files: the reporter's laser line and power are read (for example 488nm@30), as the N-SIM
   records them only in the channel's camera settings. Before, two SIM sessions at different laser
   power shared a settings group. Found by comparing wormscore with what a dataset's authors wrote.
+- Zeiss laser scanning microscopes: the scan zoom is read (as ZEN shows it); before, every image read as
+  zoom 1, the value of a detector's setting. Only the flat-field correction uses zoom: images at
+  different scan zooms could be matched with slide images taken at another zoom.
+- Nikon: a channel whose name starts with a space (" mCherry") had the exposures of all channels as its
+  settings; it now has its own. A light source left on behind a closed shutter is no longer counted as
+  in use, so it cannot split a session into two settings groups.
+- A new project that chose its slide images before its first Scan data read them as an older version
+  would have (Leica slide images without a date since 1.26.18; day-first dates; and now UTC times and
+  Zeiss zoom), so its images could miss their own session. With nothing scanned yet, slide images are
+  now read as the images will be. Found by review.
+- These three, and the N-SIM laser below, were found by reading 21 public datasets and comparing what
+  wormscore reads with what their authors wrote about the acquisition.
+- **Who is affected:** Zeiss confocal projects with the flat-field correction: nothing changes until Scan
+  data runs again; then, for images at a scan zoom other than 1, the Build card asks to choose the slide
+  images again; images already scored keep their correction. Nikon projects with such channel names or
+  light sources: after the next Scan data their settings text is shorter or corrected, and the Build
+  card shows any images that move to another settings group. inventory.csv gets a column,
+  `scanned_with`, the version that ran Scan data.
 - **Who is affected:** Nikon N-SIM projects: after the next Scan data the settings text names the
   laser, and if their images were taken at different powers the Build card shows them moving to new
   settings groups. Projects with Zeiss, FV3000 or OME-TIFF images whose time is in UTC and that use

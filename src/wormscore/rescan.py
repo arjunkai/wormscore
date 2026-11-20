@@ -175,6 +175,26 @@ def scan_changes(project, cfg=None):
         if leica:
             out["lines"] += [f"the flat-field imaging day of {leica} coded Leica image{'s' if leica != 1 else ''} is now "
                              f"read from the file; choose the slide images again so theirs are read the same way"]
+        # 1.26.20: a Zeiss laser scanning microscope's scan zoom is read (before, a detector's: 1). An image
+        # whose zoom the slide images were not read with: slide images of its settings and objective at
+        # another zoom, none at its own; until they are chosen again (the summary then says scan_zoom), also
+        # after a rebuild. Counted from the sessions, not the value, so a zoom that did not change is never
+        # counted (found by review)
+        from .flatfield import session_key
+        sessions = [] if (summary(project) or {}).get("scan_zoom") else (summary(project) or {}).get("sessions") or []
+
+        def other_zoom(s):
+            system, settings, _ = session_key({k: v for k, v in s.items() if k != DAY_COLUMN})
+            plain = " | ".join(x for x in (str(s.get("settings") or ""), str(s.get("objective") or "")) if x)
+            mine = [x for x in sessions if x.get("system") == system]
+            return not any(x.get("settings") == settings for x in mine) and any(
+                x.get("settings") != settings and (not plain or x.get("settings") == plain
+                                                    or str(x.get("settings")).startswith(plain + " | "))
+                for x in mine)
+        zoomed = sum(1 for r, s in pairs if s.get("format") == "Zeiss CZI" and other_zoom(s))
+        if zoomed:
+            out["lines"] += [f"the flat-field zoom of {zoomed} coded Zeiss image{'s' if zoomed != 1 else ''} is now the "
+                             f"scan zoom; choose the slide images again so theirs are read the same way"]
         if utc:
             out["lines"] += [f"the flat-field imaging day of {utc} coded image{'s' if utc != 1 else ''} changes: the file "
                              f"records the time in UTC, now read in this computer's time zone; choose the slide images "
