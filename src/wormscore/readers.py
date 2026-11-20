@@ -16,6 +16,8 @@ import os
 import re
 import struct
 import xml.etree.ElementTree as ET
+from contextlib import contextmanager
+from contextvars import ContextVar
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 from pathlib import Path
@@ -96,9 +98,36 @@ def marker_from_leica(ch, lut, cfg):
     return "OTHER"
 
 
+# 1.26.20 changed how files are read (see as_before). Until a project's images are scanned with it, its
+# slide images are read as 1.26.19 read them, so choosing them again changes nothing (found by review).
+_BEFORE = ContextVar("read_as_1_26_19", default=False)
+
+
+@contextmanager
+def as_before():
+    """Read files as 1.26.19 did: no scan zoom, PMT gain or lifetime channels; Nikon and Leica settings and
+    UTC times as then; the fluorophore names added since unknown."""
+    token = _BEFORE.set(True)
+    try:
+        yield
+    finally:
+        _BEFORE.reset(token)
+
+
+def _dyes(m):
+    """A marker's dye names; read as 1.26.19 (as_before), a preset's own list without the names added in
+    1.26.20. A list the project wrote itself is kept whole (found by review)."""
+    names = list((m or {}).get("dye_names") or [])
+    if _BEFORE.get() and (names == list(C.DEFAULTS["marker"]["dye_names"])
+                          or any(names == list(p["dye_names"]) for p in C.PRESETS.values())):
+        return [d for d in names if d not in C.DYE_NAMES_1_26_20]
+    return names
+
+
 def _named_match(name, fluor, excitation, emission, m):
     em = m.get("emission_nm")
-    return bool((fluor and fluor in m["dye_names"])
+    dyes = _dyes(m)
+    return bool((fluor and fluor in dyes)
                 or any(name.upper().startswith(p.upper()) for p in m["channel_name_prefixes"])
                 or (excitation and int(float(excitation)) in m["excitation_nm"])
                 or (emission and em and em[0] <= float(emission) <= em[1]))
@@ -155,7 +184,7 @@ def prefer_named_dye(roles, fluors, cfg):
         if not m:
             continue
         hits = [i for i, r in enumerate(roles) if r == role]
-        named = [i for i in hits if fluors[i] and fluors[i] in m["dye_names"]]
+        named = [i for i in hits if fluors[i] and fluors[i] in _dyes(m)]
         if len(hits) > 1 and len(named) == 1:
             roles = ["OTHER" if r == role and i != named[0] else r for i, r in enumerate(roles)]
     return roles
@@ -169,13 +198,13 @@ def other_fluorophore(roles, fluors, cfg):
     for role, m in (("MARKER", cfg["marker"]), ("IDENTITY", cfg.get("identity"))):
         i = pick(roles, role) if m else None
         dye = str(fluors[i] or "").strip() if i is not None and i < len(fluors) else ""
-        own = {str(d).casefold() for d in m.get("dye_names") or []} if m else set()
+        own = {str(d).casefold() for d in _dyes(m)} if m else set()
         if not dye or dye.casefold() in own:
             continue
         # only another colour: a relative excited by the same lines (EGFP in an mNeonGreen project) is not
         # flagged, or a lab whose software has no entry for its fluorophore sees it on every image
         lines = {int(float(x)) for x in m.get("excitation_nm") or []}
-        if any(dye.casefold() in {d.casefold() for d in p["dye_names"]} and not own & {d.casefold() for d in p["dye_names"]}
+        if any(dye.casefold() in {d.casefold() for d in _dyes(p)} and not own & {d.casefold() for d in _dyes(p)}
                and not lines & set(p["excitation_nm"]) for p in C.PRESETS.values()):
             out.append(f"the {m['label']} channel is named {dye} in the file (another fluorophore): check the channel roles")
     return out
@@ -211,7 +240,7 @@ def named_extras(roles, cfg, names, fluors, excitations, emissions):
 def _strong_match(name, fluor, emission, m):
     """A match on more than the laser line: the dye name, the channel name, or the emission wavelength."""
     em = m.get("emission_nm")
-    return bool((fluor and fluor in m["dye_names"])
+    return bool((fluor and fluor in _dyes(m))
                 or any(name.upper().startswith(p.upper()) for p in m["channel_name_prefixes"])
                 or (emission and em and em[0] <= float(emission) <= em[1]))
 
@@ -344,15 +373,26 @@ def _leica_channels(elem):
         master = None
     m_bands = {b.get("Channel"): b for b in master.iter("MultiBand")} if master is not None else {}
     m_dets = {d.get("Channel"): d for d in master.iter("Detector")} if master is not None else {}
+    # 1.26.20: a TCS SP5 step can list the same detector and laser line several times, element for element
+    # the same (S-BIAD1480: one PMT and one 405 nm line, three times each); a copy is read once. Before, the
+    # copies counted as more detectors than channels and the channels were left unresolved.
+    # A laser line's copies can differ in display flags only (IsChecked, IsLineDeactivated; a 2015 SP8X file,
+    # Zenodo 13752242): the same line, index and intensity is one line.
+    once = lambda els: list({tuple(sorted(e.attrib.items())): e for e in els}.values())
+    # (the Qualifier tells a visible from a UV laser: two lasers at one line are never one, found by review)
+    line_once = lambda els: list({(e.get("LaserLine"), e.get("LineIndex"), e.get("Qualifier"), e.get("IntensityDev")): e
+                                  for e in els}.values())
+    if _BEFORE.get():
+        once = line_once = list
     lines = lambda s: [(l.get("LaserLine"), float(l.get("IntensityDev") or 0))
-                       for l in s.iter("LaserLineSetting") if float(l.get("IntensityDev") or 0) > 0]
+                       for l in line_once(s.iter("LaserLineSetting")) if float(l.get("IntensityDev") or 0) > 0]
     chans = []
     for s in steps:
         lasers = lines(s)
         if master is not None and next(s.iter("LaserLineSetting"), None) is None:
             lasers = lines(master)                  # a step that lists no laser lines at all
         bands = {b.get("Channel"): b for b in s.iter("MultiBand")}
-        for d in s.iter("Detector"):
+        for d in once(s.iter("Detector")):
             if d.get("IsActive") != "1":
                 continue
             band = bands.get(d.get("Channel"), m_bands.get(d.get("Channel")))
@@ -407,7 +447,7 @@ def _iso_acquired(text):
     clock already and is given as before, as is a time without a zone."""
     import datetime as dt
     before = text[:19].replace("T", " ")
-    if not text.endswith("Z") or len(text) < 19:
+    if not text.endswith("Z") or len(text) < 19 or _BEFORE.get():
         return before, before
     try:
         when = dt.datetime.strptime(before, "%Y-%m-%d %H:%M:%S").replace(tzinfo=dt.timezone.utc)
@@ -425,6 +465,27 @@ def _with_acquired(img, text):
     return img
 
 
+LIFETIME_CHANNELS = ("MeanArrivalTime",)
+
+
+def _leica_without_lifetime(elem, chans):
+    """The detector of each channel, None for a lifetime channel that LAS X computed (1.26.20), or None if
+    that cannot be told. A STELLARIS with TauContrast adds to each photon-counting channel a channel of mean
+    arrival times (ChannelType MeanArrivalTime, in seconds): more channels than detectors, so no channel was
+    resolved and such files could not be used (S-BIAD961). The other channels are given their detectors
+    only if each names the same detector, in the same order, as the scan settings list them."""
+    descs = list(elem.iter("ChannelDescription"))
+    props = [{p.findtext("Key"): p.findtext("Value") for p in c.iter("ChannelProperty")} for c in descs]
+    computed = [p.get("ChannelType") in LIFETIME_CHANNELS for p in props]
+    measured = [p for p, c in zip(props, computed) if not c]
+    if not any(computed) or len(measured) != len(chans):
+        return None
+    if [(p.get("DetectorName") or "").strip() for p in measured] != [(c["detector"] or "").strip() for c in chans]:
+        return None
+    it = iter(chans)
+    return [None if c else next(it) for c in computed]
+
+
 def leica_images(path, cfg):
     lf = _lif(path)
     system = next((a.get("SystemTypeName") for a in lf.xml_element.iter("Attachment") if a.get("SystemTypeName")), "")
@@ -434,14 +495,20 @@ def leica_images(path, cfg):
         luts = [c.get("LUTName") for c in elem.iter("ChannelDescription")]
         chans = _leica_channels(elem)
         flags = _extra_axes_flags([a for a, _ in im["extra"]], [v for _, v in im["extra"]])
-        if len(chans) == im["channels"]:
-            roles = [marker_from_leica(c, l, cfg) for c, l in zip(chans, luts)]
-            roles = with_extras(roles, cfg, lambda i, m: _leica_match(chans[i], luts[i], m))
+        at = chans if len(chans) == im["channels"] else None if _BEFORE.get() else _leica_without_lifetime(elem, chans)
+        if at is not None and len(at) != im["channels"]:
+            at = None           # the descriptions found are not this image's channels (found by review)
+        if at is not None:
+            roles = [marker_from_leica(c, l, cfg) if c is not None else "OTHER" for c, l in zip(at, luts)]
+            roles = with_extras(roles, cfg, lambda i, m: at[i] is not None and _leica_match(at[i], luts[i], m))
+            computed = sum(1 for c in at if c is None)
+            if computed:
+                flags.append(f"{computed} lifetime channel{'s' if computed != 1 else ''} computed by LAS X, not scored")
         else:
             roles = ["UNRESOLVED"] * im["channels"]
             flags.append(f"{len(chans)} detectors for {im['channels']} channels")
         mi = pick(roles, "MARKER")
-        g = chans[mi] if mi is not None else {}
+        g = at[mi] if mi is not None else {}
         sx, sz = im["scale_x"], im["scale_z"]
         bits = max(im["bit_depth"])
         out.append({
@@ -566,7 +633,7 @@ def _zeiss_meta(md, cfg):
     # element named Zoom, read before, is a detector's and is 1 whatever the scan zoom (found by holding
     # wormscore against what two datasets' authors wrote: Zenodo 7994589, "scan magnification: 0.6").
     before = text("Zoom").replace(",", ".")
-    scan = _num(text("ZoomX").replace(",", "."))
+    scan = None if _BEFORE.get() else _num(text("ZoomX").replace(",", "."))
     zoom = f"{round(scan, 4):g}" if scan else before
     return {"system": system, "objective": objective, "pixel_um": round(scale.get("X", 0), 4),
             "z_step_um": round(scale.get("Z", 0), 3), "bits": int(bits), "channel_roles": roles, "channel_names": names,
@@ -849,7 +916,7 @@ def _nikon_block(description, name, n_channels):
     if len(blocks) > 1:
         tail = re.split(r"^\s*(?:Time Loop|Z Stack Loop|XY Loop|Multipoint Loop)\b", blocks[-1], flags=re.M)[0]
         mine = [b for b in blocks[1:-1] + [tail] if re.search(r"^\s*Name:\s*(.*?)\s*$", b, re.M)
-                and re.search(r"^\s*Name:\s*(.*?)\s*$", b, re.M).group(1) == name.strip()]   # " mCherry" (1.26.20)
+                and re.search(r"^\s*Name:\s*(.*?)\s*$", b, re.M).group(1) == (name if _BEFORE.get() else name.strip())]   # " mCherry" (1.26.20)
         return mine[0] if len(mine) == 1 else None
     return text if n_channels == 1 and text.strip() else None
 
@@ -859,6 +926,8 @@ def _without_closed_sources(block):
     "NIDAQ, Shutter(AOTF): Closed" then "NIDAQ, MultiLaser(AOTF): Line:1; ExW:488; Power:100.0; On". Such a
     line lit nothing but was read as in use, so a source left on behind a closed shutter could split one
     session into two settings groups. Found in a Ti2 file with three light sources (Zenodo 18609221)."""
+    if _BEFORE.get():
+        return block
     closed = {(d.strip(), n) for d, n in re.findall(r"^\s*([^,\n]+),\s*Shutter\(([^)]*)\):\s*Closed\s*$", block, re.M)}
     if not closed:
         return block
@@ -892,7 +961,7 @@ def _nikon_confocal(block, excitation):
     parts = [f"{w:g}nm@{pw:g}" + (f" HV {float(hv):g}" if hv else "") for w, pw, hv in (mine if len(mine) == 1 else found)]
     avg = re.search(r"\{Line Average/Integrate Count\}:\s*(\d+)", block)
     mode = re.search(r"\{Line Average Mode\}:\s*(\w+)", block)
-    if avg:
+    if avg and (_BEFORE.get() or avg.group(1) != "0" and not (mode and mode.group(1) == "None")):     # "line none 0" (1.26.20)
         parts.append(f"line {mode.group(1).lower() if mode else 'average'} {avg.group(1)}")
     return parts
 
@@ -959,7 +1028,7 @@ def nikon_images(path, cfg):
         bits = f.attributes.bitsPerComponentSignificant
         # an N-SIM's laser power is not in the description text (only read where that text has no power)
         sim = ({i: _nikon_sim_lasers(f, i) for i in range(len(chans))}
-               if not re.search(r"Power\s*:", text.get("description") or "") else {})
+               if not _BEFORE.get() and not re.search(r"Power\s*:", text.get("description") or "") else {})
         positions = []
         for p in range(sizes.get("P", 1)):
             first = next((i for i, ix in enumerate(f.loop_indices) if ix.get("P", 0) == p), 0)
@@ -1052,8 +1121,15 @@ def olympus_images(path, cfg):
         if mag else lens
     lasers = [(acq.get(f"LaserWavelength{i:02d}"), acq.get(f"LaserTransmissivity{i:02d}"))
               for i in range(1, int(acq.get("Number of use Laser", 0) or 0) + 1)]
+    # 1.26.20: the PMT gain when it is not 1x (AnalogPMTGain 1000), and the zoom (ZoomValue), as FV10-ASW shows
+    # them; both were left out (found by holding wormscore against S-BIAD1612 and S-BIAD1944: "with gain set
+    # at 1000", "with a 3.5x zoom"). Zoom is used only by the flat-field correction.
+    gain = _num(chans[mi].get("AnalogPMTGain")) if mi is not None and not _BEFORE.get() else None
+    zoom = None if _BEFORE.get() else _num(acq.get("ZoomValue"))
+    zoom = f"{round(zoom, 4):g}" if zoom else ""
     settings = "; ".join(x for x in [
         f"PMT {chans[mi].get('AnalogPMTVoltage')} V" if mi is not None and chans[mi].get("AnalogPMTVoltage") else "",
+        f"gain {gain / 1000:g}x" if gain and gain != 1000 else "",
         ";".join(f"{w}nm@{_olympus_number(t):g}%" for w, t in lasers if w and t is not None),
         f"{acq.get('IntegrationType')} {acq.get('IntegrationCount')}" if acq.get("IntegrationType") not in (None, "None") else ""] if x)
     system = md.get("Version Info", {}).get("SystemName", "") or acq.get("Acquisition Device", "")
@@ -1063,7 +1139,8 @@ def olympus_images(path, cfg):
         "n_z": size.get("Z", 1), "n_t": size.get("T", 1), "width": size["X"], "height": size["Y"],
         "pixel_um": round(_olympus_number(ref.get("WidthConvertValue", 0)), 4), "z_step_um": round(z_step, 3),
         "bits": int(ref.get("ValidBitCounts") or 16), "channel_roles": roles, "channel_names": names,
-        "settings": settings, "zoom": "", "acquired": str(acq.get("ImageCaputreDate", "")),
+        "settings": settings, "zoom": zoom, **({"_zoom_before": ""} if zoom else {}),
+        "acquired": str(acq.get("ImageCaputreDate", "")),
         "stage_x": None, "stage_y": None, "_reader": ("oif", str(path), 0, axes),
         "flags": _extra_axes_flags(axes, shape) + other_fluorophore(roles, [c.get("DyeName") for c in chans], cfg),
     }]

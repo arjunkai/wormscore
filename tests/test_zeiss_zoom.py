@@ -77,7 +77,7 @@ def existing(root):
     return p
 
 
-LINE = ("the flat-field zoom of 4 coded Zeiss images is now the scan zoom; choose the slide images again so "
+LINE = ("the flat-field zoom of 4 coded images is now the scan zoom; choose the slide images again so "
         "theirs are read the same way")
 
 
@@ -157,3 +157,63 @@ def test_a_zoom_that_did_not_change_is_not_reported(tmp_path, monkeypatch):
     p = existing(tmp_path)
     pipeline.inventory(p, **QUIET)
     assert rescan.scan_changes(p)["lines"] == []
+
+
+# ------------------------------------------------------------------ any reading change (found by review)
+
+@pytest.fixture
+def gain(monkeypatch):
+    """The demo's files read as FV1000 files at PMT gain 2x: this version adds "gain 2x" to the settings,
+    1.26.19 (and readers.as_before) did not."""
+    state = {"new": False}
+    real = readers.images_in
+
+    def images_in(path, cfg, source=None):
+        found = real(path, cfg, source)
+        new = state["new"] and not readers._BEFORE.get()
+        for img in found:
+            img["format"] = "Olympus FluoView"
+            img["settings"] = "PMT 770 V" + ("; gain 2x" if new else "") + "; 561nm@23%"
+        return found
+    monkeypatch.setattr(readers, "images_in", images_in)
+    return state
+
+
+def test_slide_images_chosen_again_before_a_new_scan_read_as_before(tmp_path, gain):
+    p = existing(tmp_path)
+    sessions = (p / "outputs" / "flat_field" / "sessions.csv").read_bytes()
+    gain["new"] = True
+    FF.measure(p, tmp_path / "ref", **QUIET)
+    assert (p / "outputs" / "flat_field" / "sessions.csv").read_bytes() == sessions
+    pipeline.prepare(p, **QUIET)
+    assert {r["flat_field"] for r in by_name(p).values()} == {"same session"}
+
+
+def test_scored_images_keep_their_recorded_session_whatever_a_new_reading_says(tmp_path, gain):
+    p = existing(tmp_path)
+    blind = blind_files(p)
+    key = {r["code"]: (r["imaging_session"], r["flat_field"]) for r in read_csv(p / "key" / "key.csv")}
+    pr = server.Project(p)
+    for r in read_csv(p / "key" / "key.csv"):
+        pr.save_score(r["code"], dict(SCORE))
+    gain["new"] = True
+    pipeline.inventory(p, **QUIET)
+    for _ in range(2):
+        said = []
+        pipeline.prepare(p, log=said.append)
+        assert blind_files(p) == blind
+        assert not any("this build changes the flat-field correction" in s for s in said)
+        assert {r["code"]: (r["imaging_session"], r["flat_field"]) for r in read_csv(p / "key" / "key.csv")} == key
+
+
+def test_a_hand_edit_of_between_sessions_is_not_hidden_by_the_recorded_session():
+    """Found by review: the recorded session must not hide a correction set otherwise by hand (the factor
+    key.csv recorded no longer agrees, so the image is not held and the build warns as before)."""
+    from types import SimpleNamespace
+    ses = {"index": 0, "system": "s", "settings": "x", "day": "", "factor": 1.3}
+    row = {"flat_field": FF.SAME, "session_factor": "1.3"}
+    on = SimpleNamespace(ff={"between_sessions": True}, sessions=[ses], arrays={})
+    off = SimpleNamespace(ff={"between_sessions": False}, sessions=[ses], arrays={})
+    assert FF.Correction._held(on, 0, row)["factor"] == 1.3
+    assert FF.Correction._held(off, 0, row) is None
+    assert FF.Correction._held(off, 0, {**row, "session_factor": "1.0"}) is not None

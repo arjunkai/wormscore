@@ -157,7 +157,13 @@ def measure(project, folder, kind, log=print):
     for path in files:
         rel = str(path.relative_to(folder))
         try:
-            images = R.images_in(path, cfg, source)
+            # 1.26.20: read as the project's images were scanned (see flatfield._images)
+            from .flatfield import zoom_from_scan
+            if zoom_from_scan(project):
+                images = R.images_in(path, cfg, source)
+            else:
+                with R.as_before():
+                    images = R.images_in(path, cfg, source)
         except Exception as exc:       # one unreadable file is reported, not fatal
             skipped.append(f"{rel}: could not be read ({type(exc).__name__})")
             continue

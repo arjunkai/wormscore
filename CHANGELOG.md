@@ -30,8 +30,32 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
   would have (Leica slide images without a date since 1.26.18; day-first dates; and now UTC times and
   Zeiss zoom), so its images could miss their own session. With nothing scanned yet, slide images are
   now read as the images will be. Found by review.
-- These three, and the N-SIM laser below, were found by reading 21 public datasets and comparing what
+- Leica TCS SP5 and older SP8 files: a sequential step that lists its detector or laser line several
+  times (an SP5 lists them three times) is read once. Before, such files had more detectors than
+  channels, so no channel was resolved and their images could not be used; a laser line could also
+  appear twice in the settings text.
+- Leica STELLARIS with TauContrast or other lifetime imaging: the lifetime channels LAS X computes (mean
+  arrival times) are set aside, with a note, and the measured channels are given their detectors when each
+  names the same detector as the scan settings. Before, such files had more channels than detectors and
+  could not be used.
+- The presets know more names for their fluorophores, as files and worm labs write them: YFP also as
+  TagYFP, TaYFP and mCitrine; mScarlet also as wrmScarlet; GFP (and the default reporter) also as sfGFP
+  and mEGFP. A channel named so was read as another fluorophore and not used as the reporter.
+- Olympus FluoView FV1000 (.oib, .oif): the zoom and the PMT gain (when not 1x) are read, as FV10-ASW
+  shows them. Nikon confocal: line averaging that is off ("line none 0") is left out of the settings.
+- Whatever these readings change, an existing project corrects as before until Scan data runs again: its
+  slide images, even if chosen again, are read as 1.26.19 read them. After the new Scan data, an image
+  already scored keeps the slide images it was scored with (the session each build records for its code),
+  through any number of builds. Found by review.
+- These, and the N-SIM laser below, were found by reading 21 public datasets and comparing what
   wormscore reads with what their authors wrote about the acquisition.
+- **Who is affected:** projects whose reporter is named as above, and STELLARIS projects with lifetime
+  channels: after the next Scan data their images can have a reporter where they had none.
+- **Who is affected:** Leica SP5 or older SP8 projects with sequential scans: after the next Scan data,
+  images whose channels were not resolved can be used, and some settings texts lose a repeated laser
+  line (the Build card shows any moves between settings groups). FV1000 projects: after the next Scan
+  data the settings name a PMT gain other than 1x, and the zoom is handled for the flat-field
+  correction as for Zeiss below.
 - **Who is affected:** Zeiss confocal projects with the flat-field correction: nothing changes until Scan
   data runs again; then, for images at a scan zoom other than 1, the Build card asks to choose the slide
   images again; images already scored keep their correction. Nikon projects with such channel names or

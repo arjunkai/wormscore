@@ -36,7 +36,7 @@ DEFAULTS = {
         "label": "GFP",
         "excitation_nm": [488],
         "emission_band_start_nm": [490, 530],
-        "dye_names": ["EGFP", "GFP", "Leica/EGFP"],
+        "dye_names": ["EGFP", "GFP", "Leica/EGFP", "sfGFP", "mEGFP"],
         "channel_name_prefixes": ["GFP", "EGFP"],
         "leica_lut": "Green",
     },
@@ -191,15 +191,20 @@ DEFAULTS = {
 #   color: how it is drawn on the scoring page (red, green, blue, 0 to 1).
 # GFP is exactly the settings used before presets existed (no emission_nm), so GFP projects build
 # the same blind set as before.
+# The fluorophore names the presets learned in 1.26.20, found in real files or common in worm work; files
+# read as 1.26.19 read them (readers.as_before) do not know them.
+DYE_NAMES_1_26_20 = frozenset({"sfGFP", "mEGFP", "mCitrine", "Leica/mCitrine", "TagYFP", "TaYFP", "wrmScarlet"})
+
 PRESETS = {
     "GFP": {"label": "GFP", "excitation_nm": [488], "emission_band_start_nm": [490, 530],
-            "dye_names": ["EGFP", "GFP", "Leica/EGFP"], "channel_name_prefixes": ["GFP", "EGFP"],
+            "dye_names": ["EGFP", "GFP", "Leica/EGFP", "sfGFP", "mEGFP"], "channel_name_prefixes": ["GFP", "EGFP"],
             "leica_lut": "Green", "color": [0, 1, 0]},
     "mNeonGreen": {"label": "mNeonGreen", "excitation_nm": [488, 505, 506], "emission_band_start_nm": [495, 535],
                    "emission_nm": [505, 545], "dye_names": ["mNeonGreen", "mNG", "Leica/mNeonGreen"],
                    "channel_name_prefixes": ["mNeonGreen", "mNG"], "leica_lut": None, "color": [0, 1, 0]},
     "YFP": {"label": "YFP", "excitation_nm": [514, 515], "emission_band_start_nm": [515, 545],
-            "emission_nm": [520, 555], "dye_names": ["EYFP", "YFP", "Venus", "mVenus", "Citrine", "Leica/EYFP"],
+            "emission_nm": [520, 555], "dye_names": ["EYFP", "YFP", "Venus", "mVenus", "Citrine", "Leica/EYFP",
+                          "mCitrine", "Leica/mCitrine", "TagYFP", "TaYFP"],
             "channel_name_prefixes": ["YFP", "EYFP", "Venus"], "leica_lut": None, "color": [1, 1, 0]},
     "mCherry": {"label": "mCherry", "excitation_nm": [561, 587, 594], "emission_band_start_nm": [575, 625],
                 "emission_nm": [595, 645], "dye_names": ["mCherry", "mCherry2", "Leica/mCherry"],
@@ -208,7 +213,7 @@ PRESETS = {
                "emission_nm": [570, 605], "dye_names": ["TagRFP", "TagRFP-T", "tagRFP", "Leica/TagRFP"],
                "channel_name_prefixes": ["TagRFP"], "leica_lut": None, "color": [1, 0, 1]},
     "mScarlet": {"label": "mScarlet", "excitation_nm": [561, 569], "emission_band_start_nm": [565, 610],
-                 "emission_nm": [580, 625], "dye_names": ["mScarlet", "mScarlet-I", "mScarlet3", "Leica/mScarlet"],
+                 "emission_nm": [580, 625], "dye_names": ["mScarlet", "mScarlet-I", "mScarlet3", "Leica/mScarlet", "wrmScarlet"],
                  "channel_name_prefixes": ["mScarlet"], "leica_lut": None, "color": [1, 0, 1]},
     "mKate2": {"label": "mKate2", "excitation_nm": [561, 588, 594], "emission_band_start_nm": [590, 650],
                "emission_nm": [615, 675], "dye_names": ["mKate2", "Leica/mKate2"],

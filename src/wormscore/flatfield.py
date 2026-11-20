@@ -284,7 +284,13 @@ def _images(folder, cfg, log, skipped, new_days=False, leica_days=False, utc_day
     for path in files:
         rel = str(path.relative_to(folder))
         try:
-            images = R.images_in(path, cfg, source)
+            # 1.26.20: until the project's images are scanned with this version (scan_zoom), its slide images
+            # are read as 1.26.19 read them, so their settings text matches the images' (found by review)
+            if scan_zoom:
+                images = R.images_in(path, cfg, source)
+            else:
+                with R.as_before():
+                    images = R.images_in(path, cfg, source)
         except Exception as exc:
             skipped.append(f"{rel}: could not be read ({type(exc).__name__})")
             continue
@@ -604,6 +610,7 @@ class Correction:
         # all there is: if they fit more than one session, the image is counted as one that may change.
         recorded = used_record(self.project) if getattr(self, "project", None) else {}
         self.pins, self.held_day, self.held_acquired, self.held_zoom = {}, set(), {}, {}
+        self.held_session = {}
         kept = changed = 0
         for img in images:
             row = rows.get(_ident(img))
@@ -647,6 +654,13 @@ class Correction:
                         self.held_zoom[_ident(img)] = old_zoom
                         held = True
                         break
+            # 1.26.20: whatever else a new reading changed (a settings text read more fully, for example), an
+            # image whose session this project recorded keeps that session and key.csv's words for it (found
+            # by review: a FluoView PMT gain or a Nikon light source read since moved scored images)
+            if not fits and code in recorded and self._held(recorded[code], row) is not None:
+                self.held_session[_ident(img)] = (self._held(recorded[code], row),
+                                                  {k: row.get(k, "") for k in ("imaging_session", "flat_field", "session_factor")})
+                fits, held = [(self.sessions, recorded[code])], True
             if code not in recorded:
                 # a key from before 1.26.16: slide images added after the image got its code cannot be the
                 # ones it was scored with, so a session list without them comes first
@@ -666,6 +680,30 @@ class Correction:
                     kept += 1           # once per image (an image held to its old day may also be pinned)
         self.kept_changed = bool(changed)
         return kept, changed
+
+    def _held(self, index, row):
+        """The session recorded for a code, as resolve gives one, "none" if it was not corrected, or None if
+        the record and key.csv do not agree (then it is not held: the warning says the image may change)."""
+        import numpy as np
+        how = row.get("flat_field") or ""
+        if index is None:
+            return "none" if how.startswith("not corrected") else None
+        if not how or how.startswith("not corrected"):
+            return None
+        # only while the correction is set as it was: a between_sessions turned on or off by hand changes the
+        # factor, and the warning must say so (found by review)
+        want = lambda ses: (ses["factor"] if how == SAME else "not corrected") if self.ff.get("between_sessions") else 1.0
+        agrees = lambda ses: _same_record("", "session_factor", str(want(ses)), row.get("session_factor") or "")
+        if isinstance(index, str) and index.startswith("avg:"):
+            parts = [next((s for s in self.sessions if str(s["index"]) == i), None) for i in index[4:].split("+")]
+            if not parts or None in parts:
+                return None
+            if f"flat_{index}" not in self.arrays:
+                self.arrays[f"flat_{index}"] = np.mean([self.arrays[f"flat_{s['index']}"] for s in parts], axis=0)
+            held = {**parts[0], "index": index, "dark_from": parts[0]["index"], "how": how}
+            return held if agrees(held) else None
+        ses = next((s for s in self.sessions if s["index"] == index), None)
+        return None if ses is None or not agrees(ses) else {**ses, "how": how}
 
     def recorded_acquired(self, img):
         """The date key.csv gets: for an image held to its old day, the date it was recorded with, so the
@@ -708,6 +746,9 @@ class Correction:
         which), or None (used as recorded; "why" from not_corrected). sessions: the sessions to choose
         from; by default all of them, or the earlier list keep_coded holds this image to."""
         import numpy as np
+        held = getattr(self, "held_session", {}).get(_ident(img))
+        if held is not None and sessions is None:
+            return None if held[0] == "none" else held[0]
         img = self._as_recorded(img)
         size = (int(img["height"]), int(img["width"])) if "height" in img else None
         fits = lambda s: size is None or (s["height"], s["width"]) == size
@@ -773,6 +814,11 @@ class Correction:
 
     def key_columns(self, img, sessions=None, code=None):
         """code: given by Build for the image it is making, so the session used is recorded for that code."""
+        held = getattr(self, "held_session", {}).get(_ident(img))
+        if held is not None and sessions is None:
+            if code:
+                self.used_now[code] = None if held[0] == "none" else held[0]["index"]
+            return dict(held[1])
         img = self._as_recorded(img)
         ses = self.resolve(img, sessions)
         if code:

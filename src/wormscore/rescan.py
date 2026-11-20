@@ -191,9 +191,9 @@ def scan_changes(project, cfg=None):
                 x.get("settings") != settings and (not plain or x.get("settings") == plain
                                                     or str(x.get("settings")).startswith(plain + " | "))
                 for x in mine)
-        zoomed = sum(1 for r, s in pairs if s.get("format") == "Zeiss CZI" and other_zoom(s))
+        zoomed = sum(1 for r, s in pairs if s.get("format") in ("Zeiss CZI", "Olympus FluoView") and other_zoom(s))
         if zoomed:
-            out["lines"] += [f"the flat-field zoom of {zoomed} coded Zeiss image{'s' if zoomed != 1 else ''} is now the "
+            out["lines"] += [f"the flat-field zoom of {zoomed} coded image{'s' if zoomed != 1 else ''} is now the "
                              f"scan zoom; choose the slide images again so theirs are read the same way"]
         if utc:
             out["lines"] += [f"the flat-field imaging day of {utc} coded image{'s' if utc != 1 else ''} changes: the file "
