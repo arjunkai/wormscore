@@ -7,7 +7,8 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
 
 ## 1.26.26
 
-**The image fits its area again when the area changes; the keys line under the image keeps its height.**
+**The image fits its area again when the area changes; the keys line under the image keeps its height; the update
+dialog keeps its place when its box is ticked.**
 - The image re-fitted only when the window was resized. When something above or below it changed size (the
   warning about a window that changes image data, or the keys line), the image kept its old size and could
   run past its area. It now re-fits whenever its area changes size.
@@ -18,6 +19,9 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
   per screen frame. The picture is the same pixel for pixel (checked in Chromium and WebKit).
 - Home screen: more space between "I have finished scoring" and the Unblind button, so the text reads as part
   of its tick box.
+- Update dialog: ticking "I understand the Methods would cite two versions" no longer takes the notes back to
+  the top or moves the keyboard to "Not now"; it only turns "Update anyway" on or off. Skipping a version
+  clears the tick, so a later version's dialog opens with it unticked.
 - **Who is affected:** nobody's results; the display only.
 
 ## 1.26.25

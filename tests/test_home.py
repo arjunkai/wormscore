@@ -340,3 +340,40 @@ def test_a_finished_step_keeps_the_time_it_took(monkeypatch):
     first = job.snapshot(0)["elapsed_s"]
     now[0] += 60
     assert job.snapshot(0)["elapsed_s"] == first == 0
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_ticking_the_update_warning_box_keeps_the_notes_scrolled_and_the_focus(desk, monkeypatch, engine):
+    # 1.26.26: ticking "I understand..." rebuilt the dialog, so the notes went back to the top and the
+    # keyboard focus jumped to "Not now"
+    sync_api = pytest.importorskip("playwright.sync_api")
+    notes = "\n".join(f"- Change number {i}, a line long enough to take some room in the dialog." for i in range(60))
+    fake = {"kind": "windows", "enabled": True, "checking": False, "error": None, "latest": "9.9.9", "newer": True,
+            "show": True, "notes": notes, "page": "", "can_install": True, "pip_command": "", "phase": None,
+            "warning": "Scoring is in progress in Demo.", "frac": None, "message": "", "result": None, "previous": None}
+    monkeypatch.setattr(desk["app"], "update_view", lambda statuses: dict(fake))
+    with sync_api.sync_playwright() as p:
+        try:
+            b = getattr(p, engine).launch()
+        except Exception as exc:
+            pytest.skip(f"{engine} is not installed for Playwright ({type(exc).__name__})")
+        try:
+            page = b.new_page(viewport={"width": 1200, "height": 800})
+            page.goto(f"http://127.0.0.1:{desk['port']}/")
+            page.wait_for_selector("#updModal:not([hidden]) .ud-notes")
+            page.evaluate("document.querySelector('.ud-notes').scrollTop = 300")
+            update = page.get_by_role("button", name="Update anyway")
+            assert update.is_disabled()
+            page.locator(".ud-agree input").click()
+            assert update.is_enabled()
+            page.wait_for_timeout(1500)          # a few polls of the state
+            assert page.evaluate("document.querySelector('.ud-notes').scrollTop") == 300
+            # by keyboard: the focus stays on the box (a click does not focus a box in WebKit)
+            page.locator(".ud-agree input").focus()
+            page.keyboard.press("Space")
+            assert update.is_disabled()
+            page.wait_for_timeout(1500)
+            assert page.evaluate("document.activeElement.type") == "checkbox"
+            assert page.evaluate("document.querySelector('.ud-notes').scrollTop") == 300
+        finally:
+            b.close()

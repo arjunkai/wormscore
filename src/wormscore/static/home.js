@@ -1691,7 +1691,7 @@ function renderUpdate(d) {
     api("/api/update", { action: "dismiss" }).catch(() => {});
   }
   const key = JSON.stringify([open, u.phase, u.latest, u.warning, u.kind, u.can_install, u.message,
-    u.result, st.updAgree, busy && u.frac !== null ? Math.round(100 * u.frac) : null, st.closing]);
+    u.result, busy && u.frac !== null ? Math.round(100 * u.frac) : null, st.closing]);
   if (key === st.updKey) return;
   st.updKey = key;
   const m = $("#updModal");
@@ -1720,7 +1720,7 @@ function renderUpdate(d) {
   } else {
     const warn = !!u.warning;
     const later = () => { st.updOpen = false; st.updAgree = false; act("/api/update", { action: "later" }); };
-    const skip = () => { st.updOpen = false; act("/api/update", { action: "skip" }); };
+    const skip = () => { st.updOpen = false; st.updAgree = false; act("/api/update", { action: "skip" }); };
     let main;
     if (u.can_install) {
       main = h("button", { class: warn ? "btn" : "primary", disabled: warn && !st.updAgree,
@@ -1737,7 +1737,7 @@ function renderUpdate(d) {
         h("code", {}, u.pip_command), " in a terminal.") : null,
       warn ? h("div", { class: "ud-warn" }, h("b", {}, "A project is in progress"), h("span", {}, u.warning)) : null,
       warn && u.can_install ? h("label", { class: "check ud-agree" },
-        h("input", { type: "checkbox", checked: st.updAgree, onchange: e => { st.updAgree = e.target.checked; render(); } }),
+        h("input", { type: "checkbox", checked: st.updAgree, onchange: e => { st.updAgree = e.target.checked; main.disabled = !st.updAgree; } }),
         "I understand the Methods would cite two versions") : null,
       h("div", { class: "ud-foot" },
         h("button", { class: "btn subtle", onclick: skip }, "Skip this version"),
