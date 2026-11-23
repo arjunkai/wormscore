@@ -438,3 +438,40 @@ def test_changing_a_setting_keeps_the_page_where_it_was_and_the_focus_on_the_con
             assert page.evaluate(PLACE) == before
         finally:
             b.close()
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_a_click_or_tab_right_after_typing_in_the_criteria_is_not_lost(desk, engine):
+    # 1.26.26: leaving a text box such as "Call 2" drew the criteria again at once, which replaced the
+    # button being clicked (the click did nothing) or the control Tab was moving to (focus was lost)
+    sync_api = pytest.importorskip("playwright.sync_api")
+    port = desk["port"]
+    call(port, "POST", "/api/select", {"path": str(desk["project"])})
+    calls = "[...document.querySelectorAll('[aria-label^=\"Call \"]')].map(e => e.value)"
+    with sync_api.sync_playwright() as p:
+        try:
+            b = getattr(p, engine).launch()
+        except Exception as exc:
+            pytest.skip(f"{engine} is not installed for Playwright ({type(exc).__name__})")
+        try:
+            page = b.new_page(viewport={"width": 1400, "height": 800})
+            page.goto(f"http://127.0.0.1:{port}/")
+            page.wait_for_function("st.data && st.data.project")
+            page.evaluate("openProjectSettings('form')")
+            page.wait_for_selector("[aria-label='Call 1']")
+            before = page.evaluate(calls)
+            page.locator("[aria-label='Call 2']").click()
+            page.keyboard.press("End")
+            page.keyboard.type("z")
+            page.locator("[aria-label='Remove call 1']").click()
+            page.wait_for_timeout(300)
+            assert page.evaluate(calls) == [before[1] + "z", *before[2:]]
+            page.locator("[aria-label='Call 1']").focus()
+            page.keyboard.press("End")
+            page.keyboard.type("y")
+            page.keyboard.press("Tab")
+            page.wait_for_timeout(300)
+            assert page.evaluate("document.activeElement !== document.body && !!document.activeElement.closest('#main')")
+            assert page.evaluate(calls)[0] == before[1] + "zy"
+        finally:
+            b.close()

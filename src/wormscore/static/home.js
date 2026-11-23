@@ -125,6 +125,11 @@ function refocus(k, fallback) {
 // the item being removed and not about one item (those have their own label, such as "Add a
 // definition for Call 2").
 const CONTROLS = "input, select, textarea, button, summary, [tabindex]";
+let removedRow = false;          // a Remove button removed its row: set just before the redraw
+let pointerDown = false;          // a mouse button or finger is down (see drawAllSoon)
+addEventListener("pointerdown", () => { pointerDown = true; }, true);
+for (const ev of ["pointerup", "pointercancel", "contextmenu"]) addEventListener(ev, () => { pointerDown = false; }, true);
+addEventListener("blur", e => { if (e.target === window) pointerDown = false; });     // the window, not a box in it
 function controlName(el) {
   return el.getAttribute("aria-label") || el.id || el.dataset?.k || el.name
     || (el.closest("label") || el.labels?.[0])?.textContent.trim() || el.textContent.trim().slice(0, 80);
@@ -137,8 +142,16 @@ function keepPlace(root) {
   sc ||= document.scrollingElement;
   const top = sc.scrollTop;
   const a = document.activeElement;
-  let had = a && a !== document.body && root.contains(a) ? a : null;
+  const had = a && a !== document.body && root.contains(a) ? a : null;
   const controls = () => [...root.querySelectorAll(CONTROLS)];
+  const spot = el => {
+    const name = controlName(el);
+    return { name, nth: controls().filter(c => controlName(c) === name).indexOf(el), y: el.getBoundingClientRect().top };
+  };
+  const self = had && spot(had);
+  // after a Remove: the list's Add button, used only if the row was removed (a dialog that asked
+  // first may have been cancelled, and then the Remove button keeps the focus)
+  let add = null;
   if (had && had.tagName === "BUTTON" && /^Remove\b/.test(controlName(had))) {
     // the kind of item removed: a rule, a comparison, a row, or a whole question or image folder;
     // an Add button inside any item of that kind (another folder's "Add genotype rule") is skipped
@@ -146,18 +159,21 @@ function keepPlace(root) {
       : had.closest(".sf-q-head") ? ".sf-q" : had.closest(".src-head") ? ".src" : had.closest(".sf-row") ? ".sf-row" : null;
     const item = (kind && had.closest(kind)) || had.parentElement;
     const all = controls();
-    had = all.slice(all.indexOf(had) + 1).find(el => el.tagName === "BUTTON" && !el.hasAttribute("aria-label")
-      && /^Add\b/.test(el.textContent.trim()) && !item.contains(el) && !(kind && el.closest(kind))) || null;
+    const next = all.slice(all.indexOf(had) + 1).find(el => el.tagName === "BUTTON" && !el.hasAttribute("aria-label")
+      && /^Add\b/.test(el.textContent.trim()) && !item.contains(el) && !(kind && el.closest(kind)));
+    add = next ? spot(next) : { name: null };
   }
-  const name = had && controlName(had);
-  const nth = had ? controls().filter(el => controlName(el) === name).indexOf(had) : -1;
-  const y = had?.getBoundingClientRect().top;
   const caret = had && typeof had.selectionStart === "number"
     ? [had.selectionStart, had.selectionEnd, had.selectionDirection] : null;
   return () => {
     sc.scrollTop = top;
+    const removed = removedRow;
+    removedRow = false;
     if (!had || had.isConnected) return;
-    const el = controls().filter(el => controlName(el) === name)[nth];
+    // nothing removed (a dialog was cancelled): the rows are the same, so the Remove button itself
+    const { name, nth, y } = add && removed ? add : self;
+    if (name === null) return;
+    const el = controls().filter(c => controlName(c) === name)[nth];
     if (!el) return;
     el.focus({ preventScroll: true });
     // an Add button in a section that closed with its last row (Leave out images): its heading
@@ -918,6 +934,7 @@ function formSection(info) {
         const q = confirm?.(j);
         if (q && !(await ask(q.title, q.body, [{ value: true, label: "Remove" }]))) return;
         arr.splice(j, 1);
+        removedRow = true;
         drawAll();
       } }, icon("close", 14)));
   const confirmQuestion = j => m.questions[j].label.trim() ? {
@@ -933,8 +950,17 @@ function formSection(info) {
 
   // One answer's definition and optional reference image, under the answer. get() is {text, image};
   // put(patch) changes it. The image is copied into the project's criteria/ folder when it is added.
-  const addImage = (what, put, btn) => {
-    const busy = on => { btn.disabled = on; btn.textContent = on ? "Adding..." : "Add image"; };
+  // which answers' images are being added: a redraw meanwhile keeps their button busy
+  const adding = new Set();
+  // the answer's image button: its thumbnail, or Add image
+  const imageButton = what => edit.querySelector(`[aria-label="${CSS.escape(`Show the reference image for ${what}`)}"]`)
+    || edit.querySelector(`[aria-label="${CSS.escape(`Add a reference image for ${what}`)}"]`);
+  const addImage = (what, put) => {
+    const busy = on => {
+      on ? adding.add(what) : adding.delete(what);
+      drawAll();
+      if (!on && document.activeElement === document.body) imageButton(what)?.focus();
+    };
     const pick = h("input", { type: "file", accept: "image/png,image/jpeg", hidden: true, onchange: () => {
       const file = pick.files?.[0];
       if (!file) return;
@@ -944,7 +970,7 @@ function formSection(info) {
         try {
           const r = await api("/api/project-settings", { action: "criteria-image", data: read.result, name: file.name });
           put({ image: r.path });
-          drawAll();
+          busy(false);
         } catch (e) { busy(false); toast(e.message); }
       };
       read.onerror = () => { busy(false); toast("That file could not be read."); };
@@ -970,11 +996,12 @@ function formSection(info) {
         h("button", { class: "sf-thumb", title: "Show the reference image", "aria-label": `Show the reference image for ${what}`,
           onclick: () => wsForm.zoom(h, d.image, what, d.text) }, h("img", { src: "/" + d.image, alt: "" })),
         off ? null : h("button", { class: "ghost icon sm", title: "Remove the image", "aria-label": `Remove the reference image for ${what}`,
-          onclick: () => { put({ image: "" }); drawAll(); } }, icon("close", 14)))
+          onclick: () => { put({ image: "" }); drawAll(); imageButton(what)?.focus(); } }, icon("close", 14)))
         : off ? null : h("button", { class: "btn subtle sm sf-add-img",
           title: "A PNG or JPEG example from outside this blind set, such as a pilot or a published figure. "
             + "The scorer compares its shape; its brightness depends on how it was saved.",
-          "aria-label": `Add a reference image for ${what}`, onclick: e => addImage(what, put, e.currentTarget) }, "Add image"));
+          "aria-label": `Add a reference image for ${what}`, disabled: adding.has(what), onclick: () => addImage(what, put) },
+          adding.has(what) ? "Adding..." : "Add image"));
   };
   const callDef = (c, j) => defLine(`Call ${j + 1}`, () => ({ text: c.def || "", image: c.image || "" }),
     p => { if ("text" in p) c.def = p.text; if ("image" in p) c.image = p.image; });
@@ -1003,7 +1030,7 @@ function formSection(info) {
       text(c.text, v => {
         for (const q of m.questions) q.skip_when = q.skip_when.map(s => s === c.text ? v : s);
         c.text = v;
-      }, { "aria-label": `Call ${j + 1}`, onchange: () => drawAll() }),
+      }, { "aria-label": `Call ${j + 1}`, onchange: drawAllSoon }),
       h("label", { class: "sf-check tight" }, h("input", { type: "checkbox", checked: c.defect, disabled: off,
         onchange: e => { c.defect = e.target.checked; drawAll(); } }), "defect"),
       tools(m.calls, j, `call ${j + 1}`, 2)), callDef(c, j)]),
@@ -1035,7 +1062,7 @@ function formSection(info) {
       h("input", { type: "number", class: "f-input sf-number", min: 0, max: 999, step: 1, value: q.count[key], disabled: off,
         "aria-label": `Question ${j + 1}: ${label === "from" ? "lowest" : "highest"} count`,
         oninput: e => { q.count[key] = e.target.value === "" ? "" : Number(e.target.value); drawPreview(); },
-        onchange: () => drawAll() }));
+        onchange: drawAllSoon }));
     return h("div", { class: "sf-count" }, num("min", "from"), num("max", "to"),
       check(q.count.top, `The last answer means that many or more (${q.count.max ?? "N"}+)`, v => { q.count.top = v; }));
   };
@@ -1075,7 +1102,7 @@ function formSection(info) {
             q.options = nu;
           },
             { placeholder: "Answers, separated by commas", "aria-label": `Question ${j + 1}: answers`,
-              onchange: () => { q.defect = q.defect.filter(d => q.options.includes(d)); drawAll(); } }) : null,
+              onchange: () => { q.defect = q.defect.filter(d => q.options.includes(d)); drawAllSoon(); } }) : null,
           q.type === "choice" && q.options.length ? h("div", { class: "sf-defs", role: "group", "aria-label": `Question ${j + 1}: definitions` },
             q.options.map(a => h("div", {}, h("div", { class: "sf-def-term" }, a), answerDef(q, j, a)))) : null,
           q.type === "scale" ? levelsEditor(q, j) : null,
@@ -1091,7 +1118,7 @@ function formSection(info) {
         })),
         ...(!q.outcome ? [] : row("Outcome",
           text(q.outcome, v => { q.outcome = v; }, { list: ranked ? null : "sfOutcomes",
-            "aria-label": `Question ${j + 1}: outcome name`, onchange: () => drawAll() }),
+            "aria-label": `Question ${j + 1}: outcome name`, onchange: drawAllSoon }),
           h("div", { class: "f-help" }, ranked ? "One value per animal, compared with the Mann-Whitney test."
             : "Questions with the same outcome name are combined; Fisher's exact test."))),
         ...(ranked || !q.outcome ? [] : row("Defect if", h("div", { class: "sf-opts" }, answers.map(a => check(q.defect.includes(a), a,
@@ -1109,7 +1136,7 @@ function formSection(info) {
     q.options.flatMap((lv, k) => [h("div", { class: "sf-row" },
       h("span", { class: "sf-end" }, k === 0 ? "best" : k === q.options.length - 1 ? "worst" : ""),
       text(lv, v => { renameDef(q, q.options[k], v.trim()); q.options[k] = v.trim(); },
-        { "aria-label": `Question ${j + 1}: level ${k + 1}`, onchange: () => drawAll() }),
+        { "aria-label": `Question ${j + 1}: level ${k + 1}`, onchange: drawAllSoon }),
       tools(q.options, k, `level ${k + 1}`, 2)), h("div", { class: "sf-level-def" }, answerDef(q, j, lv))]),
     q.options.length > (info.warn_levels || 5) ? h("div", { class: "pv warn sf-levels-warn" },
       `${q.options.length} levels. Scales with many levels are prone to reduced repeatability; 4 to 5 levels has been suggested (Gibson-Corley et al. 2013). `
@@ -1250,11 +1277,34 @@ function formSection(info) {
     prev.replaceChildren(h("div", { class: "sf-prev-head" }, h("span", { class: "f-label" }, "Preview"),
       h("span", { class: "f-help" }, "Click a call to see which questions it skips.")), f);
   };
+  // A text box that redraws the form when it is left: the redraw waits until the Tab or the click
+  // that left it is done. Redrawing at once replaced the control being clicked (the click was
+  // lost) or the one Tab was moving to (the keyboard ended up nowhere); found by review.
+  // It also waits while a dialog is open (the click asked something first), so the button the
+  // dialog goes back to is still there; found by review.
+  let soon = 0, cycle = 0;
+  const drawAllSoon = () => {
+    if (soon) return;
+    const id = ++cycle;
+    const go = () => {
+      if (id !== cycle || !soon) return;          // drawn since, or a later wait owns it
+      if (!$("#modal").hidden) return setTimeout(go, 200);
+      soon = 0;
+      drawAll();
+    };
+    soon = setTimeout(() => {
+      if (!pointerDown) return go();
+      addEventListener("click", () => setTimeout(go), { once: true, capture: true });
+      const late = () => pointerDown ? setTimeout(late, 500) : go();
+      setTimeout(late, 1500);     // a press that ends without a click (dragged away)
+    });
+  };
   // Redrawing removes the focused box, which can fire its change event again; that second call
   // is skipped, and the redraw already shows its value.
   let drawing = false;
   const drawAll = () => {
     if (drawing) return;
+    if (soon) { clearTimeout(soon); soon = 0; cycle++; }
     drawing = true;
     try {
       const back = keepPlace(edit);
@@ -1406,7 +1456,8 @@ async function openProjectSettings(section) {
   };
   const field = (obj, k, attrs = {}) => h("input", { type: "text", class: "f-input", value: obj[k] ?? "", autocomplete: "off",
     spellcheck: "false", ...attrs, oninput: e => { obj[k] = e.target.value; preview(); } });
-  const removeBtn = (label, fn) => h("button", { class: "ghost icon rm", title: label, "aria-label": label, onclick: fn }, icon("close", 14));
+  const removeBtn = (label, fn) => h("button", { class: "ghost icon rm", title: label, "aria-label": label,
+    onclick: () => { removedRow = true; fn(); } }, icon("close", 14));
 
   const rules = (src, list, a, b, labels, off) => h("div", { class: "rules" },
     src[list].map((r, j) => h("div", { class: "rule" },

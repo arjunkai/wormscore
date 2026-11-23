@@ -24,7 +24,10 @@ dialog keeps its place when its box is ticked.**
   clears the tick, so a later version's dialog opens with it unticked.
 - Project settings and the scoring criteria: changing a tick box, an option or a list no longer scrolls the page
   up (by up to a thousand pixels in a long form) or drops the keyboard focus; the control stays where it was
-  on the screen and keeps the focus. Found by trying every control in both forms.
+  on the screen and keeps the focus; a text box keeps its caret. After a Remove button the keyboard goes to the
+  list's Add button, never to another Remove button. Found by trying every control in both forms.
+- Scoring criteria: a click or Tab right after typing in a box such as a call's name works. Leaving the box
+  drew the criteria again at once, so the button being clicked did nothing and Tab left the keyboard nowhere.
 - The Brightfield box says what the overlay is for (landmarks such as the pharynx), and the guide says where
   the nerve ring lies in it.
 - **Who is affected:** nobody's results; the display only.
