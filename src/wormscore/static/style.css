@@ -141,7 +141,7 @@ main { flex: 1; display: grid; grid-template-columns: 150px 1fr 360px; min-heigh
 #canvasWrap { flex: 1; overflow: auto; display: grid; background: #000; min-height: 0; }
 /* margin: auto centres the canvas but, unlike place-items, keeps all of it reachable by scrolling when zoomed */
 #cv { display: block; margin: auto; cursor: crosshair; image-rendering: auto; }
-.hint { padding: 6px 12px; color: var(--muted); font-size: var(--text-xs); border-top: 1px solid var(--line); }
+.hint { padding: 6px 12px; color: var(--muted); font-size: var(--text-xs); border-top: 1px solid var(--line); position: relative; }
 
 #panel { border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 12px 14px; }
 .code { font-size: var(--text-2xl); font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -381,4 +381,4 @@ body.browse .code-row { position: sticky; top: -12px; z-index: 3; margin-top: -1
 /* narrower than the Plane slider, so the two fit in its place and the toolbar keeps one row */
 #turnCtl input[type="range"] { width: 64px; }
 #turnCtl #aText, #turnCtl #tText { display: none; }   /* the angle is in each slider's tooltip */
-#depthTip { color: var(--text); }
+#depthTip { color: var(--text); position: absolute; inset: 6px 12px; }   /* over the keys, which keep the line's height */

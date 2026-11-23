@@ -281,6 +281,8 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .step.compact .s-title { font-size: var(--text-md); }
 .step.compact .s-fact { margin-top: 0; color: var(--muted); }
 .step.compact .s-act { flex-direction: row; align-items: center; }
+/* the tick box's text sits nearer its box (8px) than the button beside it, so it reads as one control */
+.step.compact .s-act .check { margin-right: var(--space-sm); }
 .step.wait .s-title { color: var(--muted); }
 .s-act { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .mini { width: 220px; max-width: 100%; height: 6px; background: var(--line-strong); border-radius: 3px; overflow: hidden; margin-top: 8px; }

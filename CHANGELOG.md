@@ -5,6 +5,21 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.26
+
+**The image fits its area again when the area changes; the keys line under the image keeps its height.**
+- The image re-fitted only when the window was resized. When something above or below it changed size (the
+  warning about a window that changes image data, or the keys line), the image kept its old size and could
+  run past its area. It now re-fits whenever its area changes size.
+- In a narrow window the keys line under the image takes two or three lines, and the one-line note "Brightest
+  here: plane ..." that replaces it while the cursor is over the image made the image move. The note now
+  shows over the keys, so the line keeps its height.
+- The canvas is no longer cleared and made again for every redraw, and drawing a circle redraws at most once
+  per screen frame. The picture is the same pixel for pixel (checked in Chromium and WebKit).
+- Home screen: more space between "I have finished scoring" and the Unblind button, so the text reads as part
+  of its tick box.
+- **Who is affected:** nobody's results; the display only.
+
 ## 1.26.25
 
 **A Leica zoom is read to two decimals, as LAS X shows it, so one zoom is one flat-field session; a white

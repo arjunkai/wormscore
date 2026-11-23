@@ -924,8 +924,17 @@ function draw() {
     : in3d ? (status3d ? turnedX(...viewAt(st.nearKey)) : turnedX(st.angle, st.tilt)) : st.xPlanes.map(ps => ps ? ps[st.z] : null);
   if (xVals !== null && xOn.some((on, k) => on && !xVals?.[k])) vals = null;
   const g = (st.geom = geometry());
-  cv.width = g.fw;
-  cv.height = g.fh;
+  // Setting a canvas's size, even to the size it has, clears it and makes the browser allocate it
+  // again; only do that when the size changes. The black fill below covers the whole canvas, and
+  // every drawing setting used here is set before it is used, so the picture is the same.
+  if (cv.width !== g.fw || cv.height !== g.fh) {
+    cv.width = g.fw;
+    cv.height = g.fh;
+  } else {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.setLineDash([]);
+  }
   // At 1x the whole frame fills the window; 2x and 3x are that size doubled or tripled and scroll.
   // The frame is the same for every image, so every image is shown at the same scale.
   const wrap = $("#canvasWrap");
@@ -1114,7 +1123,9 @@ function showDepth(z) {
   st.depthShown = z;
   const el = $("#depthTip");
   el.hidden = !z;
-  $("#keysText").hidden = !!z;       // shown in the keys line, so nothing covers the image
+  // shown in the keys line, so nothing covers the image; the keys stay in place (unseen) so the
+  // line keeps its height and the image does not move while the cursor crosses it
+  $("#keysText").style.visibility = z ? "hidden" : "";
   if (z) el.textContent = `Brightest here: plane ${z} of ${st.meta.n_z} · double-click to open it`;
 }
 cv.addEventListener("pointermove", e => {
@@ -1140,14 +1151,21 @@ cv.addEventListener("mousedown", e => {
   const [x, y] = toRaw(e);
   st.drawing = { type: "ellipse", label: st.label, cx: x, cy: y, rx: 0, ry: 0, source: "drawn" };
 });
+// While a circle is dragged, draw at most once per screen frame, and only when its size changed.
+function drawSoon() {
+  if (!st.drawFrame) st.drawFrame = requestAnimationFrame(() => { st.drawFrame = 0; draw(); });
+}
 cv.addEventListener("mousemove", e => {
   if (!st.drawing || st.drawing.type !== "ellipse") return;
   const [x, y] = toRaw(e);
-  st.drawing.rx = st.drawing.ry = Math.hypot(x - st.drawing.cx, y - st.drawing.cy);
-  draw();
+  const r = Math.hypot(x - st.drawing.cx, y - st.drawing.cy);
+  if (r === st.drawing.rx) return;
+  st.drawing.rx = st.drawing.ry = r;
+  drawSoon();
 });
 cv.addEventListener("mouseup", () => {
   if (!st.drawing || st.drawing.type !== "ellipse") return;
+  if (st.drawFrame) { cancelAnimationFrame(st.drawFrame); st.drawFrame = 0; }
   if (st.drawing.rx > 1.5) commitRoi(st.drawing);
   else st.drawing = null;
   draw();
@@ -1593,11 +1611,25 @@ document.addEventListener("click", e => {
   if (d && !d.contains(e.target)) d.removeAttribute("open");
 });
 
-// Resizing fires many events a second; draw at most once per frame.
-window.addEventListener("resize", () => {
+// The image fits its area: redraw when the area changes size, whether the window was resized or
+// something above or below it (a warning, the keys line) changed. Resizing fires many events a
+// second; draw at most once per frame.
+function refit() {
   if (st.resizeFrame) return;
   st.resizeFrame = requestAnimationFrame(() => { st.resizeFrame = 0; draw(); });
-});
+}
+if (window.ResizeObserver) {
+  const wrap = $("#canvasWrap");
+  let seen = "";
+  // offsetWidth/Height include scroll bars, as the fit does, so scroll bars appearing at 2x or 3x
+  // do not count as a change
+  new ResizeObserver(() => {
+    const size = `${wrap.offsetWidth}x${wrap.offsetHeight}`;
+    if (size !== seen) { seen = size; refit(); }
+  }).observe(wrap);
+} else {
+  window.addEventListener("resize", refit);
+}
 window.addEventListener("beforeunload", e => {
   if (st.formDirty || st.roisDirty) e.preventDefault();
 });

@@ -541,3 +541,34 @@ def test_a_replaced_score_is_said_when_an_answer_changed_while_it_saved(playwrig
         browser.close()
         srv.shutdown()
         srv.server_close()
+
+
+def test_the_image_fits_again_when_its_area_shrinks_without_a_window_resize(browser, url):
+    # 1.26.26: the image re-fitted on window resize only; a warning shown above it left it too tall
+    page = open_page(browser, url)
+    page.wait_for_function("st.meta && st.drawn")
+    page.evaluate("document.querySelector('#readbackWarn').classList.remove('hidden')")
+    page.wait_for_function("parseFloat(cv.style.height) <= document.querySelector('#canvasWrap').clientHeight")
+    # and nothing keeps redrawing while the page sits still (no resize loop)
+    page.wait_for_timeout(200)
+    resets = page.evaluate("""() => new Promise(done => {
+        let k = 0; const fill = ctx.fillRect.bind(ctx);
+        ctx.fillRect = (...a) => { k++; fill(...a); };
+        setTimeout(() => { delete ctx.fillRect; done(k); }, 500); })""")
+    assert resets == 0
+
+
+@pytest.mark.parametrize("width", [1536, 900, 420])
+def test_the_keys_line_keeps_its_height_when_the_depth_tip_shows(browser, url, width):
+    # 1.26.26: the keys wrap at narrow widths and the one-line tip replaced them, so the image moved
+    # while the cursor crossed it
+    page = open_page(browser, url)
+    page.set_viewport_size({"width": width, "height": 785})
+    page.wait_for_timeout(100)
+    row = "document.querySelector('.hint').getBoundingClientRect().height"
+    keys = page.evaluate(row)
+    page.evaluate("showDepth(3)")
+    assert page.locator("#depthTip").is_visible()
+    assert page.evaluate(row) == keys
+    page.evaluate("showDepth(0)")
+    assert page.evaluate(row) == keys
