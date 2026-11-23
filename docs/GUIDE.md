@@ -602,6 +602,9 @@ Which channel is the marker and which is brightfield is read from metadata, neve
 
 **In the viewer** you can page through z-planes, turn and tilt the stack in 3D, see which plane the
 brightest point under the cursor is in (a double-click opens it), and overlay brightfield.
+Brightfield shows the animal's outline and the pharynx, which the fluorescence alone does not: in the
+head, the nerve ring lies around the pharynx's isthmus, between its two bulbs, so it shows where a
+process enters the ring.
 
 ## If something goes wrong
 

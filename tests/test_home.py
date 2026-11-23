@@ -377,3 +377,64 @@ def test_ticking_the_update_warning_box_keeps_the_notes_scrolled_and_the_focus(d
             assert page.evaluate("document.querySelector('.ud-notes').scrollTop") == 300
         finally:
             b.close()
+
+
+PLACE = """() => { const a = document.activeElement;
+  const same = [...document.querySelectorAll('#main input[type=checkbox]')].filter(x => x.closest('label')?.textContent.trim() === a.closest('label')?.textContent.trim());
+  return {y: Math.round(a.getBoundingClientRect().top), name: a.closest('label')?.textContent.trim() || a.id, nth: same.indexOf(a)}; }"""
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_changing_a_setting_keeps_the_page_where_it_was_and_the_focus_on_the_control(desk, engine):
+    # 1.26.26: every change in Project settings and the criteria editor drew the form again, which
+    # scrolled the page up (by up to a thousand pixels) and dropped the keyboard focus. The control
+    # now keeps its place on the screen (the page scrolls by whatever grew above it) and the focus.
+    sync_api = pytest.importorskip("playwright.sync_api")
+    port = desk["port"]
+    call(port, "POST", "/api/select", {"path": str(desk["project"])})
+    with sync_api.sync_playwright() as p:
+        try:
+            b = getattr(p, engine).launch()
+        except Exception as exc:
+            pytest.skip(f"{engine} is not installed for Playwright ({type(exc).__name__})")
+        try:
+            page = b.new_page(viewport={"width": 1400, "height": 600})
+            page.goto(f"http://127.0.0.1:{port}/")
+            page.wait_for_function("st.data && st.data.project")
+            # Project settings: a box in "More planned tests", by keyboard (WebKit does not focus a clicked box)
+            page.evaluate("openProjectSettings('folders')")
+            page.locator("summary", has_text="More planned tests").click()
+            box = page.locator("#main label", has_text="dim").locator("input[type=checkbox]").first
+            box.scroll_into_view_if_needed()
+            box.focus()
+            before = page.evaluate(PLACE)
+            assert page.evaluate("document.querySelector('.main').scrollTop") > 300
+            page.keyboard.press("Space")
+            page.wait_for_timeout(300)
+            assert page.evaluate(PLACE) == before
+            # after a Remove button the keyboard goes to that list's Add button, never to another
+            # list's Remove button with the same name (Enter again would remove a rule nobody chose)
+            page.evaluate("document.querySelector('.ps details.lo').open = true")
+            for _ in range(2):
+                page.locator(".ps details.lo button", has_text="Add a rule").first.focus()
+                page.keyboard.press("Enter")
+                page.wait_for_timeout(200)
+            genos = page.locator(".ps .rules").first.locator("button.rm")
+            genos.nth(genos.count() - 1).focus()
+            page.keyboard.press("Enter")
+            page.wait_for_timeout(200)
+            assert page.evaluate("document.activeElement.textContent.trim()") == "Add genotype rule"
+            assert page.evaluate("!document.activeElement.closest('details')")
+            # the criteria editor: the second of three boxes with the same name ("defect")
+            page.evaluate("openProjectSettings('form')")
+            page.wait_for_function("document.querySelectorAll('#main .sf-check input').length > 2")
+            boxes = page.locator("#main label", has_text="defect").locator("input[type=checkbox]")
+            boxes.nth(1).scroll_into_view_if_needed()
+            boxes.nth(1).focus()
+            before = page.evaluate(PLACE)
+            assert before["nth"] == 1 and page.evaluate("document.querySelector('.main').scrollTop") > 300
+            page.keyboard.press("Space")
+            page.wait_for_timeout(300)
+            assert page.evaluate(PLACE) == before
+        finally:
+            b.close()

@@ -54,6 +54,8 @@ const browsing = () => st.cfg?.mode === "browse";
 
 const cv = $("#cv");
 const ctx = cv.getContext("2d");
+// what the overlay is for: the fluorescence alone shows no landmarks
+const BF_TIP = "Shows the animal in transmitted light, to find landmarks such as the pharynx";
 const off = document.createElement("canvas");
 const offCtx = off.getContext("2d", { willReadFrequently: true });
 
@@ -530,7 +532,7 @@ async function openWorm(code) {
   // The form shows this image's answers at once, never the last image's under this code.
   $("#loadErr").classList.add("hidden");
   $("#bfToggle").disabled = !st.meta.has_brightfield;
-  $("#bfToggle").parentElement.title = st.meta.has_brightfield ? "" : "No brightfield channel was recorded for this image";
+  $("#bfToggle").parentElement.title = st.meta.has_brightfield ? BF_TIP : "No brightfield channel was recorded for this image";
   const item = browsing() ? st.worms.find(w => w.code === code) : null;
   $("#codeTitle").textContent = item && !item.coded ? item.file || code : code;
   cv.setAttribute("aria-label", `Image ${code}`);
@@ -1484,7 +1486,7 @@ function syncButtons() {
   $("#bfToggle").checked = st.bf && !!st.meta && st.meta.has_brightfield;
   $("#bfToggle").disabled = !st.meta || !st.meta.has_brightfield || in3d;
   if (st.meta) $("#bfToggle").parentElement.title = !st.meta.has_brightfield
-    ? "No brightfield channel was recorded for this image" : in3d ? "Brightfield is one flat image, so 3D does not show it" : "";
+    ? "No brightfield channel was recorded for this image" : in3d ? "Brightfield is one flat image, so 3D does not show it" : BF_TIP;
   syncCursor();
 }
 

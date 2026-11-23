@@ -114,6 +114,69 @@ function refocus(k, fallback) {
   (el || (fallback?.isConnected ? fallback : null))?.focus();
 }
 
+// Before a form is drawn again: remembers where the page is scrolled and which control has the
+// keyboard, and returns a function that puts both back once the new controls are in. Emptying a
+// form shortens the page for a moment, which scrolls it up, and the focused control is replaced.
+// A control is found again by its name (label, id or data-k) and which of that name it was, and
+// the page scrolls so it stays where it was on the screen; a text box keeps its caret.
+// After a Remove button, the rows after it move up and the same name can be another list's
+// Remove button, so the keyboard goes to the list's own Add button instead (found by review:
+// Enter again would have removed a rule nobody chose): the next Add button that is not part of
+// the item being removed and not about one item (those have their own label, such as "Add a
+// definition for Call 2").
+const CONTROLS = "input, select, textarea, button, summary, [tabindex]";
+function controlName(el) {
+  return el.getAttribute("aria-label") || el.id || el.dataset?.k || el.name
+    || (el.closest("label") || el.labels?.[0])?.textContent.trim() || el.textContent.trim().slice(0, 80);
+}
+function keepPlace(root) {
+  let sc = null;
+  for (let p = root; p && p !== document.body; p = p.parentElement) {
+    if (/(auto|scroll)/.test(getComputedStyle(p).overflowY) && p.scrollHeight > p.clientHeight) { sc = p; break; }
+  }
+  sc ||= document.scrollingElement;
+  const top = sc.scrollTop;
+  const a = document.activeElement;
+  let had = a && a !== document.body && root.contains(a) ? a : null;
+  const controls = () => [...root.querySelectorAll(CONTROLS)];
+  if (had && had.tagName === "BUTTON" && /^Remove\b/.test(controlName(had))) {
+    // the kind of item removed: a rule, a comparison, a row, or a whole question or image folder;
+    // an Add button inside any item of that kind (another folder's "Add genotype rule") is skipped
+    const kind = had.closest(".rule") ? ".rule" : had.closest(".an-pair") ? ".an-pair"
+      : had.closest(".sf-q-head") ? ".sf-q" : had.closest(".src-head") ? ".src" : had.closest(".sf-row") ? ".sf-row" : null;
+    const item = (kind && had.closest(kind)) || had.parentElement;
+    const all = controls();
+    had = all.slice(all.indexOf(had) + 1).find(el => el.tagName === "BUTTON" && !el.hasAttribute("aria-label")
+      && /^Add\b/.test(el.textContent.trim()) && !item.contains(el) && !(kind && el.closest(kind))) || null;
+  }
+  const name = had && controlName(had);
+  const nth = had ? controls().filter(el => controlName(el) === name).indexOf(had) : -1;
+  const y = had?.getBoundingClientRect().top;
+  const caret = had && typeof had.selectionStart === "number"
+    ? [had.selectionStart, had.selectionEnd, had.selectionDirection] : null;
+  return () => {
+    sc.scrollTop = top;
+    if (!had || had.isConnected) return;
+    const el = controls().filter(el => controlName(el) === name)[nth];
+    if (!el) return;
+    el.focus({ preventScroll: true });
+    // an Add button in a section that closed with its last row (Leave out images): its heading
+    let at = el;
+    if (document.activeElement !== el) {
+      at = el.closest("details")?.querySelector("summary");
+      if (!at) return;
+      at.focus({ preventScroll: true });
+    }
+    if (caret && typeof el.selectionStart === "number") try { el.setSelectionRange(...caret); } catch { /* not a text box */ }
+    const moved = at.getBoundingClientRect().top - y;
+    if (moved) sc.scrollTop += moved;
+    // never leave the keyboard on something out of sight
+    const r = at.getBoundingClientRect(), view = sc === document.scrollingElement
+      ? { top: 0, bottom: innerHeight } : sc.getBoundingClientRect();
+    if (r.top < view.top || r.bottom > view.bottom) at.scrollIntoView({ block: "nearest" });
+  };
+}
+
 // opts.wide: a wider box for forms. opts.check: runs when a choice is picked and returns an
 // error to show (the dialog then stays open) or nothing to close it.
 function ask(title, body, choices, cancel = "Cancel", opts = {}) {
@@ -1194,13 +1257,12 @@ function formSection(info) {
     if (drawing) return;
     drawing = true;
     try {
-      const active = document.activeElement;
-      const focus = active && edit.contains(active) ? active.getAttribute("aria-label") : null;
+      const back = keepPlace(edit);
       // same order as the scorer's panel (and the preview): what is asked once per image, then each
       // neuron, then the extra questions; the primary outcome picks from those, so it comes last
       edit.replaceChildren(...[start(), moreCard(), neuronsCard(), callsCard(), questionsCard(), resultsCard()].filter(Boolean));
-      if (focus) edit.querySelector(`[aria-label="${CSS.escape(focus)}"]`)?.focus();
       drawPreview();
+      back();
     } finally {
       drawing = false;
     }
@@ -1559,6 +1621,7 @@ async function openProjectSettings(section) {
         h("div", { class: `pv ${cls}`, "aria-live": "polite" }, text));
     });
     if (criteria) return box.replaceChildren(form.el);
+    const back = keepPlace(box);
     box.replaceChildren(
       h("div", { class: "s-card src" }, h("label", { class: "f-label", for: "psName" }, "Project name"),
         field(model, "project_name", { id: "psName", maxlength: "80" })),
@@ -1571,6 +1634,7 @@ async function openProjectSettings(section) {
       analysisCard(),
       h("div", { class: "f-help sf-config" }, "The other statistics settings and the rest are in config.json: ",
         h("button", { class: "linkish", onclick: () => tryLeave("config") }, "edit config.json"), "."));
+    back();
     if (focusLast === "src") $$(".ps .src").at(-1)?.querySelector("input")?.focus();
     else if (focusLast) [...document.querySelectorAll(".ps .rules")].find(r => r.contains(document.activeElement))?.querySelector(".rule:last-of-type input")?.focus();
   };
