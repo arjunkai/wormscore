@@ -251,8 +251,9 @@ function stepCard(n, state, title, desc, fact, actions, extra) {
   const chip = { next: ["next", "Next"], running: ["running", "Running"], changed: ["changed", "Changed"] }[state];
   const quiet = state === "done" || state === "wait";
   return h("li", { class: `step ${state}${quiet ? " compact" : ""}` },
-    h("div", { class: "num", "aria-label": state === "done" ? `Step ${n}, done` : state === "wait" ? `Step ${n}, waiting` : `Step ${n}` },
-      state === "done" ? icon("check", 16) : n),
+    // the step's state as text for screen readers (an aria-label on a plain div is not read)
+    h("div", { class: "num" }, state === "done" ? icon("check", 16) : h("span", { "aria-hidden": "true" }, String(n)),
+      h("span", { class: "sr" }, state === "done" ? `Step ${n}, done` : state === "wait" ? `Step ${n}, waiting` : `Step ${n}`)),
     h("div", { class: "s-body" },
       h("div", { class: "s-title" }, title, chip ? h("span", { class: `chip ${chip[0]}` }, chip[1]) : null),
       quiet ? null : h("div", { class: "s-desc" }, desc),

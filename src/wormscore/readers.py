@@ -175,10 +175,31 @@ def as_1_26_23():
         _BEFORE_1_26_24.reset(token)
 
 
+# 1.26.25 reads a Leica zoom to two decimals, as LAS X shows an SP8's (a TCS SP5 records "3" as 2.99875025381001 and
+# 2.99879313401932 in one session; a TCS SP8 1.21130609... and 1.21130795..., both 1.21 in LAS X) and a white
+# light laser's output. A project scanned by 1.26.24 reads its slide and control images as then until it scans again.
+_BEFORE_1_26_25 = ContextVar("read_as_1_26_24", default=False)
+
+
+def _before_1_26_25():
+    return _before_1_26_24() or _BEFORE_1_26_25.get()
+
+
+@contextmanager
+def as_1_26_24():
+    """Read files as 1.26.24 did: without the rules of 1.26.25."""
+    token = _BEFORE_1_26_25.set(True)
+    try:
+        yield
+    finally:
+        _BEFORE_1_26_25.reset(token)
+
+
 def reading_as(version):
     """The reading for images read again for a project whose inventory was written by that version (the
     scanned_with column): "" for an inventory from before 1.26.20 (as_before), a version before 1.26.21
-    (as_1_26_20), before 1.26.23 (as_1_26_22), before 1.26.24 (as_1_26_23), or the current reading."""
+    (as_1_26_20), before 1.26.23 (as_1_26_22), before 1.26.24 (as_1_26_23), before 1.26.25 (as_1_26_24), or
+    the current reading."""
     import contextlib
     if version is None:
         return contextlib.nullcontext()
@@ -189,7 +210,9 @@ def reading_as(version):
         return as_1_26_20()
     if parts < (1, 26, 23):
         return as_1_26_22()
-    return as_1_26_23() if parts < (1, 26, 24) else contextlib.nullcontext()
+    if parts < (1, 26, 24):
+        return as_1_26_23()
+    return as_1_26_24() if parts < (1, 26, 25) else contextlib.nullcontext()
 
 
 def _dyes(m):
@@ -576,6 +599,18 @@ def _leica_scan(step, master):
         except (TypeError, ValueError):
             continue
         parts.append(text.format(f"{round(number, 2):g}"))
+    if not _before_1_26_25():
+        # 1.26.25: a white light laser's output, which LAS X shows in the Lasers table as "WLL On, 70.00 %"
+        # (OutputPowerPercentage 0.7; read off LAS X Office 1.4.11 for an SP8 and a STELLARIS FLIM file,
+        # 23 November 2026). It scales every line the laser gives, on top of each line's intensity. The file
+        # does not say which laser gave a line, so it is recorded whenever the laser is on.
+        wll = next((l for el in (step, master) if el is not None for l in el.iter("Laser")
+                    if l.get("LaserName") == "WLL"), None)
+        try:
+            if wll is not None and wll.get("PowerState") == "On":
+                parts.append(f"WLL {round(float(wll.get('OutputPowerPercentage')) * 100, 1):g}%")
+        except (TypeError, ValueError):
+            pass
     return "; ".join(parts)
 
 
@@ -748,6 +783,16 @@ def leica_images(path, cfg):
             # placeholder objective ("Dummy2") and zoom 1, so they are not used.
             objective = _leica_record(elem, "FilterSettingRecord", "Attribute", "Objective")
             zoom = _leica_record(elem, "ScannerSettingRecord", "Identifier", "dblZoom")
+        if zoom and not _before_1_26_25():
+            # 1.26.25: two decimals, as LAS X shows an SP8 or STELLARIS zoom (one for a LAS AF file); the file's
+            # many decimals differ between images taken at one zoom, which split one flat-field session into
+            # several. Rounded from the text, half up, as a display rounds (found by review: float rounding
+            # sends 1.215 down)
+            from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+            try:
+                zoom = f"{float(Decimal(str(zoom).strip()).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)):g}"
+            except (InvalidOperation, ValueError, TypeError):
+                pass
         out.append({
             "format": "Leica LIF", "system": f"Leica {system}".strip(), **({"model": f"Leica {model}"} if model else {}),
             "location_in_file": f"series {i} ({im['name']})",

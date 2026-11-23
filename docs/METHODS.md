@@ -50,7 +50,7 @@ The settings are those of the reporter channel, read from that channel's own par
 
 | Format | Settings read |
 |---|---|
-| Leica | Detector gain, each laser line in use with its intensity, and line averaging. The detector is named as the file names it: "HyD gain" for hybrid detectors, "PMT gain" for a PMT. The number is the one LAS X shows; on a TCS SP8 that is percent for a HyD and volts for a PMT. On a STELLARIS in photon counting, LAS X does not use the gain the file records. From 1.26.23 the scan speed, pinhole (Airy units), frame averaging and line and frame accumulation are read too, into their own column (scan_settings), not into the settings: an image whose values differ from most images with the same settings is flagged at Scan data, and its settings group stays as it was. Real files mix them (400 and 600 Hz in one SP8 file; pinholes of 2 and 4 AU in another; line accumulation 3, which sums rather than averages). |
+| Leica | Detector gain, each laser line in use with its intensity, and line averaging. The detector is named as the file names it: "HyD gain" for hybrid detectors, "PMT gain" for a PMT. The number is the one LAS X shows; on a TCS SP8 that is percent for a HyD and volts for a PMT. On a STELLARIS in photon counting, LAS X does not use the gain the file records. From 1.26.23 the scan speed, pinhole (Airy units), frame averaging and line and frame accumulation are read too, into their own column (scan_settings), not into the settings: an image whose values differ from most images with the same settings is flagged at Scan data, and its settings group stays as it was. Real files mix them (400 and 600 Hz in one SP8 file; pinholes of 2 and 4 AU in another; line accumulation 3, which sums rather than averages). From 1.26.25 a white light laser's output is recorded there too ("WLL 70%", LAS X: "WLL On, 70.00 %"), whenever the laser is on: the file does not say which laser gave a line. |
 | Zeiss | Detector gain (or voltage), each laser line with the share of its power let through (1 - attenuation), lamp intensity and exposure for cameras, and averaging. |
 | Nikon | Camera exposure, gain and multiplier, each laser line that is on with its power, and the fluorescence lamp. For the A1 and AX point-scanning confocals: the laser power and detector voltage (HV) of the detector channel with the reporter's excitation wavelength, and line averaging. From 1.26.24 the camera binning (4x4 sums 16 pixels into one) and an A1, AX or C2's pinhole and scan speed are read into scan_settings, as NIS-Elements shows them under Capturing, with the same flag as Leica's. Check the reading labels the camera values with NIS-Elements' own names: "Visual Gain" is not the camera's Calibrated Gain, and an exposure of "Triggered" is the trigger mode. |
 | OME-TIFF | Detector gain and voltage, each light source's wavelength and attenuation as the file states them, and exposure. A value the channel does not give itself is taken from the instrument's detector or light source that the channel names, as Bio-Formats writes converted files. |
@@ -690,7 +690,11 @@ reporter channel of every image before anything is shown, suggested or measured,
 uniform fluorescent reference slide taken at the project's settings in each imaging session.
 
 An imaging session is one microscope, settings, objective and zoom, and one acquisition day from the
-metadata. Nikon and Olympus dates, written in the computer's locale, are read in the common forms, US
+metadata. From 1.26.25 a Leica zoom is read to two decimals, as LAS X shows an SP8's (one decimal for a file
+saved by LAS AF): the file's many decimals differ
+between images taken at one zoom (a TCS SP5 recorded "3" as 2.99875 and 2.99879 in one session), which put
+each in a session of its own. A project scanned before reads its slide images as then until it scans again,
+and the Build card says when a coded image's session changes. Nikon and Olympus dates, written in the computer's locale, are read in the common forms, US
 month/day first; a date that can only be day first (a day above 12) and is written with AM or PM, or
 with no time, is read day first when Scan data was run with 1.26.18 or later (the day is then in `inventory.csv`, column
 `acquired_day`). Slide images are read by the same rule as the project's images. Leica files have a

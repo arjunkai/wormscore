@@ -5,6 +5,32 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.25
+
+**A Leica zoom is read to two decimals, as LAS X shows it, so one zoom is one flat-field session; a white
+light laser's output is recorded.**
+- A Leica file records the zoom with many decimals, and images taken at one zoom differ in the last of them: a
+  TCS SP5 recorded "3" as 2.99875025381001, 2.99879313401932 and 2.99878455787935 in one session (a public
+  dataset, Zenodo 7688944), and a TCS SP8 records 1.21130609 and 1.21130795, both 1.21 in LAS X. The zoom is
+  part of the flat-field session, so such images were each put in a session of their own and corrected with
+  the nearest or the average session instead of their own. The zoom is now read to two decimals, as LAS X
+  shows an SP8 or STELLARIS zoom (it shows one decimal for a file saved by LAS AF); zooms that differ in LAS X
+  (1.17 and 1.20) stay apart.
+- A white light laser's output, which LAS X shows as "WLL On, 70.00 %", is recorded in scan_settings
+  ("WLL 70%"), with the Scan data flag when an image differs from most images with the same settings. It
+  scales every line the laser gives. The file does not say which laser gave a line, so it is recorded whenever
+  the laser is on. Detector modes stay unread: the file records a number whose meaning differs by system.
+- Scoring with the keyboard: after Ctrl+Enter opens the next image, the keyboard is at its first question
+  again (one Tab reaches the answers; the arrow keys still move through planes), and after Save opens the
+  Outline tab the keyboard is there. Typing boxes have an edge that can be seen, the step list and the flag
+  questions are read out properly by screen readers, and Project settings puts the score preview under the
+  editor in windows narrower than 1250 px, where the editor had become too narrow to use. Found in an
+  accessibility check of the scoring page and the home screen.
+- **Who is affected:** from its next Scan data, a Leica project's zoom column and, with flat-field correction,
+  its sessions may change; the Build card says so first ("choose the slide images again"). Images already
+  scored keep their session. Leica projects with a white light laser get "WLL ..%" in scan_settings. A project
+  scanned before reads its slide and control images as then until it scans again.
+
 ## 1.26.24
 
 **Nikon and Olympus files checked against NIS-Elements Viewer and OlyVIA: an old Nikon file's reporter is

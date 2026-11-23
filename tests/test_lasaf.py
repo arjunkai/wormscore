@@ -46,7 +46,9 @@ def test_lasaf_objective_and_zoom_are_read_as_las_x_shows_them(tmp_path):
     path = lasaf_file(tmp_path)
     im = R.leica_images(path, K.default_settings())[0]
     assert im["objective"] == "HCX PL APO CS  20.0x0.70 DRY  UV"       # not the placeholder "Dummy2"
-    assert im["zoom"] == "2.41743284242754"                            # not the sequence's zoom 1
+    assert im["zoom"] == "2.42"                  # not the sequence's zoom 1; two decimals from 1.26.25
+    with R.as_1_26_24():
+        assert R.leica_images(path, K.default_settings())[0]["zoom"] == "2.41743284242754"
     assert im["model"] == "Leica TCS SP5"
 
 
@@ -73,15 +75,16 @@ def test_each_version_reads_at_its_own_level():
     import contextlib
     assert R._BEFORE.get() is False
     for version, level in (("1.26.19", "as_1_26_20"), ("1.26.20", "as_1_26_20"), ("1.26.21", "as_1_26_22"),
-                           ("1.26.22", "as_1_26_22"), ("1.26.23", "as_1_26_23"), ("1.26.24", "current"),
-                           ("1.27.0", "current")):
+                           ("1.26.22", "as_1_26_22"), ("1.26.23", "as_1_26_23"), ("1.26.24", "as_1_26_24"),
+                           ("1.26.25", "current"), ("1.27.0", "current")):
         gate = R.reading_as(version)
         if level == "current":
             assert isinstance(gate, contextlib.nullcontext), version
             continue
         with gate:
-            assert R._before_1_26_24(), version
-            assert R._before_1_26_23() == (level != "as_1_26_23"), version
+            assert R._before_1_26_25(), version
+            assert R._before_1_26_24() == (level != "as_1_26_24"), version
+            assert R._before_1_26_23() == (level not in ("as_1_26_23", "as_1_26_24")), version
             assert R._before_1_26_21() == (level == "as_1_26_20"), version
 
 

@@ -267,7 +267,7 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .chip { font-size: var(--text-xs); font-weight: 600; padding: 1px 8px; border-radius: 999px; letter-spacing: .02em; }
 .chip.done { background: var(--accent-soft); color: var(--accent); }
 .chip.next { background: var(--accent-soft); color: var(--accent); }
-.chip.running { background: var(--run-soft); color: var(--run); }
+.chip.running { background: var(--run-soft); color: var(--text); }   /* --run text is 4.3:1 in light */
 .chip.changed { background: var(--warn-soft); color: var(--text); }   /* --warn text is 4.4:1 in light */
 .step.changed { border-color: var(--warn); }
 .step.changed .num { border-color: var(--warn); color: var(--warn); }
@@ -620,6 +620,7 @@ textarea.f-input { resize: vertical; line-height: 1.45; }
 .m-zoom .m-zoom-note { color: var(--faint); font-size: var(--text-xs); }
 .sf-rules { margin: 0 0 var(--space-md); padding-left: 18px; color: var(--muted); font-size: var(--text-xs); line-height: 1.5; }
 
+@media (max-width: 1250px) { .sf-cols { grid-template-columns: 1fr; } }
 @media (max-width: 900px) {
   .sf-cols { grid-template-columns: 1fr; }
   .sf-grid { grid-template-columns: 1fr; gap: var(--space-xs); padding-left: 0; }

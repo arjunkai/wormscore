@@ -180,6 +180,13 @@ def lasaf_from_scan(project):
         return not R._before_1_26_23()
 
 
+def leica_zoom_from_scan(project):
+    """1.26.25: whether slide images are read with a Leica zoom to two decimals (scanned by 1.26.25 or later)."""
+    from . import readers as R
+    with reading(project):
+        return not R._before_1_26_25()
+
+
 def reading(project):
     """1.26.21: the reading for slide and control images: as the project's images were read, from the
     oldest version in inventory.csv's scanned_with column (readers.reading_as). An inventory from before
@@ -459,7 +466,8 @@ def measure(project, folder, dark_folder=None, across_field=True, between_sessio
                 "measured": f"{dt.datetime.now():%Y-%m-%d %H:%M}",
                 **({"leica_days": True} if leica_days else {}), **({"utc_days": True} if utc_days else {}),
                 **({"scan_zoom": True} if scan_zoom else {}),
-                **({"lasaf_objective": True} if lasaf_from_scan(project) else {})}
+                **({"lasaf_objective": True} if lasaf_from_scan(project) else {}),
+                **({"leica_zoom": True} if leica_zoom_from_scan(project) else {})}
     _save(project, summary_, flats, {"across_field": bool(across_field), "between_sessions": bool(between_sessions)})
     cfg = C.load(project)
     lines = log_lines(project, cfg)

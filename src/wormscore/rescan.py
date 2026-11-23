@@ -316,15 +316,28 @@ def scan_changes(project, cfg=None):
         from .flatfield import session_key
         sessions = [] if (summary(project) or {}).get("scan_zoom") else (summary(project) or {}).get("sessions") or []
 
-        def other_zoom(s):
+        def other_zoom(s, among=None):
             system, settings, _ = session_key({k: v for k, v in s.items() if k != DAY_COLUMN})
             plain = " | ".join(x for x in (str(s.get("settings") or ""), str(s.get("objective") or "")) if x)
-            mine = [x for x in sessions if x.get("system") == system]
+            mine = [x for x in (sessions if among is None else among) if x.get("system") == system]
             return not any(x.get("settings") == settings for x in mine) and any(
                 x.get("settings") != settings and (not plain or x.get("settings") == plain
                                                     or str(x.get("settings")).startswith(plain + " | "))
                 for x in mine)
         zoomed = sum(1 for r, s in pairs if s.get("format") in ("Zeiss CZI", "Olympus FluoView") and other_zoom(s))
+        # 1.26.25: a Leica zoom is read to the two decimals LAS X shows; until the slide images are read the same
+        # way (the summary then says leica_zoom), also after a rebuild
+        # only after a new scan read them so (found by review: a project measured before 1.26.25 has the very
+        # split this fixes, and its card would have said so without any change)
+        from .flatfield import leica_zoom_from_scan
+        held_ = summary(project) or {}
+        leica_zoomed = 0 if held_.get("leica_zoom") or not leica_zoom_from_scan(project) else sum(
+            1 for r, s in pairs if s.get("format") == "Leica LIF" and other_zoom(s, held_.get("sessions") or []))
+        if leica_zoomed:
+            out["lines"] += [f"the flat-field zoom of {leica_zoomed} coded Leica image{'s' if leica_zoomed != 1 else ''} "
+                             f"is now read to two decimals, as LAS X shows it; choose the slide images again so "
+                             f"theirs are read the same way"]
+            out["kinds"].append("slides")
         if zoomed:
             out["lines"] += [f"the flat-field zoom of {zoomed} coded image{'s' if zoomed != 1 else ''} is now the "
                              f"scan zoom; choose the slide images again so theirs are read the same way"]

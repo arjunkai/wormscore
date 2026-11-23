@@ -562,8 +562,24 @@ async function openWorm(code) {
   [st.mip, st.bfVals, st.idMip, ...st.xMip] = pixels;
   st.loading = false;
   draw();
+  focusFirstQuestion();
   loadNext(code);
   preloadPlanes(code);
+}
+
+// After the next image opens, keyboard scoring starts again at its first question, if the keyboard was in
+// the form (or nowhere); a click in the image list keeps its place. The question's group gets the focus, not
+// its first answer: a focused answer keeps the arrow keys, so moving through planes would change it.
+// One Tab then reaches the answers.
+function focusFirstQuestion() {
+  const form = $("#scoreForm");
+  const at = document.activeElement;
+  if (!form || form.classList.contains("hidden") || (at && at !== document.body && !form.contains(at))) return;
+  if (at && at.tagName === "TEXTAREA") return;      // typing a note while the image loaded: stay there
+  const group = form.querySelector("fieldset");
+  if (!group) return;
+  if (!group.hasAttribute("tabindex")) group.setAttribute("tabindex", "-1");
+  group.focus({ preventScroll: true });
 }
 
 // An image that cannot be loaded says so and offers to try again; saving stays locked.
@@ -1225,9 +1241,10 @@ function renderFlags() {
   const answers = (st.score && st.score.flag_answers) || {};
   $("#flags").replaceChildren(...st.meta.flags.map(f => {
     const q = FLAG_QUESTIONS[f.id] || { q: "Before saving:", options: ["noted"] };
-    return h("div", { class: "flag" }, h("p", {}, f.text), h("div", { class: "q" }, q.q),
-      q.options.map(o => h("label", {},
-        h("input", { type: "radio", name: `flag_${f.id}`, value: o, checked: answers[f.id] === o }), ` ${ANSWER_TEXT[o] || o}`)));
+    const qid = `flagq_${f.id}`;
+    return h("div", { class: "flag" }, h("p", {}, f.text), h("div", { class: "q", id: qid }, q.q),
+      h("div", { role: "radiogroup", "aria-labelledby": qid }, q.options.map(o => h("label", {},
+        h("input", { type: "radio", name: `flag_${f.id}`, value: o, checked: answers[f.id] === o }), ` ${ANSWER_TEXT[o] || o}`))));
   }));
 }
 
@@ -1376,7 +1393,11 @@ $("#scoreForm").addEventListener("submit", async e => {
       return saveMessage(`Saved ${r.saved}. Every image is scored.`);
     }
     // nothing to outline on an unusable image; after a warning the Score tab stays, so it is read
-    if (v.usable === "yes" && !st.formDirty && !r.replaced) setTab("mark");
+    if (v.usable === "yes" && !st.formDirty && !r.replaced) {
+      setTab("mark");
+      const tab = $(".tabs button[data-tab=mark]");
+      if (tab) tab.focus({ preventScroll: true });
+    }
   } catch (err) {
     st.saving = false;
     st.saveAndNext = false;
@@ -1543,7 +1564,10 @@ document.addEventListener("keydown", e => {
   if (t.tagName === "INPUT" && t.type !== "range") {
     if (!["radio", "checkbox"].includes(t.type) || k.startsWith("arrow")) return;
   }
-  if (t.type === "radio" && /^[1-9]$/.test(k) && !st.cfg.identity && t.closest("#scoreForm") && answerByKey(t, +k)) {
+  // a number answers the focused question: from one of its answers, or from the question itself after the
+  // next image opened (focusFirstQuestion)
+  const asked = t.type === "radio" ? t : t.tagName === "FIELDSET" ? t.querySelector("input[type=radio]") : null;
+  if (asked && /^[1-9]$/.test(k) && !st.cfg.identity && asked.closest("#scoreForm") && answerByKey(asked, +k)) {
     e.preventDefault();
     return;
   }
