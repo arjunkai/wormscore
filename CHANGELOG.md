@@ -5,6 +5,43 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.23
+
+**Leica files checked against LAS X: a TCS SP5's objective and zoom are read; scan speed, pinhole and
+accumulation are recorded and flagged; the Build card warns before a rebuild would stop.**
+- Check the reading was compared field by field with LAS X Office 1.4.11 on 21 Leica images (two SP8 files,
+  a TCS SP5 file and a STELLARIS 5 file). Every value matched except one: for a file saved by LAS AF (TCS
+  SP5) wormscore did not read the objective or the zoom, which LAS X and Bio-Formats both show. It now
+  reads them from the same records. This changes 10 of 768 Leica images in the sample files, all SP5;
+  apart from the new column below, every other image reads exactly as in 1.26.22 (checked on 424 sample
+  files).
+- Scan speed, pinhole, frame averaging and line and frame accumulation are read for Leica files and
+  written to a new inventory column, scan_settings. They change how bright an image is, and real files mix
+  them (400 and 600 Hz in one SP8 file), but they were not recorded. An image whose values differ from most
+  images with the same settings is now flagged at Scan data. They are not added to the settings, so no
+  settings group or flat-field session moves.
+- The Build card now says when a coded image no longer passes the inclusion rules (an identity channel no
+  longer found, say). A rebuild that keeps the codes, and Add new images, stop in that case; before, the
+  card said nothing until the build stopped. It also says when a coded image's objective is now read, and,
+  with flat-field correction, when a TCS SP5 image's session changes (choose the slide images again).
+- The minimum objective magnification decides which images are coded. A coded image is no longer left out
+  for it by a rebuild that keeps the codes or by Add new images: those used to stop, and a TCS SP5 project
+  scored at 20x would have been stopped by its first build after a new scan (found in review). The Build
+  log says when such an image is kept; a rebuild with new codes applies the minimum to every image.
+- Check the reading says where LAS X shows the zoom and the scan settings; that in a sequential scan, and on
+  a STELLARIS, the laser and gain are under the reporter's own Setting "Seq. n" (the top tables show one
+  sequence only); and, for a file saved by LAS AF, the sections LAS X uses for it.
+- **Who is affected:** a project with TCS SP5 (LAS AF) images gets their objective and zoom from its next
+  Scan data: the Methods draft names the objective, key.csv's objective column holds it after the next
+  build (the columns are as before), new images below a minimum magnification are left out and, with
+  flat-field correction, the SP5 images' sessions change; the Build card says so first. Coded images stay
+  in. Every Leica project gets the scan_settings column and, where images differ, the new flag. A project
+  whose minimum magnification was raised after coding now builds with the codes kept instead of stopping
+  (the Build log says so); after a new Scan data its Methods draft says how many coded images are below the
+  minimum. Images
+  already scored never change, and every results table keeps its columns (merged.csv's objective column
+  names the SP5 objective once the key does).
+
 ## 1.26.22
 
 **The Build card says when a new scan reads other channels for coded images; a second import of a scorer's

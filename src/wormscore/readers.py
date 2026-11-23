@@ -135,17 +135,38 @@ def as_1_26_20():
         _BEFORE_1_26_21.reset(token)
 
 
+# 1.26.23 reads the objective and zoom of a Leica image saved by LAS AF (TCS SP5), as LAS X shows them. A
+# project scanned by 1.26.21 or 1.26.22 reads its slide and control images as then until it scans again.
+_BEFORE_1_26_23 = ContextVar("read_as_1_26_22", default=False)
+
+
+def _before_1_26_23():
+    return _before_1_26_21() or _BEFORE_1_26_23.get()
+
+
+@contextmanager
+def as_1_26_22():
+    """Read files as 1.26.21 and 1.26.22 did: without the rules of 1.26.23."""
+    token = _BEFORE_1_26_23.set(True)
+    try:
+        yield
+    finally:
+        _BEFORE_1_26_23.reset(token)
+
+
 def reading_as(version):
     """The reading for images read again for a project whose inventory was written by that version (the
     scanned_with column): "" for an inventory from before 1.26.20 (as_before), a version before 1.26.21
-    (as_1_26_20), or the current reading."""
+    (as_1_26_20), before 1.26.23 (as_1_26_22), or the current reading."""
     import contextlib
     if version is None:
         return contextlib.nullcontext()
     parts = tuple(int(x) for x in re.findall(r"\d+", str(version))[:3])
     if not parts:
         return as_before()
-    return as_1_26_20() if parts < (1, 26, 21) else contextlib.nullcontext()
+    if parts < (1, 26, 21):
+        return as_1_26_20()
+    return as_1_26_22() if parts < (1, 26, 23) else contextlib.nullcontext()
 
 
 def _dyes(m):
@@ -507,8 +528,32 @@ def _leica_channels(elem):
             line_avg = s.get("LineAverage") or (master.get("LineAverage") if master is not None else None)
             chans.append({"detector": d.get("Name"), "kind": _leica_detector_kind(d), "gain": float(gain or 0),
                           "band": f"{band.get('LeftWorld')}-{band.get('RightWorld')}" if band is not None else "",
-                          "lasers": lasers, "line_avg": line_avg})
+                          "lasers": lasers, "line_avg": line_avg, "scan": _leica_scan(s, master)})
     return chans
+
+
+# 1.26.23: settings that change how bright an image is but are not in the settings text, as LAS X Office 1.4.11
+# names them under Confocal Settings (Scan Speed, PinholeAiry, FrameAverage, LineAccumulation,
+# FrameAccumulation; 22 November 2026). Real files mix them: 400 and 600 Hz in one SP8 file, pinholes of 2
+# and 4 AU in another, line accumulation 3 in a third. They go into their own inventory column and a flag, not
+# into the settings text, so no existing settings group or flat-field session moves.
+LEICA_SCAN = (("ScanSpeed", "{} Hz"), ("PinholeAiry", "pinhole {} AU"), ("FrameAverage", "frame avg {}"),
+              ("Line_Accumulation", "line acc {}"), ("FrameAccumulation", "frame acc {}"))
+
+
+def _leica_scan(step, master):
+    """The scan settings of a channel's step (missing values from the master), as text, or ""."""
+    if _before_1_26_23():
+        return ""
+    parts = []
+    for name, text in LEICA_SCAN:
+        value = step.get(name) or (master.get(name) if master is not None else None)
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        parts.append(text.format(f"{round(number, 2):g}"))
+    return "; ".join(parts)
 
 
 LOCAL_ZONE = None       # the time zone dates are given in: None is the computer's own (tests set one)
@@ -609,6 +654,12 @@ def _leica_without_lifetime(elem, chans):
     return [None if c else next(it) for c in computed]
 
 
+def _leica_record(elem, tag, field, name):
+    """The Variant of the image's first record of that kind whose field is name, stripped ("" if none)."""
+    return next(((r.get("Variant") or "").strip() for r in elem.iter(tag)
+                 if r.get(field) == name and (r.get("Variant") or "").strip()), "")
+
+
 def leica_images(path, cfg):
     lf = _lif(path)
     system = next((a.get("SystemTypeName") for a in lf.xml_element.iter("Attachment") if a.get("SystemTypeName")), "")
@@ -660,16 +711,25 @@ def leica_images(path, cfg):
         g = at[mi] if mi is not None else {}
         sx, sz = im["scale_x"], im["scale_z"]
         bits = max(im["bit_depth"])
+        objective, zoom = st.get("ObjectiveName", "").strip(), st.get("Zoom", "")
+        if not st and model and not _before_1_26_23():      # a LAS AF file only (its model is named; found by review)
+            # 1.26.23: an image saved by LAS AF (TCS SP5) has no settings definition of its own; LAS X shows its
+            # objective from the turret's record and its zoom from the scanner's (LAS X Office 1.4.11, 22
+            # November 2026; Bio-Formats reads the same). The definitions inside its sequential block name a
+            # placeholder objective ("Dummy2") and zoom 1, so they are not used.
+            objective = _leica_record(elem, "FilterSettingRecord", "Attribute", "Objective")
+            zoom = _leica_record(elem, "ScannerSettingRecord", "Identifier", "dblZoom")
         out.append({
             "format": "Leica LIF", "system": f"Leica {system}".strip(), **({"model": f"Leica {model}"} if model else {}),
             "location_in_file": f"series {i} ({im['name']})",
-            "objective": st.get("ObjectiveName", "").strip(),
+            "objective": objective,
             "n_z": im["z"], "n_t": im["t"], "width": im["x"], "height": im["y"],
             "pixel_um": round(1 / sx, 4) if sx else 0.0, "z_step_um": round(abs(1 / sz), 3) if sz else 0.0,
             "bits": bits, "channel_roles": roles, "channel_names": luts,
             "settings": (f"{g.get('kind', 'HyD')} gain {g['gain']:.1f}; " + ";".join(f"{ln}nm@{p:.1f}%" for ln, p in g["lasers"])
                          + f"; line avg {g['line_avg']}") if g else "",
-            "zoom": st.get("Zoom", ""), "acquired": _leica_acquired(elem),
+            "zoom": zoom, "acquired": _leica_acquired(elem),
+            **({"scan_settings": g.get("scan", "")} if g.get("scan") else {}),
             "stage_x": float(st["StagePosX"]) * 1e6 if "StagePosX" in st else None,
             "stage_y": float(st["StagePosY"]) * 1e6 if "StagePosY" in st else None,
             "flags": flags, "_reader": ("lif", str(path), i),

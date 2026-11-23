@@ -392,6 +392,22 @@ def browsed_sentence(project):
             f"| Before coding | {imgs} viewed with file names and genotypes visible (outputs/{BROWSED}) |"]
 
 
+def kept_below_minimum(project, cfg, key_rows):
+    """1.26.23: ". N coded images have an objective below the minimum magnification ... " when a build kept
+    them (inclusion.include_reason: the minimum applies when images are coded; a TCS SP5 file's objective was
+    read only from 1.26.23). Only in a project scanned by 1.26.23 or later, so others report as before."""
+    from .flatfield import lasaf_from_scan
+    from .inclusion import below_minimum
+    n = sum(1 for r in key_rows if not r.get("repeat_of") and below_minimum(r.get("objective"), cfg))
+    if not n or not lasaf_from_scan(project):
+        return ""
+    many = n != 1
+    return (f". {n} coded image{'s have' if many else ' has'} an objective below the minimum magnification "
+            f"({cfg['inclusion']['min_objective_magnification']}x): {'their' if many else 'its'} objective was read, or "
+            f"the minimum raised, only after {'they were' if many else 'it was'} coded, and {'they' if many else 'it'} "
+            f"kept {'their codes' if many else 'its code'}")
+
+
 def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, outcome_tests=(),
               interaction_tests=(), added=(), key_rows=(), excluded_rows=(), reliability=(), n_repeats=0,
               dim_rows=(), dim_skipped=0, second_scorers=(), between=(), form_status="yes", rank_tests=(),
@@ -424,6 +440,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         + (". After scoring began, " + "; ".join(f"{n} image{'s were' if n != 1 else ' was'} left out because "
                                                   f"{why.rstrip('.') or '[reason]'}" for why, n in sorted(late_excluded.items()))
            + " (by exclusion rules changed after scoring began)" if late_excluded else "")
+        + kept_below_minimum(project, cfg, key_rows)
         + f". On {coded_date(project)}, "
         f"{who('coded_by', '[name]')} assigned every included image a random code; the key linking codes to "
         "files and genotypes was kept in a separate folder that the scoring software does not read. "

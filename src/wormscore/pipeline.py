@@ -32,8 +32,7 @@ from .files import append_log, now, read_csv, write_csv  # noqa: F401  (re-expor
 from .browse import browse_log_line
 from .rescan import CHANNEL_COLUMNS, CHANNELS_FILE, channel_record, next_letter, same_reading, scan_changes  # noqa: F401  (re-exported)
 from .scoreform import form_log_lines
-
-INCOMPLETE = "file is incomplete"       # inventory flag (readers.ome_images), an exclusion reason at Build
+from .inclusion import INCOMPLETE, include_reason  # noqa: F401  (moved in 1.26.23; re-exported)
 
 
 INVENTORY_FIELDS = [
@@ -41,7 +40,7 @@ INVENTORY_FIELDS = [
     "local_path", "original_path", "file_sha256", "objective", "n_z", "n_t", "width", "height", "pixel_um",
     "z_step_um", "bits", "channel_names", "channel_roles", "marker_channel", "bf_channel", "settings", "zoom",
     "acquired", "acquired_day", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes",
-    "pixel_sha256", "scanned_with", "model",
+    "pixel_sha256", "scanned_with", "model", "scan_settings",
 ]
 
 
@@ -126,6 +125,28 @@ def inventory(project, log=print, progress=None):
             for r in same:
                 if str(r[key]) != mode:
                     r["flags"].append(f"{key} differs from most images on this microscope")
+    # 1.26.23: scan speed, pinhole and accumulation change how bright an image is but are not in the settings
+    # text (Leica: readers.LEICA_SCAN). An image whose values differ from most images with the same settings
+    # is flagged, so the settings group can be checked; the group itself does not change.
+    # Each value is compared on its own, among the images that record it, with the value a strict majority of
+    # them has (a value an image does not record, or a group split evenly, is not a difference; found by review).
+    def scan_parts(text):
+        return {re.sub(r"[\d.]+", "#", x): x for x in text.split("; ") if x}
+    for combo in sorted({(r["system"], r["settings"]) for r in rows if r.get("scan_settings")}):
+        same = [(r, scan_parts(r["scan_settings"])) for r in rows
+                if (r["system"], r["settings"]) == combo and r.get("scan_settings")]
+        most = {}
+        for kind in {k for _, parts in same for k in parts}:
+            values = Counter(parts[kind] for _, parts in same if kind in parts)
+            value, n = values.most_common(1)[0]
+            if n * 2 > sum(values.values()):
+                most[kind] = value
+        for r, parts in same:
+            theirs = [v for k, v in parts.items() if k in most and v != most[k]]
+            if theirs:
+                usual = "; ".join(most[k] for k in parts if k in most and parts[k] != most[k])
+                r["flags"].append(f"scan settings differ from most images with the same settings ({', '.join(theirs)} "
+                                  f"here; most: {usual.replace('; ', ', ')})")
     for r in rows:
         r["flags"] = "; ".join(r["flags"])
     write_csv(project / "outputs" / "manifest.csv", manifest)
@@ -171,39 +192,6 @@ def load_images(project):
         img["_reader"] = (r["reader_kind"], r["local_path"], int(r["reader_index"]), r["reader_axes"])
         out.append(img)
     return out
-
-
-def include_reason(img, cfg):
-    """'' if the image passes the inclusion rules, otherwise why it fails."""
-    inc = cfg["inclusion"]
-    rule = C.exclude_rule_for(cfg, img["source"], img["relative_path"])
-    if rule:
-        return f"excluded by config rule '{rule['match']}': {rule.get('reason') or 'no reason given'}"
-    if img["marker_channel"] is None:
-        return f"{cfg['marker']['label']} channel could not be identified from metadata"
-    ident = cfg.get("identity")
-    if ident and ident["required"] and img.get("identity_channel") is None:
-        return (f"{ident['label']} identity channel could not be identified from metadata (identity.required is "
-                "true, so every scored image has its cells found the same way)")
-    # 1.26.5: images Build cannot use are left out with the reason. They used to stop the whole build
-    # with a Python error that named no file.
-    flags = str(img.get("flags") or "")
-    if "pixels could not be read" in flags:
-        return "the image could not be read (damaged or incomplete file)"
-    if INCOMPLETE in flags:
-        return "the file is incomplete: some planes are missing (damaged, or still being copied)"
-    if not img["pixel_um"] or img["pixel_um"] <= 0:
-        return "the file does not record its pixel size, which the measurements and the display scale need"
-    # 1.26.5: "63.0x" was read as 0x (the digits before the x), so such images were left out as below the minimum
-    mag = re.search(r"(\d+(?:\.\d+)?)\s*x", img["objective"] or "")
-    if mag and float(mag.group(1)) < inc["min_objective_magnification"]:
-        return f"objective is {img['objective']} (minimum {inc['min_objective_magnification']}x)"
-    if img["n_t"] > inc["max_time_points"]:
-        return f"time series ({img['n_t']} time points)"
-    extent = (img["n_z"] - 1) * img["z_step_um"]
-    if extent < inc["min_z_extent_um"]:
-        return f"z-stack covers {extent:.1f} um ({img['n_z']} planes; minimum {inc['min_z_extent_um']} um)"
-    return ""
 
 
 def drop_identical(images, cfg):
@@ -696,8 +684,17 @@ def _build(project, reassign, add, log, run):
     C.check(cfg)
     tidy_unfinished_build(project, log)
     images, excluded = [], []
+    # 1.26.23: a coded image is not left out for its magnification when the codes are kept
+    # (inclusion.include_reason); a rebuild with new codes applies the minimum to every image
+    key_file = project / "key" / "key.csv"
+    coded = set() if reassign or not key_file.is_file() else {
+        (r["local_path"], r["location_in_file"]) for r in read_csv(key_file) if not r.get("repeat_of")}
+    kept = 0
     for img in load_images(project):
-        reason = include_reason(img, cfg)
+        mine = (img["local_path"], img["location_in_file"]) in coded
+        reason = include_reason(img, cfg, mine)
+        if not reason and mine and include_reason(img, cfg):
+            kept += 1
         if reason:
             excluded.append({k: img[k] for k in ("system", "genotype", "original_path", "local_path",
                                                   "location_in_file")} | {"reason": reason})
@@ -706,6 +703,10 @@ def _build(project, reassign, add, log, run):
     images, copies = drop_identical(images, cfg)
     excluded += copies
     write_csv(project / "outputs" / "excluded.csv", excluded or [{"reason": "none excluded"}])
+    if kept:
+        log(f"Warning: {kept} coded image{'s are' if kept != 1 else ' is'} kept although {'their' if kept != 1 else 'its'} "
+            f"objective is below the minimum ({cfg['inclusion']['min_objective_magnification']}x): the minimum decides "
+            f"which images are coded, and a rebuild with new codes applies it.")
     if not images:
         raise SystemExit("No images passed the inclusion rules. See outputs/excluded.csv.")
     # only the images this run renders: when adding, coded images keep the planes they were scored on

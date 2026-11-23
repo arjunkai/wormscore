@@ -155,10 +155,16 @@ def test_a_project_built_before_the_record_compares_the_identity_channel_only(pr
         w.writerows(rows)
     rescan._scan_changes.clear()
     ch = rescan.scan_changes(project)
-    assert ch["kinds"] == ["channels-unrecorded"]
-    assert ch["lines"][0].startswith("Scan data no longer finds the identity channel of")
+    # the identity channel is required here, so these images no longer pass the inclusion rules (1.26.23)
+    assert ch["kinds"] == ["left", "channels-unrecorded"]
+    assert ch["lines"][0].endswith("no longer pass the inclusion rules: mCherry identity channel could not be "
+                                   "identified from metadata (identity.required is true, so every scored image has "
+                                   "its cells found the same way)")
+    assert ch["lines"][1].startswith("Scan data no longer finds the identity channel of")
     score_all(project)
-    (line,) = rescan.scan_change_lines(project, rescan.scan_changes(project))
+    left, line = rescan.scan_change_lines(project, rescan.scan_changes(project))
+    assert left.endswith("Until every coded image passes again, a rebuild that keeps the codes, and Add new images, "
+                         "would stop. If a setting caused this, setting it back lets the build go on.")   # scored: no NEW codes
     assert "of them are already scored and would look different" in line
     # the Build log names them, record or not (here the identity channel is required, so a rebuild would
     # leave these images out instead; the line is checked as the build makes it)

@@ -226,7 +226,36 @@ def scan_changes(project, cfg=None):
                      if str(r.get("n_z") or "").isdigit() and str(s.get("n_z") or "").isdigit() and int(r["n_z"]) != int(s["n_z"]))
     out["lines"] += [f"the number of planes of {n} coded image{'s' if n != 1 else ''} changes from {a} to {b}"
                      for (a, b), n in sorted(planes.items())]
+    # 1.26.23: the objective of an image saved by LAS AF (TCS SP5) is read; it is named in the Methods draft
+    # and decides the minimum magnification
+    objs = Counter(" ".join(s["objective"].split()) for r, s in pairs
+                   if not (r.get("objective") or "").strip() and (s.get("objective") or "").strip())
+    if objs:
+        from .inclusion import below_minimum
+        n = sum(objs.values())
+        low = sum(1 for r, s in pairs if not (r.get("objective") or "").strip() and (s.get("objective") or "").strip()
+                  and below_minimum(s.get("objective"), cfg))
+        out["lines"].append(f"the objective of {n} coded image{'s' if n != 1 else ''} is now read from the file "
+                            f"({'; '.join(sorted(objs))})" + (
+                                f"; {low} below the minimum ({cfg['inclusion']['min_objective_magnification']}x) "
+                                f"stay{'s' if low == 1 else ''} in, as {'it was' if low == 1 else 'they were'} coded "
+                                f"before it was read" if low else ""))
+    # 1.26.23: a coded image the inclusion rules now leave out (a newer reading, or a rule changed): a rebuild
+    # that keeps the codes stops ("The included images differ from the existing key"), and the card said
+    # nothing about it before
+    left = Counter()
+    try:
+        from .inclusion import include_reason, typed       # not pipeline: it loads the image libraries
+        for r, s in pairs:
+            reason = " ".join(include_reason(typed(s), cfg, coded=True).split()).rstrip(".")
+            if reason:
+                left[reason] += 1
+    except (KeyError, ValueError, TypeError):
+        left = Counter()            # an inventory the build could not read either: the build says so
     out["kinds"] = ["rebuild"] * len(out["lines"])      # each of these a rebuild that keeps the codes applies
+    out["lines"] += [f"{n} coded image{'s' if n != 1 else ''} no longer pass{'' if n != 1 else 'es'} the inclusion "
+                     f"rules: {reason}" for reason, n in sorted(left.items())]
+    out["kinds"] += ["left"] * len(left)
     # 1.26.22: a scan that names other channels of a coded image's file as the reporter, the identity channel
     # or brightfield than the build used (key/channels.csv). Before, nothing compared them, so a rebuild after
     # a newer reading could show a scored image's other channel without a word.
@@ -300,6 +329,18 @@ def scan_changes(project, cfg=None):
             out["lines"] += [f"the flat-field zoom of {zoomed} coded image{'s' if zoomed != 1 else ''} is now the "
                              f"scan zoom; choose the slide images again so theirs are read the same way"]
             out["kinds"].append("slides")
+        # 1.26.23: an image saved by LAS AF (a TCS SP5; Scan data names its model) now has its objective and zoom,
+        # which are part of its flat-field session; until the slide images are read the same way (the summary
+        # then says lasaf_objective), also after a rebuild
+        held = summary(project) or {}
+        lasaf = 0 if not held.get("sessions") or held.get("lasaf_objective") else sum(
+            1 for r, s in pairs if s.get("format") == "Leica LIF" and s.get("model")
+            and ((s.get("objective") or "").strip() or (s.get("zoom") or "").strip()))
+        if lasaf:
+            out["lines"] += [f"the flat-field objective and zoom of {lasaf} coded Leica image{'s' if lasaf != 1 else ''} "
+                             f"(LAS AF) are now read from the file; choose the slide images again so theirs are read "
+                             f"the same way"]
+            out["kinds"].append("slides")
         if utc:
             out["lines"] += [f"the flat-field imaging day of {utc} coded image{'s' if utc != 1 else ''} changes: the file "
                              f"records the time in UTC, now read in this computer's time zone; choose the slide images "
@@ -322,6 +363,8 @@ def scan_changes(project, cfg=None):
                              f"scoring begins, this can change {'their' if days != 1 else 'its'} flat-field correction; choose "
                              f"the slide images again so theirs are read the same way"]
             out["kinds"].append("day")
+    # 1.26.23: "left" (a coded image no longer passes the inclusion rules: a rebuild that keeps the codes
+    # would stop until the image or the rule is restored)
     # 1.26.21: kinds says what each line asks for, for the Build card: "rebuild" (a rebuild that keeps the
     # codes applies it, and the line goes); "slides" (it stays, also after a rebuild, until the slide images
     # are chosen again, which rebuilds the blind set itself); "day" (a rebuild applies it with the nearest
@@ -346,10 +389,25 @@ def scan_change_lines(project, changes):
                "A rebuild alone uses it with the nearest day's slide images.",
         "zone": "Scan again on the computer that scanned before, or choose the slide images again. "
                 "Do not rebuild before that.",
+        "left": "Until every coded image passes again, a rebuild that keeps the codes, and Add new images, would "
+                "stop. If a setting caused this, setting it back lets the build go on.",
     }
+    # 1.26.23: while a coded image no longer passes, a rebuild that keeps the codes stops (choosing the slide
+    # images again ends in one too), so every other step waits for it (found by review)
+    if "left" in changes["kinds"]:
+        for kind in ("rebuild", "slides", "day", "zone"):
+            steps[kind] = "Once every coded image passes the inclusion rules again: " + steps[kind][:1].lower() + steps[kind][1:]
+        if not lock_reason(project):
+            steps["left"] += " Before scoring begins, Rebuild with NEW codes builds without them."
     locked = None
     out = []
+    lefts = changes["kinds"].count("left")       # the "left" step is said once, after the last such line
     for line, kind in zip(changes["lines"], changes["kinds"]):
+        if kind == "left":
+            lefts -= 1
+            if lefts:
+                out.append(f"{line[:1].upper()}{line[1:]}.")
+                continue
         if kind.startswith("channels"):
             # 1.26.22: a rebuild always uses the new reading; the line says how many of these images are already
             # scored or in a second scorer's package (counts only), as those would change
@@ -366,7 +424,7 @@ def scan_change_lines(project, changes):
                 step += " The Build log will name the codes."
             out.append(f"{line[:1].upper()}{line[1:]}. {step}")
             continue
-        if kind != "rebuild":
+        if kind not in ("rebuild", "left"):
             if locked is None:
                 locked = bool(lock_reason(project))
             if locked:

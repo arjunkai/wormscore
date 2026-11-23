@@ -125,8 +125,11 @@ def test_leica_lines_name_the_sections_of_the_properties_window(tmp_path):
     assert value(where, "Detector gain or voltage") == "Detectors, the Active one's Gain (no % or V)"
     assert value(where, "Laser lines and power") == "Laser Lines, Intensity"
     assert value(where, "Averaging") == "Confocal Settings, LineAverage"
+    assert value(where, "Zoom") == "Confocal Settings, Zoom"                    # 1.26.23
     rows = where.split("\n\n")[0].splitlines()[2:]                       # the lines that name a place
-    assert len(rows) == 9 and max(len(line) for line in rows) <= 72      # none wraps in the app's dialog
+    *rows, note = rows
+    assert len(rows) == 10 and max(len(line) for line in rows) <= 72     # none wraps in the app's dialog
+    assert note.strip().startswith("LAS X gives two decimals. In a sequential scan")
 
 
 def test_zeiss_lines_name_what_zen_lite_shows(tmp_path):

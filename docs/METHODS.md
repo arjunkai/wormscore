@@ -50,7 +50,7 @@ The settings are those of the reporter channel, read from that channel's own par
 
 | Format | Settings read |
 |---|---|
-| Leica | Detector gain, each laser line in use with its intensity, and line averaging. The detector is named as the file names it: "HyD gain" for hybrid detectors, "PMT gain" for a PMT. The number is the one LAS X shows; on a TCS SP8 that is percent for a HyD and volts for a PMT. On a STELLARIS in photon counting, LAS X does not use the gain the file records. |
+| Leica | Detector gain, each laser line in use with its intensity, and line averaging. The detector is named as the file names it: "HyD gain" for hybrid detectors, "PMT gain" for a PMT. The number is the one LAS X shows; on a TCS SP8 that is percent for a HyD and volts for a PMT. On a STELLARIS in photon counting, LAS X does not use the gain the file records. From 1.26.23 the scan speed, pinhole (Airy units), frame averaging and line and frame accumulation are read too, into their own column (scan_settings), not into the settings: an image whose values differ from most images with the same settings is flagged at Scan data, and its settings group stays as it was. Real files mix them (400 and 600 Hz in one SP8 file; pinholes of 2 and 4 AU in another; line accumulation 3, which sums rather than averages). |
 | Zeiss | Detector gain (or voltage), each laser line with the share of its power let through (1 - attenuation), lamp intensity and exposure for cameras, and averaging. |
 | Nikon | Camera exposure, gain and multiplier, each laser line that is on with its power, and the fluorescence lamp. For the A1 and AX point-scanning confocals: the laser power and detector voltage (HV) of the detector channel with the reporter's excitation wavelength, and line averaging. |
 | OME-TIFF | Detector gain and voltage, each light source's wavelength and attenuation as the file states them, and exposure. A value the channel does not give itself is taken from the instrument's detector or light source that the channel names, as Bio-Formats writes converted files. |
@@ -69,11 +69,14 @@ microscope under `saturation_value` in `config.json`.
 
 ### How the reading was checked
 
-- **Automated tests.** The test suite (`tests/`, 749 tests in 1.26.21) runs on GitHub
+- **Automated tests.** The test suite (`tests/`, 786 tests in 1.26.23) runs on GitHub
   for every change ([tests.yml](../.github/workflows/tests.yml)).
 - **The microscope software.** Check the reading was compared field by field with the vendor's software
   on real files, and every value matched:
-  - LAS X Office, on a TCS SP8 file (1.26.18).
+  - LAS X Office, on a TCS SP8 file (1.26.18); then LAS X Office 1.4.11 on 21 images (1.26.23): 16 from
+    two SP8 files (sequential scans and time series among them), a TCS SP5 file saved by LAS AF and a
+    STELLARIS 5 file. Every value matched, except that wormscore did not read the SP5's objective and
+    zoom (fixed in 1.26.23, below).
   - ZEN 3.15 (ZEN lite), on an LSM 880 file (1.26.19) and an idr0011 file (1.26.20).
   - NIS-Elements Viewer 6.10, on two Nikon files, a spinning disk with a Kinetix camera and a DS-Fi3
     z-stack (1.26.20).
@@ -149,6 +152,20 @@ microscope's name as the project uses it (flat-field sessions, settings groups, 
 stays "Leica", so no session or group of an existing project moves. In Zenodo 13752242 one file
 (Fig6c) is from a TCS SP5 with LAS AF and the SP5's argon, 561 and 633 nm lines, while the record's
 text describes a TCS SP8X with LAS X; the file is followed.
+
+**Objective and zoom of LAS AF files.** A file saved by LAS AF (TCS SP5) has no settings definition of
+its own for each image, so before 1.26.23 its objective and zoom were not read ("not recorded in the
+file"). LAS X Office 1.4.11 shows them from the turret's record (Objective "HCX PL APO CS 20.0x0.70 DRY
+UV") and the scanner's (Zoom 2.4), and Bio-Formats reads the same records; wormscore now does too. The
+definitions inside such a file's sequential block name a placeholder objective ("Dummy2") and zoom 1 and
+are not used. In the sample files this changes 10 of 768 Leica images, all from a TCS SP5. A project
+scanned before 1.26.23 reads its slide and control images as before until it scans again. After a new
+Scan data the Build card says when a coded image's objective is now read, when its flat-field session
+changes (choose the slide images again), and, for any reason, when a coded image no longer passes the
+inclusion rules (an identity channel no longer found, say): a rebuild that keeps the codes would then stop.
+The minimum objective magnification decides which images are coded: a coded image is not left out for it
+later (an SP5 project scored at 20x is not stopped by its next build); the Build log says when such an
+image is kept, and a rebuild with new codes applies the minimum to every image.
 
 ### Zeiss and OME-TIFF
 
@@ -344,7 +361,8 @@ Decided before scoring and applied without regard to genotype.
 
 - its marker channel was identified;
 - its objective is at least `min_objective_magnification` (when the metadata names one; a
-  magnification written with a decimal, `63.0x`, is read whole);
+  magnification written with a decimal, `63.0x`, is read whole). From 1.26.23 this is checked when
+  images are coded: a coded image is not left out for it by a rebuild that keeps the codes;
 - it has no more than `max_time_points`;
 - its z-stack covers at least `min_z_extent_um` ((planes - 1) x step);
 - its pixels could be read at Scan data;

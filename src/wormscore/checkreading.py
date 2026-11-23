@@ -12,7 +12,10 @@ documentation; where it does not name the field, the line names the window and n
   of Houston "The Leica Experiment Tab"; Duke "User's guide, Leica Stellaris 8"). "Project tab: Directory
   tree for opened files" (Leica TCS SP8 user manual). LAS X Office "for experiment review" (Leica).
   The section and field names were read off LAS X Office 1.4.11's Properties window for a real TCS SP8
-  file (19 November 2026); every value there matched this reading.
+  file (19 November 2026); every value there matched this reading. On 22 November 2026 LAS X Office
+  1.4.11's Properties, saved with its own stylesheet, was compared with this reading for 21 images (two SP8
+  files with sequential and time-lapse series, a TCS SP5 file saved by LAS AF, a STELLARIS 5 file): all
+  matched once the SP5's objective and zoom were read (1.26.23). LAS AF files are shown in other sections.
 - Zeiss ZEN: "The Information View is a view type that shows a summary information sheet of all relevant
   image acquisition parameters", with the list used below (LSM 880 operating manual, ZEN black, 6.21).
   "Info View" (ZEN knowledge base). "ZEN lite is the free, unlicensed edition of ZEN" (Zeiss).
@@ -41,7 +44,7 @@ ROLE_WORDS = {"BF": "brightfield", "OTHER": "not used", "UNRESOLVED": "not resol
 VALUES = ("objective", "pixel", "zstep", "planes", "bits", "channels", "gain", "laser", "light", "averaging", "exposure")
 NAMES = {"objective": "Objective", "pixel": "Pixel size", "zstep": "Z-step", "planes": "Planes", "bits": "Bit depth",
          "channels": "Channels", "gain": "Detector gain or voltage", "laser": "Laser lines and power",
-         "light": "Light source", "averaging": "Averaging", "exposure": "Exposure"}
+         "light": "Light source", "averaging": "Averaging", "exposure": "Exposure", "scan": "Scan"}
 GENERIC = "in the image's properties (acquisition parameters)"
 
 
@@ -62,7 +65,29 @@ VENDOR = {
              zstep="Dimensions, Pixel Size / Voxel Size, Z",
              planes="Dimensions, Logical Size, Z", bits="Channels, Resolution", channels="Channels, LUT",
              gain="Detectors, the Active one's Gain (no % or V)", laser="Laser Lines, Intensity",
-             averaging="Confocal Settings, LineAverage", acquired="Start Time (this computer's time zone)")),
+             averaging="Confocal Settings, LineAverage", acquired="Start Time (this computer's time zone)",
+             # 1.26.23, read off LAS X Office 1.4.11 for 16 images of two SP8 files and a STELLARIS 5 file (22
+             # November 2026): every value matched. The top Detectors and Laser Lines tables show one
+             # sequence only (and a STELLARIS file has none), so a sequential scan's reporter is under its own
+             # Setting "Seq. n".
+             zoom="Confocal Settings, Zoom", scan="Confocal Settings, by the same names",
+             note="LAS X gives two decimals. In a sequential scan, and on a STELLARIS, the laser and gain are "
+                  "under the reporter's Setting \"Seq. n\": Laser Line, and Spectral Positions/Gain/Offset.")),
+    # 1.26.23: a file saved by LAS AF (TCS SP5; Scan data names its model) is shown by LAS X Office 1.4.11 in
+    # other sections (Fig6c.lif of Zenodo 13752242, 22 November 2026): every value matched once read
+    "Leica LAS AF": (
+        "Leica LAS X",
+        "Open the .lif in LAS X (LAS X Office reviews files without the microscope). In the project tree, "
+        "right-click the image and choose Properties. This file was saved by LAS AF, so the window shows "
+        "it in other sections.",
+        dict(_all("Properties window"),
+             objective="Hardware Settings, Objective", zoom="Scanner Settings, Zoom (one decimal)",
+             pixel="Scanner Settings, Voxel-Width (in nm)", zstep="Scanner Settings, StepSize (two decimals)",
+             planes="Dimensions, Logical Size, Z", bits="Scanner Settings, Resolution",
+             channels="Total Exposures (the number only)",
+             gain="Hardware Settings, PMT (HV) or HyD (Gain)", laser="Hardware Settings, AOTF (line), in %",
+             averaging="Scanner Settings, Line-Average", scan="Scanner Settings",
+             acquired="Start Time (this computer's time zone)")),
     "Zeiss CZI": (
         "Zeiss ZEN",
         "Open the .czi in ZEN (ZEN lite is the free edition) and choose the image's Info view "
@@ -313,6 +338,8 @@ def describe(img, cfg, path):
         wide = max(18, max(len(what) for what, _, _ in parts) + 2)
         lines += [_row(what, value, wide) for what, value, _ in parts]
         lines.append(_row("In inventory.csv", img["settings"], wide))
+        if img.get("scan_settings"):     # 1.26.23: its own column, not part of the settings text
+            lines.append(_row("Scan", img["scan_settings"], wide))
     flags = scan_flags(img, cfg)
     lines.append("")
     if flags:
@@ -320,9 +347,12 @@ def describe(img, cfg, path):
     else:
         lines.append("Flags Scan data would raise: none")
     lines.append("")
-    if img["format"] in VENDOR:
-        software, how, where = VENDOR[img["format"]]
+    vendor = "Leica LAS AF" if img["format"] == "Leica LIF" and img.get("model") else img["format"]
+    if vendor in VENDOR:
+        software, how, where = VENDOR[vendor]
         shown = [v for v in VALUES[:6]] + list(dict.fromkeys(key for _, _, key in parts if key))
+        if img.get("scan_settings") and "scan" in where:
+            shown.append("scan")
         lines += [f"Where to find these in {software}", f"  {how}"]
         if img["acquired"] and "acquired" in where:     # in the order of the values above
             lines.append(_row("Acquired", where["acquired"], 26))
@@ -333,6 +363,8 @@ def describe(img, cfg, path):
             lines.append(f"  All of these are {places.pop()}.")
         else:
             lines += [_row(NAMES[v], where[v], 26) for v in shown]
+        if where.get("note"):
+            lines.append(f"  {where['note']}")
     else:
         wrote = written_by(path)
         lines.append(NO_VENDOR)

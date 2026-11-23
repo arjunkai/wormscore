@@ -172,6 +172,13 @@ def zoom_from_scan(project):
         return False
 
 
+def lasaf_from_scan(project):
+    """1.26.23: whether slide images are read with the objective and zoom of LAS AF files (TCS SP5), that is
+    with the current reading. Until the project scans with 1.26.23, they are read without, as its images."""
+    import contextlib
+    return isinstance(reading(project), contextlib.nullcontext)
+
+
 def reading(project):
     """1.26.21: the reading for slide and control images: as the project's images were read, from the
     oldest version in inventory.csv's scanned_with column (readers.reading_as). An inventory from before
@@ -450,7 +457,8 @@ def measure(project, folder, dark_folder=None, across_field=True, between_sessio
                 "dark_sha256": _sha([r["path"] for r in darks]) if darks else "", "skipped": skipped[:50],
                 "measured": f"{dt.datetime.now():%Y-%m-%d %H:%M}",
                 **({"leica_days": True} if leica_days else {}), **({"utc_days": True} if utc_days else {}),
-                **({"scan_zoom": True} if scan_zoom else {})}
+                **({"scan_zoom": True} if scan_zoom else {}),
+                **({"lasaf_objective": True} if lasaf_from_scan(project) else {})}
     _save(project, summary_, flats, {"across_field": bool(across_field), "between_sessions": bool(between_sessions)})
     cfg = C.load(project)
     lines = log_lines(project, cfg)
