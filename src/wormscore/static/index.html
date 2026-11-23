@@ -58,9 +58,11 @@
     <div class="code-row"><div class="code" id="codeTitle">-</div>
       <button type="button" id="nextBtn" class="btn" title="Next image (N). Unsaved answers are kept as a draft.">Next image <span aria-hidden="true">&rarr;</span></button></div>
     <section id="browseInfo" class="browse-info hidden" aria-label="About this image"></section>
-    <div class="tabs" role="tablist" aria-label="Steps for this image">
-      <button data-tab="score" class="on" role="tab" aria-selected="true">1. Score</button>
-      <button data-tab="mark" id="markTab" role="tab" aria-selected="false">2. Outline cells (optional)</button>
+    <!-- two buttons that each show their panel; not a tab list, whose arrow keys would take over
+         the arrow keys that move through the planes -->
+    <div class="tabs" role="group" aria-label="Steps for this image">
+      <button type="button" data-tab="score" class="on" aria-pressed="true" aria-controls="scoreForm">1. Score</button>
+      <button type="button" data-tab="mark" id="markTab" aria-pressed="false" aria-controls="markPanel">2. Outline cells (optional)</button>
     </div>
 
     <form id="scoreForm" class="tab" data-tab="score" autocomplete="off">
@@ -97,7 +99,7 @@
       </div>
     </form>
 
-    <div class="tab hidden" data-tab="mark">
+    <div class="tab hidden" data-tab="mark" id="markPanel">
       <p class="small note3d hidden" id="mark3d">Draw outlines in Projection or Planes.</p>
       <p class="small" id="markIntro">Outline each cell body so it can be measured. The numbers go to a file and are not shown here. Nothing to outline? Skip this step; your score is saved.</p>
       <div class="row">

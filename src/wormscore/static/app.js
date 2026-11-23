@@ -1433,7 +1433,7 @@ function setTab(t) {
   st.tab = t;
   $$(".tabs button").forEach(b => {
     b.classList.toggle("on", b.dataset.tab === t);
-    b.setAttribute("aria-selected", String(b.dataset.tab === t));
+    b.setAttribute("aria-pressed", String(b.dataset.tab === t));
   });
   $$(".tab").forEach(el => el.classList.toggle("hidden", el.dataset.tab !== t));
   st.drawing = null;

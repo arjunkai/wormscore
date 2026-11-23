@@ -334,10 +334,15 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .tile {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 16px; cursor: pointer;
   transition: border-color .12s, transform .12s;
+  /* a button, looking as the card did: a button centres its content, so when a row of tiles is
+     stretched to its tallest one the text is held at the top by a column (found by review) */
+  font: inherit; color: inherit; text-align: left; width: 100%;
+  display: flex; flex-direction: column; justify-content: flex-start;
 }
+.tile-in { display: block; }
 .tile:hover { border-color: var(--accent); transform: translateY(-1px); }
 .tile b { display: block; margin-bottom: 4px; }
-.tile span { color: var(--muted); font-size: var(--text-sm); }
+.tile .tile-d { color: var(--muted); font-size: var(--text-sm); }
 
 /* ---------------------------------------------------------------- modal and toast */
 .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); display: grid; place-items: center; z-index: 20; padding: 16px; }

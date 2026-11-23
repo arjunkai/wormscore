@@ -572,3 +572,23 @@ def test_the_keys_line_keeps_its_height_when_the_depth_tip_shows(browser, url, w
     assert page.evaluate(row) == keys
     page.evaluate("showDepth(0)")
     assert page.evaluate(row) == keys
+
+
+def test_score_and_outline_are_pressed_buttons_and_the_arrow_keys_still_move_planes(browser, url):
+    # 1.26.26: they were role=tab without the rest of the tab pattern; a real tab list would take
+    # the arrow keys, which move through the planes
+    page = open_page(browser, url)
+    page.wait_for_function("st.meta && st.drawn")
+    buttons = page.locator(".tabs button")
+    assert page.locator("[role=tab], [role=tablist]").count() == 0
+    assert buttons.evaluate_all("bs => bs.map(b => [b.getAttribute('aria-pressed'), !!document.getElementById(b.getAttribute('aria-controls'))])") \
+        == [["true", True], ["false", True]]
+    page.evaluate("setTab('mark')")
+    assert buttons.evaluate_all("bs => bs.map(b => b.getAttribute('aria-pressed'))") == ["false", "true"]
+    page.evaluate("setTab('score')")
+    if page.evaluate("st.meta.n_z") > 1:
+        page.evaluate("setView('plane')")            # the arrow keys move through planes in the plane view
+        z = page.evaluate("st.z")
+        buttons.first.focus()
+        page.keyboard.press("ArrowRight" if z == 0 else "ArrowLeft")
+        page.wait_for_function(f"st.z !== {z}")

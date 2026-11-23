@@ -309,9 +309,8 @@ function renderSide(d) {
 }
 
 function welcome() {
-  const tile = (act_, title, text) => h("div", { class: "tile", role: "button", tabindex: "0", "data-k": `tile:${act_}`,
-    onclick: () => sideAction(act_), onkeydown: e => e.key === "Enter" && sideAction(act_) },
-    h("b", {}, title), h("span", {}, text));
+  const tile = (act_, title, text) => h("button", { type: "button", class: "tile", "data-k": `tile:${act_}`,
+    onclick: () => sideAction(act_) }, h("span", { class: "tile-in" }, h("b", {}, title), h("span", { class: "tile-d" }, text)));
   return h("div", { class: "welcome" },
     h("img", { src: "/static/icon.svg", width: 48, height: 48, alt: "" }),
     h("h2", {}, "Blind scoring for fluorescent neurons"),

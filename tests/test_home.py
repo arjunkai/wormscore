@@ -526,3 +526,34 @@ def test_a_running_step_updates_in_place_and_a_log_being_read_stays_put(desk, en
             assert page.evaluate("window.__side") == 0          # the project list was never rebuilt
         finally:
             b.close()
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_a_welcome_tile_is_a_button_that_space_presses(desk, engine):
+    # 1.26.26: the tiles were divs with role=button that answered Enter only
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            b = getattr(p, engine).launch()
+        except Exception as exc:
+            pytest.skip(f"{engine} is not installed for Playwright ({type(exc).__name__})")
+        try:
+            page = b.new_page(viewport={"width": 1400, "height": 800})
+            page.goto(f"http://127.0.0.1:{desk['port']}/")
+            tile = page.locator("[data-k='tile:demo']")
+            assert tile.evaluate("t => t.tagName") == "BUTTON"
+            # where a row of tiles is stretched to its tallest (950 px: three tiles, one taller), the
+            # text stays at the top as it did in the old cards; title and description keep their colours
+            page.set_viewport_size({"width": 950, "height": 800})
+            page.wait_for_timeout(100)
+            tops = page.evaluate("""() => [...document.querySelectorAll('.tile')].map(t =>
+                [Math.round(t.querySelector('b').getBoundingClientRect().top - t.getBoundingClientRect().top), Math.round(t.getBoundingClientRect().height)])""")
+            assert len({h for _, h in tops}) == 1 and {y for y, _ in tops} == {17}
+            assert page.evaluate("""() => { const t = document.querySelector('.tile');
+                return getComputedStyle(t.querySelector('b')).color !== getComputedStyle(t.querySelector('.tile-d')).color; }""")
+            tile.focus()
+            page.keyboard.press("Space")
+            page.wait_for_selector("#modal:not([hidden])")
+            assert "demo" in page.locator("#modal").inner_text().lower()
+        finally:
+            b.close()

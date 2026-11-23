@@ -31,6 +31,9 @@ dialog keeps its place when its box is ticked.**
 - While a step runs, the home page updates its progress, time and log in place instead of rebuilding the page
   and the project list every 0.7 seconds. A log scrolled up to read an earlier line stays there (it jumped
   back to its end); scrolled to its end, it follows new lines. Screen readers hear when a step starts and ends.
+- Scoring page: "1. Score" and "2. Outline cells" are buttons that say which one is shown (screen readers
+  heard tabs without the rest of a tab list); the arrow keys still move through the planes from them.
+- Home screen: the welcome tiles are buttons, so Space opens them as well as Enter. They look as before.
 - The Brightfield box says what the overlay is for (landmarks such as the pharynx), and the guide says where
   the nerve ring lies in it.
 - **Who is affected:** nobody's results; the display only.
