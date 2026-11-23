@@ -28,8 +28,14 @@ class FakeWindow:
         self.loaded, self.shown = [], 0
 
     def load_url(self, url):
-        self.loaded.append(url)
+        # as WebView2: the address it already shows is not loaded again (1.26.24)
+        if url != self.url:
+            self.loaded.append(url)
         self.url = url
+
+    def run_js(self, script):
+        if script == "location.reload()":
+            self.loaded.append(self.url)
 
     def set_title(self, title):
         self.title = title

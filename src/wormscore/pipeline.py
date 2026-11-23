@@ -41,6 +41,8 @@ INVENTORY_FIELDS = [
     "z_step_um", "bits", "channel_names", "channel_roles", "marker_channel", "bf_channel", "settings", "zoom",
     "acquired", "acquired_day", "stage_x", "stage_y", "flags", "reader_kind", "reader_index", "reader_axes",
     "pixel_sha256", "scanned_with", "model", "scan_settings",
+    # 1.26.24: NIS-Elements' names of a Nikon image's camera values (labels only; readers._nikon_camera_fields)
+    "camera_fields",
 ]
 
 

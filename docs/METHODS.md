@@ -52,10 +52,10 @@ The settings are those of the reporter channel, read from that channel's own par
 |---|---|
 | Leica | Detector gain, each laser line in use with its intensity, and line averaging. The detector is named as the file names it: "HyD gain" for hybrid detectors, "PMT gain" for a PMT. The number is the one LAS X shows; on a TCS SP8 that is percent for a HyD and volts for a PMT. On a STELLARIS in photon counting, LAS X does not use the gain the file records. From 1.26.23 the scan speed, pinhole (Airy units), frame averaging and line and frame accumulation are read too, into their own column (scan_settings), not into the settings: an image whose values differ from most images with the same settings is flagged at Scan data, and its settings group stays as it was. Real files mix them (400 and 600 Hz in one SP8 file; pinholes of 2 and 4 AU in another; line accumulation 3, which sums rather than averages). |
 | Zeiss | Detector gain (or voltage), each laser line with the share of its power let through (1 - attenuation), lamp intensity and exposure for cameras, and averaging. |
-| Nikon | Camera exposure, gain and multiplier, each laser line that is on with its power, and the fluorescence lamp. For the A1 and AX point-scanning confocals: the laser power and detector voltage (HV) of the detector channel with the reporter's excitation wavelength, and line averaging. |
+| Nikon | Camera exposure, gain and multiplier, each laser line that is on with its power, and the fluorescence lamp. For the A1 and AX point-scanning confocals: the laser power and detector voltage (HV) of the detector channel with the reporter's excitation wavelength, and line averaging. From 1.26.24 the camera binning (4x4 sums 16 pixels into one) and an A1, AX or C2's pinhole and scan speed are read into scan_settings, as NIS-Elements shows them under Capturing, with the same flag as Leica's. Check the reading labels the camera values with NIS-Elements' own names: "Visual Gain" is not the camera's Calibrated Gain, and an exposure of "Triggered" is the trigger mode. |
 | OME-TIFF | Detector gain and voltage, each light source's wavelength and attenuation as the file states them, and exposure. A value the channel does not give itself is taken from the instrument's detector or light source that the channel names, as Bio-Formats writes converted files. |
 | Olympus FluoView | Detector voltage, each laser with its transmissivity, and integration. |
-| Olympus `.oir` (FV3000, FV4000, FVMPE-RS) | The reporter channel's detector voltage (HV), its gain and offset when they are not 1 and 0, its own laser line with the share let through, a neutral density filter in the laser path, and line or frame averaging. The FV4000's detectors have no voltage, so its settings are the laser and the averaging. |
+| Olympus `.oir` (FV3000, FV4000, FVMPE-RS) | The reporter channel's detector voltage (HV), its gain and offset when they are not 1 and 0, its own laser line with the share let through, a neutral density filter in the laser path, and line or frame averaging. The FV4000's detectors have no voltage, so its settings are the laser and the averaging. From 1.26.24 the channel's pinhole (127 um in an FV3000 file, as OlyVIA shows it) is read into scan_settings. |
 
 With brightness correction along z in an `.oir` file, voltage and laser power change with depth: the
 settings give the range over the planes and the image is flagged.
@@ -80,9 +80,16 @@ microscope under `saturation_value` in `config.json`.
   - ZEN 3.15 (ZEN lite), on an LSM 880 file (1.26.19) and an idr0011 file (1.26.20).
   - NIS-Elements Viewer 6.10, on two Nikon files, a spinning disk with a Kinetix camera and a DS-Fi3
     z-stack (1.26.20).
-  - OlyVIA 5.1, on an FV3000 bead file (figshare 11512431) and a FluoView 1.3 file (1.26.20).
+  - OlyVIA 5.1, on an FV3000 bead file (figshare 11512431) and a FluoView 1.3 file (1.26.20); then on an
+    FV3000 and an FV4000 file (1.26.24): every value matched, except that the FV4000's time zone was not
+    shown (fixed in 1.26.24, below).
+  - NIS-Elements Viewer, on five more Nikon files (1.26.24): an A1plus confocal, a swept-field camera
+    file, a CSU-W1 spinning disk with C. elegans, and two old files saved by NIS-Elements 2.30. Every
+    value matched, except that the old files' reporter wavelengths were not read (fixed in 1.26.24,
+    below).
 
-  The one difference found, a UTC time shown without conversion, was fixed in 1.26.20. Check the
+  The differences found were fixed: a UTC time shown without conversion (1.26.20), the SP5's objective
+  and zoom (1.26.23), and the old Nikon files' wavelengths and the FV4000's time zone (1.26.24). Check the
   reading names where the vendor's software shows each value.
 - **Bio-Formats.** [tools/bioformats_referee.py](../tools/README.md) compares wormscore's reading of
   each file with Bio-Formats' and prints every difference. On 12 of the dataset files below, 23 of
@@ -204,6 +211,19 @@ Brightfield is the channel recorded as brightfield or transmitted light (Olympus
 
 - These files also record an emission wavelength, which counts only if `marker.emission_nm` gives a
   range (for example `[500, 550]` for GFP).
+- The wavelengths are those of the channel's own record of the image (its filter's peak). In files saved
+  by older NIS-Elements the [nd2](https://github.com/tlambert03/nd2) library loses that value; from
+  1.26.24 wormscore reads it there itself (Exception_2.nd2's PSM_GFP channel: 488 nm excitation and 520 nm
+  emission, as NIS-Elements Viewer shows it), so such a reporter is found. A filter cube's band (465 to
+  495 nm, say) is a range, not a laser line, and is never read as one; nor is the cube named in the
+  experiment's plan, which in one sample file is another than the image's own record. Of the 25 sample
+  ND2 files wormscore reads, this finds the reporter in two (both old files with one 488 nm channel). A project
+  scanned before 1.26.24 reads its slide and control images as before until it scans again.
+- A Nikon model's name ("Nikon A1plus") is shown in Check the reading, Browse images and the Methods
+  draft; the microscope's name as the project uses it stays as before ("Nikon Nikon A1plus"), so no
+  settings group or flat-field session moves.
+- Where NIS-Elements says Uncalibrated, Check the reading's Pixel size row, and the Methods draft's
+  table, say "not calibrated in the file".
 - Olympus numbers written with a decimal comma (`0,207`) are read as decimals.
 - Colour (RGB) camera pictures are not used; `manifest.csv` says so in the file's note.
 
@@ -222,6 +242,11 @@ file.
 - The bit depth is the one the file states (10 or 12 in the FV3000 and FVMPE-RS files checked, 16 in
   the FV4000's).
 - The date is the file's local time. The file does not record the stage position.
+- A time the file writes with its own offset (an FV4000 in Asia: `2024-12-02T09:37:02.725+08:00`) is
+  given on the microscope's clock with that offset from 1.26.24: `2024-12-02 09:37:02 (UTC+08:00)`. The day
+  is the file's, as before. This holds for any format; in the sample files only `.oir` files write such a
+  time (82 of 226 images). OlyVIA 5.1 shows Creation Time in the time zone of the computer it runs on
+  (12/1/2024 8:37:02 PM in UTC-5), and Check the reading says so for such a file.
 
 ### ImageJ hyperstack TIFF
 
@@ -288,6 +313,9 @@ second time in both places (the value set in the software, before a neutral dens
 - Where that second record agrees between the image and the plane, the image's share is used alone. It
   is then backed by three of the four records, it is the one Bio-Formats reports, and in series of
   one session the pixels follow it. This held in all 23 files checked.
+- Evident's own viewer agrees: in the two files with a disagreeing plane record that were opened in
+  OlyVIA 5.1 (an FV4000 file, imagesc 105684, and an FV3000 file, Zenodo 1490851), its Laser Intensity is
+  the image's share in all four disagreeing values (for example 0.10% where the plane says 1.0%).
 - Where a file has no second record or it does not agree, both shares are written in the settings and
   the image is flagged so it can be checked in the Olympus software.
 
@@ -671,7 +699,8 @@ computer that ran Scan data. Leica slide images are read with their date only on
 images have theirs (a Scan data with 1.26.18 or later). Zeiss, the FV3000 software 2.x and some
 OME-TIFF write the time in UTC (ending in Z); from 1.26.20 it is given in the time zone of the computer
 that ran Scan data, as OlyVIA shows it, so an evening session keeps its day. A time written with its
-own offset (older FluoView) is the lab's clock and is given as written. Slide images are read this way
+own offset (older FluoView, most `.oir` files) is the lab's clock and is given as written, from 1.26.24
+with that offset shown in brackets, `2024-12-02 09:37:02 (UTC+08:00)`; the day is the same. Slide images are read this way
 only once the project's images are (a Scan data with 1.26.20 or later); an image already scored keeps
 the session it was scored with. For a Zeiss laser scanning microscope the zoom is the scan zoom, from
 1.26.20 (before, every image read as zoom 1); slide images are read with it once the project's images
@@ -1169,7 +1198,11 @@ Folders with coded images cannot be removed.
 A draft Methods paragraph built from the project files: inclusion counts, the date codes were assigned
 (date of `key/seed.txt`), the scoring dates (`scoring/score_history.csv`), the unblinding date,
 measurement parameters and the tests run, plus a table of who knew the genotype at each stage (ARRIVE
-2.0 item 5). Names and whether imaging was blind come from the `blinding` section of `config.json`
+2.0 item 5). From 1.26.24, in a project scanned by 1.26.24 or later, a table gives each settings group's
+imaging parameters as the files record them (microscope, objective, zoom, laser or light and its power,
+detector and gain, exposure, averaging, scan settings, pixel size, z-step), as journals' reporting
+checklists ask; "not recorded" means the file does not hold the value, or wormscore does not read it for
+that format (scan settings are read for Leica, Nikon and Olympus `.oir` files). Names and whether imaging was blind come from the `blinding` section of `config.json`
 (`coded_by`, `scored_by`, `imager_knew_genotype`); anything not set is left in [brackets] to fill in.
 Check every sentence before use.
 

@@ -5,6 +5,48 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.24
+
+**Nikon and Olympus files checked against NIS-Elements Viewer and OlyVIA: an old Nikon file's reporter is
+found; binning, pinholes and scan speed are recorded; a time keeps its offset; the Methods draft lists each
+settings group's imaging parameters.**
+- Check the reading was compared with NIS-Elements Viewer on five Nikon files and with OlyVIA 5.1 on two
+  Olympus files. In files saved by older NIS-Elements the channel's excitation and emission (Exception_2.nd2:
+  PSM_GFP, 488 and 520 nm, as NIS-Elements shows them) were lost by the nd2 library, so the reporter was
+  never found. wormscore now reads them from the same record. Only a peak is read: a filter cube's band is a
+  range, not a laser line, and is never used as one. Of the 25 sample ND2 files wormscore reads, this finds
+  the reporter in two; every other image reads as in 1.26.23 (checked on the sample files).
+- Camera binning (4x4 sums 16 pixels into one) and the pinhole and scan speed of a Nikon point-scanning
+  confocal are
+  read into the scan_settings column, as is an Olympus .oir channel's pinhole, with the Scan data flag that
+  Leica images have had since 1.26.23. They are not added to the settings, so no settings group moves.
+- The model of a Nikon A1, AX, C1 or C2 confocal is shown as "Nikon A1plus" in Check the reading, Browse images
+  and the Methods draft; the microscope's name in the project stays "Nikon Nikon A1plus", so no group or
+  session moves.
+- A time a file writes with its own offset is shown with it: "2024-12-02 09:37:02 (UTC+08:00)" for an
+  FV4000 in Asia. In the sample files only Olympus .oir files write such a time (82 of 226 images). The
+  clock and the day are the file's, as before. OlyVIA shows such a time in this computer's zone, and Check
+  the reading now says so.
+- Check the reading says "not calibrated in the file" where NIS-Elements says Uncalibrated, and names the
+  camera values as NIS-Elements does: Visual Gain is not the camera's Calibrated Gain, and an exposure of
+  "Triggered" is a mode, not a time. The names are kept in a new inventory column, camera_fields.
+- The Methods draft has a table of each settings group's imaging parameters (microscope, objective, zoom,
+  laser or light and power, detector and gain, exposure, averaging, scan settings, pixel size, z-step), as
+  journals' reporting checklists ask, with the labels Check the reading uses.
+- LAS X Office shows FrameAverage 16383 for every image of a Leica FLIM file, as wormscore reads it; it is
+  shown as recorded.
+- After choosing another project, Start scoring now shows that project in the open scoring window. Before,
+  the window kept the last project's page and asked to be closed (nothing could be saved to the wrong
+  project). Found while scoring in the app's own window.
+- **Who is affected:** from its next Scan data, a project with old Nikon files whose channel was not
+  resolved may find its reporter (Build then codes those images; images already coded keep their codes);
+  Nikon and Olympus projects get scan_settings values and, where images differ, the flag; images whose file
+  records a time with its own offset show it in inventory.csv and, after the next build, in key.csv's
+  acquired column (the day is unchanged). A Nikon A1, AX, C1 or C2 project's Methods draft names the model in its
+  table of images. The Methods draft's new table appears only in a project scanned by 1.26.24 or later. A project scanned
+  before reads its slide and control images as then until it scans again. Images already scored never
+  change, and every results table keeps its columns.
+
 ## 1.26.23
 
 **Leica files checked against LAS X: a TCS SP5's objective and zoom are read; scan speed, pinhole and

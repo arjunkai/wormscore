@@ -117,7 +117,10 @@ VENDOR = {
          "channels": "Acquisition Details tab, one Sample each",
          "gain": "Image Fields tab, Capturing", "exposure": "Image Fields tab, Capturing",
          "laser": "Image Fields tab, Description (Power)", "light": "Image Fields tab, Description",
-         "averaging": "Image Properties", "acquired": "Image Fields tab, Date"}),
+         "averaging": "Image Properties", "acquired": "Image Fields tab, Date",
+         # 1.26.24: Binning, {Pinhole Size(um)} and {Scan Speed}, read off NIS-Elements Viewer for a swept-field
+         # and an A1plus file (22 November 2026)
+         "scan": "Image Fields tab, Capturing"}),
     # the names as OlyVIA 5.1 shows them for two real files, an FV3000 and an older FluoView one (19 November
     # 2026); the FV software itself was not at hand
     "Olympus OIR": (
@@ -128,7 +131,11 @@ VENDOR = {
              pixel="Calibration (X), in nm/pixel", zstep="Z Spacing", planes="Z Dimension, first number",
              bits="Adjust Display, Histogram", channels="Channel Count (named by detector)",
              laser="Channel n, Laser Wavelength and Intensity",
-             acquired="Creation Time (this computer's time zone)")),
+             # 1.26.24: OlyVIA 5.1 gives Creation Time in this computer's zone, also for a file that records its
+             # own (an FV4000's +08:00, 22 November 2026); wormscore keeps the file's clock and shows its offset
+             acquired="Creation Time (this computer's time zone)", scan="Properties panel",
+             own_zone="OlyVIA gives Creation Time in this computer's time zone. The time above is the "
+                      "microscope's clock with the offset the file records.")),
     "Olympus FluoView": (
         "Olympus FluoView (FV10-ASW)",
         "Open the file in FV10-ASW or the FV10-ASW Viewer.",
@@ -299,6 +306,41 @@ def _leica_unit(value, system):
     return f"{found.group(1)} {LEICA_UNITS[found.group(2)]} ({found.group(2)})"
 
 
+CAMERA_WORDS = {"exposure": "exposure", "gain": "gain", "multiplier": "gain"}
+
+
+def _named_camera_parts(settings, camera_fields):
+    """(the camera pieces under NIS-Elements' names, the rest of the settings text), or None. The camera
+    pieces come first in a Nikon settings text, each as "<exposure|gain|multiplier> <value as written>", so
+    the value is taken whole ("Conversion Gain: Gain 3" is the value "Gain 3", found by review)."""
+    names = [n for n in (camera_fields.split("/") if isinstance(camera_fields, str) else list(camera_fields or [])) if n]
+    pieces = [p.strip() for p in (settings or "").split(";")]
+    if not names or len(pieces) < len(names):
+        return None
+    out = []
+    for piece, name in zip(pieces, names):
+        word, _, value = piece.lstrip("'").partition(" ")
+        if word.lower() not in CAMERA_WORDS or name.split()[-1].lower() != word.lower() or not value.strip():
+            return None
+        value = value.strip()
+        label = "Exposure mode" if name == "Exposure" and not re.search(r"\d", value) else name
+        out.append((label, ("'" if piece.startswith("'") else "") + value, CAMERA_WORDS[word.lower()]))
+    return out, "; ".join(pieces[len(names):])
+
+
+def reporter_parts(settings, fmt, system, camera_fields=""):
+    """The reporter's settings piece by piece as Check the reading shows them: settings_parts, with a TCS SP8
+    gain's unit and a Nikon camera value under its own name. The Methods draft's table uses the same (1.26.24)."""
+    named = _named_camera_parts(settings, camera_fields)
+    if named:
+        return named[0] + settings_parts(named[1])
+    parts = settings_parts(settings or "")
+    if fmt == "Leica LIF":
+        parts = [(what, _leica_unit(value, system), key) if what == "Detector gain" else (what, value, key)
+                 for what, value, key in parts]
+    return parts
+
+
 def _row(label, value, width=18):
     return f"  {label:<{width}}{value}".rstrip()
 
@@ -314,7 +356,9 @@ def describe(img, cfg, path):
              _row("Objective", said(img["objective"]))]
     if img["zoom"]:
         lines.append(_row("Zoom", img["zoom"]))
-    lines += [_row("Pixel size", said(img["pixel_um"], " um")),
+    # 1.26.24: as NIS-Elements says "Uncalibrated"; the 1 um is a placeholder (its flag says so)
+    uncalibrated = any(R.NOT_CALIBRATED in f for f in img["flags"])
+    lines += [_row("Pixel size", "not calibrated in the file" if uncalibrated else said(img["pixel_um"], " um")),
               _row("Z-step", said(img["z_step_um"], " um") if img["n_z"] > 1 or img["z_step_um"] else "one plane, no z-step"),
               _row("Planes", str(img["n_z"])),
               _row("Image size", f"{img['width']} x {img['height']} pixels"
@@ -324,10 +368,7 @@ def describe(img, cfg, path):
     width = max([18] + [len(n) + 2 for n in names if len(n) < 40])
     lines += [_row(n or "(no name)", _role(r, cfg), width) for n, r in zip(names, roles)]
     lines.append("")
-    parts = settings_parts(img["settings"]) if mi is not None else []
-    if img["format"] == "Leica LIF":
-        parts = [(what, _leica_unit(value, img["system"]), key) if what == "Detector gain" else (what, value, key)
-                 for what, value, key in parts]
+    parts = reporter_parts(img["settings"], img["format"], img["system"], img.get("camera_fields")) if mi is not None else []
     if mi is None:
         lines.append("Reporter settings: no single reporter channel was found, so none are read. If the reporter "
                      "is not the one named above, add --project with the project folder.")
@@ -365,6 +406,8 @@ def describe(img, cfg, path):
             lines += [_row(NAMES[v], where[v], 26) for v in shown]
         if where.get("note"):
             lines.append(f"  {where['note']}")
+        if where.get("own_zone") and re.search(r"\(UTC[+-]\d\d:\d\d\)$", img["acquired"] or ""):
+            lines.append(f"  {where['own_zone']}")
     else:
         wrote = written_by(path)
         lines.append(NO_VENDOR)

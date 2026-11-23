@@ -213,6 +213,86 @@ def images_table(key_rows, excluded_rows, notes, models=None):
     return rows
 
 
+def scanned_by_1_26_24(project):
+    """Whether the project's inventory.csv was written by 1.26.24 or later: its oldest scanned_with version.
+    False without an inventory or without a version in it (found by review: such a project was not)."""
+    import re
+    from .files import read_csv
+    path = Path(project) / "outputs" / "inventory.csv"
+    try:
+        rows = read_csv(path) if path.is_file() else []
+    except Exception:
+        return False
+    versions = [v for v in (tuple(int(x) for x in re.findall(r"\d+", r.get("scanned_with") or "")[:3]) for r in rows)
+                if len(v) == 3]
+    return bool(versions) and min(versions) >= (1, 26, 24)
+
+
+def _planes(r):
+    """The image's number of planes from key.csv, 1 when it is not a number."""
+    try:
+        return int(float(r.get("n_z") or 1))
+    except (TypeError, ValueError, OverflowError):
+        return 1
+
+
+def imaging_table(project, key_rows):
+    """1.26.24: the imaging parameters of each settings group, as journals' reporting checklists ask for
+    them (objective, zoom, light source and power, detector and gain, exposure, averaging, scan settings,
+    pixel size, z-step), one row per group, from key.csv and inventory.csv. A group has one settings text by
+    definition; the other values are listed each time they differ within a group. The settings are labelled
+    as Check the reading labels them (checkreading.reporter_parts), so each can be held against the
+    microscope software. Only in a project scanned by 1.26.24 or later, so others report as before; []
+    without coded images."""
+    from .checkreading import reporter_parts
+    from .files import read_csv
+    from .readers import NOT_CALIBRATED
+    rows = [r for r in key_rows if not r.get("repeat_of")]
+    if not rows or not scanned_by_1_26_24(project):
+        return []
+    inv_path = Path(project) / "outputs" / "inventory.csv"
+    inv = {(r["local_path"], r["location_in_file"]): r for r in read_csv(inv_path)} if inv_path.is_file() else {}
+    groups = {}
+    for r in rows:
+        groups.setdefault(r.get("settings_group", ""), []).append((r, inv.get((r.get("local_path"), r.get("location_in_file")), {})))
+
+    def each(values):
+        seen = list(dict.fromkeys(" ".join(str(v).split()) for v in values if str(v).strip()))
+        return "; ".join(seen) or "not recorded"
+    out = ["## Imaging parameters per settings group", "",
+           "| Group | Microscope | Objective | Zoom | Laser or light, power | Detector or camera | Exposure | Averaging "
+           "| Scan | Pixel size (um) | Z-step (um) | Images |",
+           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    for g in sorted(groups, key=lambda x: (len(x), x)):
+        members = groups[g]
+        first, inv0 = members[0]
+        parts = [(what, value.lstrip("'"), key) for what, value, key in       # one settings text per group
+                 reporter_parts(first.get("settings"), inv0.get("format"), first.get("system"), inv0.get("camera_fields"))]
+        cell = lambda *keys: "; ".join(value if what in ("Exposure", "Averaging") else f"{what} {value}"
+                                       for what, value, key in parts if key in keys) or "not recorded"
+        other = [f"{what} {value}" for what, value, key in parts if key not in ("laser", "light", "gain", "exposure", "averaging")]
+        cells = ([
+            g or "[group]",
+            each(i.get("model") or r.get("system") for r, i in members),
+            each(r.get("objective") for r, i in members),
+            each(i.get("zoom") for r, i in members),
+            cell("laser", "light"), "; ".join(([cell("gain")] if cell("gain") != "not recorded" else []) + other)
+            if other else cell("gain"),
+            cell("exposure"), cell("averaging"),
+            each(i.get("scan_settings") for r, i in members),
+            # an uncalibrated file reads as 1 um per pixel, a placeholder (Check the reading says so too)
+            each("not calibrated in the file" if NOT_CALIBRATED in (i.get("flags") or "") else r.get("pixel_um")
+                 for r, i in members),
+            "; ".join(([each(r.get("z_step_um") for r, i in members if _planes(r) > 1)]
+                       if any(_planes(r) > 1 for r, i in members) else [])
+                      + (["one plane"] if any(_planes(r) <= 1 for r, i in members) else [])),
+            str(len(members))])
+        out.append("| " + " | ".join(" ".join(c.split()).replace("|", r"\|") for c in cells) + " |")
+    return out + ["", "Values as wormscore reads them from each file (Check the reading shows where the microscope "
+                      "software shows each one). \"Not recorded\": the file does not hold the value, or wormscore "
+                      "does not read it for that format."]
+
+
 def reliability_sentences(cfg, n_repeats, reliability):
     if not n_repeats:
         return [], []
@@ -429,6 +509,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
     ref = cfg["unblinding"]["reference_genotype"]
     rel_blind, rel_stat = reliability_sentences(cfg, n_repeats, reliability)
     looked = browsed_sentence(project)
+    imaging = imaging_table(project, key_rows)
     lines = [
         "# Methods text (draft; check every statement before use)",
         "",
@@ -493,6 +574,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         *images_table(key_rows, excluded_rows, {s.get("name"): s["note"] for s in cfg["sources"] if s.get("note")},
                       microscope_models(project)),
         "",
+        *([*imaging, ""] if imaging else []),
         "## Who knew the genotype at each stage (ARRIVE 2.0 item 5)",
         "",
         "| Stage | Blinded? |",

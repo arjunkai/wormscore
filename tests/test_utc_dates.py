@@ -4,6 +4,7 @@ Eastern time. wormscore showed 16:45:40 as written, so an evening session in the
 in Asia) had the next or the previous day. Such a time is now given in the scanning computer's time zone,
 as Leica start times are. A time with its own offset (older FluoView) or with no zone is given as before.
 An existing project corrects, measures and reports as before until it runs Scan data again."""
+import re
 import datetime as dt
 from pathlib import Path
 
@@ -32,8 +33,15 @@ def test_a_utc_time_is_given_in_the_computers_time_zone(est):
     late = readers._iso_acquired("2026-03-06T01:00:00.1234567Z")[0]               # ZEN: seven decimals
     assert late == "2026-03-05 20:00:00 -05:00"
     assert FF.acquired_day(late) == FF.scanned_day(late) == FF.imaging_date(late) == "2026-03-05"
-    # a time with its own offset is the lab's clock already; no zone, or no time: as before
-    for text in ("2015-10-28T16:29:23.944-04:00", "2026-03-05T10:00:00", "2026-03-05", "", "Z", "garbageZ"):
+    # a time with its own offset is the lab's clock already, shown with it from 1.26.24; no zone, or no time:
+    # as before
+    own = readers._iso_acquired("2015-10-28T16:29:23.944-04:00")
+    assert own == ("2015-10-28 16:29:23 (UTC-04:00)", "2015-10-28 16:29:23")
+    assert FF.acquired_day(own[0]) == FF.scanned_day(own[0]) == FF.imaging_date(own[0]) == "2015-10-28"
+    assert not re.search(r" [+-]\d\d:\d\d$", own[0])     # never read as a time in this computer's zone
+    with readers.as_1_26_23():
+        assert readers._iso_acquired("2015-10-28T16:29:23.944-04:00") == ("2015-10-28 16:29:23",) * 2
+    for text in ("2026-03-05T10:00:00", "2026-03-05", "", "Z", "garbageZ"):
         assert readers._iso_acquired(text) == (text[:19].replace("T", " "),) * 2, text
 
 

@@ -175,8 +175,9 @@ def zoom_from_scan(project):
 def lasaf_from_scan(project):
     """1.26.23: whether slide images are read with the objective and zoom of LAS AF files (TCS SP5), that is
     with the current reading. Until the project scans with 1.26.23, they are read without, as its images."""
-    import contextlib
-    return isinstance(reading(project), contextlib.nullcontext)
+    from . import readers as R
+    with reading(project):          # 1.26.24: a newer level than 1.26.23's reads them too
+        return not R._before_1_26_23()
 
 
 def reading(project):

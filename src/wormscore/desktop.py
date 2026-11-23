@@ -114,8 +114,15 @@ class Desktop:
             w = self.windows.get(kind)
             if w is not None:
                 if reload or self.urls.get(kind) != url:
+                    same = self.urls.get(kind) == url
                     self.urls[kind] = url
-                    w.load_url(url)
+                    if same and hasattr(w, "run_js"):
+                        # 1.26.24: every project's scoring server has the same address, and WebView2 does not
+                        # load the address it already shows, so the window kept the last project's page (the
+                        # server refused it, but the page asked to be closed). Found in the app's own window.
+                        w.run_js("location.reload()")
+                    else:
+                        w.load_url(url)
                 if w.title != title:
                     w.set_title(title)
                 self.front(w)

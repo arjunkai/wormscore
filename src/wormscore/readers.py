@@ -154,10 +154,31 @@ def as_1_26_22():
         _BEFORE_1_26_23.reset(token)
 
 
+# 1.26.24 reads what NIS-Elements Viewer and OlyVIA showed for the sample files and wormscore did not: the
+# excitation and emission an old Nikon file keeps in its channel's filter record, the Nikon model's name,
+# the camera binning and the A1's pinhole and scan speed, the Olympus pinhole, and a time's own offset. A
+# project scanned by 1.26.23 reads its slide and control images as then until it scans again.
+_BEFORE_1_26_24 = ContextVar("read_as_1_26_23", default=False)
+
+
+def _before_1_26_24():
+    return _before_1_26_23() or _BEFORE_1_26_24.get()
+
+
+@contextmanager
+def as_1_26_23():
+    """Read files as 1.26.23 did: without the rules of 1.26.24."""
+    token = _BEFORE_1_26_24.set(True)
+    try:
+        yield
+    finally:
+        _BEFORE_1_26_24.reset(token)
+
+
 def reading_as(version):
     """The reading for images read again for a project whose inventory was written by that version (the
     scanned_with column): "" for an inventory from before 1.26.20 (as_before), a version before 1.26.21
-    (as_1_26_20), before 1.26.23 (as_1_26_22), or the current reading."""
+    (as_1_26_20), before 1.26.23 (as_1_26_22), before 1.26.24 (as_1_26_23), or the current reading."""
     import contextlib
     if version is None:
         return contextlib.nullcontext()
@@ -166,7 +187,9 @@ def reading_as(version):
         return as_before()
     if parts < (1, 26, 21):
         return as_1_26_20()
-    return as_1_26_22() if parts < (1, 26, 23) else contextlib.nullcontext()
+    if parts < (1, 26, 23):
+        return as_1_26_22()
+    return as_1_26_23() if parts < (1, 26, 24) else contextlib.nullcontext()
 
 
 def _dyes(m):
@@ -594,9 +617,15 @@ def _iso_acquired(text):
     the Americas (or a morning one in Asia) had the next or the previous day. Such a time is now given in
     the scanning computer's time zone, as for Leica: "2019-12-16 11:45:40 -05:00", as OlyVIA shows it.
     A time written with its own offset ("2015-10-28T16:29:23.944-04:00", older FluoView) is the lab's
-    clock already and is given as before, as is a time without a zone."""
+    clock already and is given as before, as is a time without a zone. 1.26.24: such a time shows its
+    offset, "2024-12-02 09:37:02 (UTC+08:00)": an FV4000 in Asia records +08:00 and OlyVIA shows the time
+    in this computer's zone, 13 hours and a day away in the Americas. The clock and the day are the file's,
+    as before; the brackets keep it apart from a time given in this computer's zone (" -05:00")."""
     import datetime as dt
     before = text[:19].replace("T", " ")
+    own = re.search(r"([+-]\d\d):?(\d\d)$", text) if len(text) > 19 and not _before_1_26_24() else None
+    if own and re.fullmatch(r"\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:\.\d+)?[+-]\d\d:?\d\d", text):
+        return f"{before} (UTC{own.group(1)}:{own.group(2)})", before
     if not text.endswith("Z") or len(text) < 19 or _BEFORE.get():
         return before, before
     try:
@@ -1227,6 +1256,98 @@ def _nikon_sim_lasers(f, index):
         return []
 
 
+def _nikon_filter_peaks(f, n_channels):
+    """{channel index: (excitation, emission)} from each channel's filter record in a file saved by older
+    NIS-Elements (1.26.24), or {}. The nd2 library reads the channels' wavelengths from this record, the
+    image's own (PicturePlanes), but in these files' XML it renames every element called Wavelength, so the
+    value is lost: Exception_2.nd2's PSM_GFP channel, which NIS-Elements Viewer shows as 488 nm excitation
+    and 520 nm emission, had neither, and its reporter was never found. Only a peak (point type 4, as the
+    nd2 library takes it) is used, and only when the channel has one filter with one point each: a filter
+    cube's band (rising and falling edges) is a range, not a line, and is never read as one. The filter
+    ranges of the experiment's plan (SLxExperiment) are not used either: in a sample file they name another
+    cube than the image's own record. Any error leaves the channels as before."""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            meta = f.unstructured_metadata(include={"ImageMetadataSeq|0", "ImageMetadataSeqLV|0"})
+        if "ImageMetadataSeqLV|0" in meta:      # a newer file: nd2 reads its Wavelength itself (found by review)
+            return {}
+        seq = meta.get("ImageMetadataSeq|0") or {}
+        planes = (seq.get("PicturePlanes") or {}).get("Plane") or {}
+        planes = list(planes.values()) if isinstance(planes, dict) else list(planes)
+        if len(planes) != n_channels:
+            return {}
+        out = {}
+        for i, plane in enumerate(planes):
+            filters = ((plane.get("FilterPath") or {}).get("Filter") or {})
+            filters = list(filters.values()) if isinstance(filters, dict) else list(filters)
+            if plane.get("CompCount", 1) != 1 or len(filters) != 1:
+                continue
+            got = []
+            for kind in ("ExcitationSpectrum", "EmissionSpectrum"):
+                points = ((filters[0].get(kind) or {}).get("Point") or {})
+                points = list(points.values()) if isinstance(points, dict) else list(points)
+                peaks = [float(v) for p in points if isinstance(p, dict) and p.get("Type") == 4
+                         for k, v in p.items() if re.fullmatch(r"i\d{10}", str(k))
+                         and isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0]
+                got.append(peaks[0] if len(points) == 1 and len(peaks) == 1 else None)
+            if any(got):
+                out[i] = tuple(got)
+        return out
+    except Exception:
+        return {}
+
+
+# Nikon's own point-scanning confocals, whose name is the first line of the camera text ("Nikon A1plus"); on
+# other systems that line is the camera ("Nikon DS-Qi2"), which is not the microscope's model (found by review)
+NIKON_CONFOCAL = re.compile(r"Nikon (?:A1|AX|C1|C2)(?!\d)")
+NIKON_SCAN = ((r"^\s*Binning:\s*(\d+\s*x\s*\d+)\s*$", "binning {}"),
+              (r"\{Pinhole Size\(um\)\}:\s*(\d+(?:\.\d+)?)\s*$", "pinhole {} um"),
+              (r"^\s*\{Scan Speed\}:\s*(\d+(?:\.\d+)?)\s*$", "scan speed {}"))
+
+
+def _nikon_part(description, capturing, name, n_channels):
+    """The channel's own part of the description, or the camera text where it has none (as _nikon_settings)."""
+    block = _nikon_block(description, name, n_channels) if name is not None else None
+    return capturing if block is None else block
+
+
+def _nikon_scan(description, capturing, name, n_channels):
+    """1.26.24: the camera binning (it sums pixels: 4x4 makes each pixel 16 times brighter) and an A1 or AX's
+    pinhole and scan speed, as NIS-Elements shows them under Capturing, for the scan_settings column; ""
+    without them. The scan speed of a stimulation (Stim1) is not the image's and is not read."""
+    if _before_1_26_24():
+        return ""
+    cut = lambda t: re.split(r"^\s*Stim\d", t, maxsplit=1, flags=re.M)[0]
+    parts = [cut(_nikon_part(description, capturing, name, n_channels)), cut(capturing)]
+    out = []
+    for pattern, text in NIKON_SCAN:
+        found = next((m for m in (re.search(pattern, t, re.M) for t in parts) if m), None)
+        if found:
+            value = re.sub(r"\s+", "", found.group(1))
+            try:
+                out.append(text.format(value if "x" in value else f"{round(float(value), 3):g}"))
+            except ValueError:      # never fatal (found by review)
+                continue
+    return "; ".join(out)
+
+
+def _nikon_camera_fields(description, capturing, name, n_channels):
+    """1.26.24: the names NIS-Elements gives the camera values of the settings text, in its order, joined by
+    "/" ("Exposure/Calibrated Gain/Visual Gain"), for the labels of Check the reading and the Methods draft
+    (inventory column camera_fields). The settings text keeps only "gain" and "exposure", so Visual Gain
+    read as a detector gain. Each name is the field's whole name when it starts its line ("EM Gain
+    Multiplier"), else the word alone, so text before it on the line is never taken for its name."""
+    block = _nikon_block(description, name, n_channels) if name is not None else None
+    text = block if block is not None and re.search(CAMERA_LINE, block) else capturing
+    names = []
+    for found in re.finditer(CAMERA_LINE, text):        # the same matches, in the same order, as _nikon_settings
+        line = text[text.rfind("\n", 0, found.start()) + 1:found.start()]
+        whole = re.fullmatch(r"\s*((?:[A-Za-z]+ )*)", line)
+        names.append(((whole.group(1) if whole else "") + found.group(1)).strip())
+    return "/".join(names)
+
+
 def nikon_images(path, cfg):
     with _nd2().ND2File(str(path)) as f:
         sizes = dict(f.sizes)
@@ -1248,40 +1369,51 @@ def nikon_images(path, cfg):
         # an N-SIM's laser power is not in the description text (only read where that text has no power)
         sim = ({i: _nikon_sim_lasers(f, i) for i in range(len(chans))}
                if not _BEFORE.get() and not re.search(r"Power\s*:", text.get("description") or "") else {})
+        # 1.26.24: an older file's wavelengths that the nd2 library misses (only where it gives none)
+        peaks = ({} if _before_1_26_24() or all(c.channel.excitationLambdaNm and c.channel.emissionLambdaNm for c in chans)
+                 else _nikon_filter_peaks(f, len(chans)))
         positions = []
         for p in range(sizes.get("P", 1)):
             first = next((i for i, ix in enumerate(f.loop_indices) if ix.get("P", 0) == p), 0)
             positions.append(f.frame_metadata(first).channels[0].position.stagePositionUm)
     names = [c.channel.name or "" for c in chans]
-    roles = [marker_from_named(c.channel.name or "", None, c.channel.excitationLambdaNm,
-                               "brightfield" in c.microscope.modalityFlags, cfg, c.channel.emissionLambdaNm)
-             for c in chans]
+    ex = [c.channel.excitationLambdaNm or peaks.get(i, (None, None))[0] for i, c in enumerate(chans)]
+    em = [c.channel.emissionLambdaNm or peaks.get(i, (None, None))[1] for i, c in enumerate(chans)]
+    roles = [marker_from_named(c.channel.name or "", None, ex[i],
+                               "brightfield" in c.microscope.modalityFlags, cfg, em[i])
+             for i, c in enumerate(chans)]
     mic = chans[0].microscope
     objective = (mic.objectiveName or "").strip()
     if mic.objectiveMagnification and not re.search(r"\d+x", objective):
         objective = f"{mic.objectiveMagnification:g}x {objective}".strip()
     capturing = (text.get("capturing") or "").replace("\r\n", "\n")
     camera = capturing.split("\n", 1)[0].strip()
-    roles = named_extras(prefer_named_dye(roles, [None] * len(roles), cfg), cfg, names, None,
-                         [c.channel.excitationLambdaNm for c in chans], [c.channel.emissionLambdaNm for c in chans])
-    roles, near = near_match(roles, cfg, named_near([c.channel.excitationLambdaNm for c in chans],
-                                                    [c.channel.emissionLambdaNm for c in chans]))
+    roles = named_extras(prefer_named_dye(roles, [None] * len(roles), cfg), cfg, names, None, ex, em)
+    roles, near = near_match(roles, cfg, named_near(ex, em))
     mi = pick(roles, "MARKER")
-    settings = _nikon_settings(text.get("description") or "", capturing, names[mi] if mi is not None else None, len(chans),
-                               chans[mi].channel.excitationLambdaNm if mi is not None else None)
+    mine = (text.get("description") or "", capturing, names[mi] if mi is not None else None, len(chans))
+    # the settings text uses the wavelength nd2 gives, as 1.26.23 did: a peak read now finds the reporter but never
+    # changes which A1 detector line is kept, so no settings group is reworded (found by review)
+    settings = _nikon_settings(*mine, chans[mi].channel.excitationLambdaNm if mi is not None else None)
+    scan = _nikon_scan(*mine) if mi is not None else ""
+    # 1.26.24: "Nikon A1plus" is the model; the microscope's name "Nikon Nikon A1plus" keys settings groups and
+    # sessions, so it stays, and the model is what the Methods draft and Check the reading show
+    model = camera if NIKON_CONFOCAL.match(camera) and not _before_1_26_24() else ""
     if mi is not None and sim.get(mi) and "nm@" not in settings:
         settings = "; ".join(x for x in (settings, ";".join(sim[mi])) if x)
     dims = "".join(sizes)
     out = []
     for p, stage in enumerate(positions):
         out.append({
-            "format": "Nikon ND2", "system": f"Nikon {camera}".strip(),
+            "format": "Nikon ND2", "system": f"Nikon {camera}".strip(), **({"model": model} if model else {}),
             "location_in_file": "whole file" if len(positions) == 1 else f"position {p}",
             "objective": objective,
             "n_z": sizes.get("Z", 1), "n_t": sizes.get("T", 1), "width": sizes["X"], "height": sizes["Y"],
             "pixel_um": round(vox.x, 4), "z_step_um": round(vox.z, 3) if "Z" in sizes else 0.0,
             "bits": bits, "channel_roles": list(roles), "channel_names": names,
             "settings": settings, "zoom": f"{mic.zoomMagnification:g}" if mic.zoomMagnification else "",
+            **({"scan_settings": scan} if scan else {}),
+            **({"camera_fields": _nikon_camera_fields(*mine)} if mi is not None and not _before_1_26_24() else {}),
             "acquired": " ".join((text.get("date") or "").split()),
             "stage_x": stage.x, "stage_y": stage.y,
             # 1.26.8: an uncalibrated file reads as 1 um per pixel, which sets the display scale and the cell search
@@ -1449,6 +1581,8 @@ def _oir_channels(root):
             "nd": _num(_said(nd, "transmissivity")) if nd is not None and _said(nd, "name") != "Empty" else None,
             "length": {a: _num(_said(info, f"length/{a}")) for a in "xz"},
             "unit": _said(info, "pixelUnit/x"),
+            # 1.26.24: the channel's pinhole, as OlyVIA shows it (127 um for an FV3000 file)
+            "pinhole": _num(_said(info, "productData/pinholeDiameter")),
         })
     return out
 
@@ -1594,7 +1728,9 @@ def _oir_meta(xml, frames, cfg):
             "channel_ids": [c["id"] for c in chans], "settings": settings,
             "zoom": f"{zoom:g}" if zoom else "", "acquired": _said(root, "general/creationDateTime"),      # ISO, as written
             "scan_size": (int(_num(_said(root, "imageInfo/width")) or 0), int(_num(_said(root, "imageInfo/height")) or 0)),
-            "planned_z": planned[0] if planned else 0, "flags": flags + varying}
+            "planned_z": planned[0] if planned else 0, "flags": flags + varying,
+            "scan_settings": "" if mi is None or not chans[mi]["pinhole"] or _before_1_26_24()
+            else f"pinhole {round(chans[mi]['pinhole'], 2):g} um"}
 
 
 def _oir_tiles(xml, file_name):
@@ -1714,6 +1850,7 @@ def oir_images(path, cfg):
         "pixel_um": meta["pixel_um"], "z_step_um": meta["z_step_um"] if n_z > 1 else 0.0,
         "bits": int(bits), "channel_roles": roles, "channel_names": names,
         "settings": meta["settings"] if roles == meta["channel_roles"] else "", "zoom": meta["zoom"],
+        **({"scan_settings": meta["scan_settings"]} if meta["scan_settings"] and roles == meta["channel_roles"] else {}),
         "stage_x": None, "stage_y": None, "flags": flags + _extra_axes_flags(axes, shape),
         "_reader": ("oir", str(path), 0, axes),
     }, meta["acquired"])]
