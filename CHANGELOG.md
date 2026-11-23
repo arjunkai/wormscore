@@ -28,6 +28,9 @@ dialog keeps its place when its box is ticked.**
   list's Add button, never to another Remove button. Found by trying every control in both forms.
 - Scoring criteria: a click or Tab right after typing in a box such as a call's name works. Leaving the box
   drew the criteria again at once, so the button being clicked did nothing and Tab left the keyboard nowhere.
+- While a step runs, the home page updates its progress, time and log in place instead of rebuilding the page
+  and the project list every 0.7 seconds. A log scrolled up to read an earlier line stays there (it jumped
+  back to its end); scrolled to its end, it follows new lines. Screen readers hear when a step starts and ends.
 - The Brightfield box says what the overlay is for (landmarks such as the pharynx), and the guide says where
   the nerve ring lies in it.
 - **Who is affected:** nobody's results; the display only.

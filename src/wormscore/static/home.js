@@ -475,17 +475,14 @@ function renderMain(d) {
     p.autofluor ? autofluorCard(p, busy) : null,
     p.flat_field && p.scanned !== null && (p.flat_field.on || !p.flat_field.locked) ? flatFieldCard(p, busy) : null,
     p.bleed && p.scanned !== null ? bleedCard(p, busy) : null));
-  const log = $("#log");
-  if (log) log.scrollTop = log.scrollHeight;
 }
 
-function activity(job) {
-  if (!st.log.length) return null;
-  // the last step of another project is not shown here (while it runs, a banner says so)
-  if (job.project && st.data?.project?.path && job.project !== st.data.project.path) return null;
+// What changes while a step runs (the share done, the time, the last line); the step card is built
+// once and these are updated in place, so the page is not rebuilt every poll (the log kept jumping
+// to its end while it was being read).
+function activityNow(job) {
   const done = !job.running;
   const pct = job.frac !== null && job.frac !== undefined ? Math.round(100 * job.frac) : null;
-  const cls = done ? (job.outcome === "done" ? " ok" : job.outcome ? " bad" : "") : "";
   // warnings stay with the finished step, so they do not depend on opening the log (1.21.2)
   const warns = done && job.outcome === "done" ? job.warnings || [] : [];
   const meta = job.running
@@ -494,16 +491,64 @@ function activity(job) {
     : job.outcome ? "Stopped. See the log." : "";
   const width = done ? 100 : pct ?? 0;
   const last = [...st.log].reverse().find(l => l.trim() && !l.startsWith("---")) || "";
-  return h("section", { class: "activity" + cls, "aria-live": "polite" },
+  return { pct, warns, meta, width, last, indet: job.running && pct === null };
+}
+
+function activity(job) {
+  if (!st.log.length) return null;
+  // the last step of another project is not shown here (while it runs, a banner says so)
+  if (job.project && st.data?.project?.path && job.project !== st.data.project.path) return null;
+  const done = !job.running;
+  const cls = done ? (job.outcome === "done" ? " ok" : job.outcome ? " bad" : "") : "";
+  const { warns, meta, width, last, indet } = activityNow(job);
+  return h("section", { class: "activity" + cls },
     h("div", { class: "a-head" }, h("span", { class: "a-title" }, job.running ? job.title : `Last step: ${job.title}`),
       h("span", { class: "a-meta" }, meta)),
-    h("div", { class: "bar" + (job.running && pct === null ? " indet" : "") }, h("div", { style: `transform:scaleX(${width / 100})` })),
+    h("div", { class: "bar" + (indet ? " indet" : "") }, h("div", { style: `transform:scaleX(${width / 100})` })),
     warns.length ? null : h("div", { class: "a-last", title: last }, last),
     warns.length ? h("ul", { class: "warn-list" }, warns.slice(0, 3).map(w => h("li", {}, warnNote(w))),
       warns.length > 3 ? h("li", { class: "a-meta" }, `${warns.length - 3} more in the log.`) : null) : null,
     h("button", { class: "btn subtle log-toggle", "data-k": "log", onclick: () => { st.showLog = !st.showLog; render(); } },
       st.showLog ? "Hide log" : "Show log"),
-    st.showLog ? h("pre", { class: "log", id: "log" }, st.log.join("\n")) : null);
+    st.showLog ? h("pre", { class: "log", id: "log", "data-n": st.log.length }, st.log.join("\n")) : null);
+}
+
+// Between rebuilds: the running step's numbers, last line and new log lines, in place. The log
+// follows new lines only when it is scrolled to its end, so earlier lines can be read meanwhile.
+function updateActivity(job) {
+  const sec = document.querySelector(".activity");
+  if (!sec) return;
+  const { meta, width, last, indet } = activityNow(job);
+  const set = (sel, text) => { const el = sec.querySelector(sel); if (el && el.textContent !== text) el.textContent = text; };
+  set(".a-meta", meta);
+  set(".a-last", last);
+  const lastEl = sec.querySelector(".a-last");
+  if (lastEl) lastEl.title = last;
+  const bar = sec.querySelector(".bar");
+  if (bar) { bar.classList.toggle("indet", indet); bar.firstChild.style.transform = `scaleX(${width / 100})`; }
+  const log = sec.querySelector("#log");
+  if (!log) return;
+  const shown = Number(log.dataset.n) || 0;
+  if (shown === st.log.length) return;
+  const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 8;
+  if (shown < st.log.length && shown > 0) log.append("\n" + st.log.slice(shown).join("\n"));
+  else log.textContent = st.log.join("\n");
+  log.dataset.n = st.log.length;
+  if (atEnd) log.scrollTop = log.scrollHeight;
+}
+
+// One sentence for screen readers when a step starts and when it ends (the numbers in between are
+// not read out). The region is in the page from the start, so changes to it are announced. Only a
+// change seen while the page is open is said: not the last step's result when the app opens (review).
+function announceStep(job) {
+  const now = JSON.stringify([job.running, job.title, job.outcome, job.project]);
+  const seen = st.stepSeen;
+  st.stepSeen = now;
+  if (seen === undefined || seen === now) return;
+  const text = !job.title ? "" : job.running ? `${job.title} started.`
+    : job.outcome === "done" ? `${job.title} done.` : job.outcome ? `${job.title} stopped. See the log.` : "";
+  const el = $("#stepStatus");
+  if (el) el.textContent = text;
 }
 
 // ---------------------------------------------------------------- second scorer
@@ -2004,14 +2049,25 @@ function render() {
   if (path !== st.tickedFor) { st.tickedFor = path; st.finished = false; }
   // The state is polled every few seconds. Rebuilding the page each time would throw keyboard
   // focus back to the top and make screen readers read it again, so only redraw on a change.
-  const key = JSON.stringify([d.recent, d.project, d.job, st.finished, st.showLog, st.log.length]);
-  if (key === st.pageKey) return;
+  // the step's share done, times and log lines change every poll while it runs: they are updated in
+  // place (updateActivity), not by rebuilding the page
+  const { frac, eta_s, elapsed_s, lines, next, ...job } = d.job;
+  announceStep(d.job);
+  const key = JSON.stringify([d.recent, d.project, job, st.finished, st.showLog, st.log.length > 0]);
+  if (key === st.pageKey) return updateActivity(d.job);
   st.pageKey = key;
   const focused = document.activeElement;
-  renderSide(d);
+  const sideKey = JSON.stringify([d.recent, path]);
+  if (sideKey !== st.sideKey) { st.sideKey = sideKey; renderSide(d); }
+  // a log being read keeps its place; one at its end (or new) follows new lines
+  const oldLog = $("#log");
+  st.logAt = oldLog && oldLog.scrollTop + oldLog.clientHeight < oldLog.scrollHeight - 8 ? oldLog.scrollTop : null;
   // Project settings stay open while the page polls; picking another project closes them.
   if (st.settingsOpen && st.settingsOpen !== path) st.settingsOpen = null;
   if (!st.settingsOpen) renderMain(d);
+  // after any page (a second scorer's package has its own): a log being read keeps its place
+  const log = $("#log");
+  if (log) log.scrollTop = st.logAt == null ? log.scrollHeight : st.logAt;
   if (focused && !focused.isConnected) refocus(focused.dataset?.k);
 }
 

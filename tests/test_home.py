@@ -475,3 +475,54 @@ def test_a_click_or_tab_right_after_typing_in_the_criteria_is_not_lost(desk, eng
             assert page.evaluate(calls)[0] == before[1] + "zy"
         finally:
             b.close()
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_a_running_step_updates_in_place_and_a_log_being_read_stays_put(desk, engine):
+    # 1.26.26: the home page rebuilt its main area and the project list on every poll while a step
+    # ran (about every 0.7 s), so a log scrolled up to read an earlier line jumped back to its end
+    sync_api = pytest.importorskip("playwright.sync_api")
+    port, app = desk["port"], desk["app"]
+    call(port, "POST", "/api/select", {"path": str(desk["project"])})
+
+    def slow():
+        for i in range(40):
+            app.job.say(f"step line {i}")
+            app.job.progress(i + 1, 40)
+            time.sleep(0.2)
+
+    with sync_api.sync_playwright() as p:
+        try:
+            b = getattr(p, engine).launch()
+        except Exception as exc:
+            pytest.skip(f"{engine} is not installed for Playwright ({type(exc).__name__})")
+        try:
+            page = b.new_page(viewport={"width": 1400, "height": 800})
+            page.goto(f"http://127.0.0.1:{port}/")
+            page.wait_for_function("st.data && st.data.project")
+            page.evaluate("""() => { window.__side = 0;
+                new MutationObserver(() => window.__side++).observe(document.querySelector('#recent'), { childList: true }); }""")
+            assert app.job.start("Slow test step", desk["project"], slow)
+            page.wait_for_selector(".activity")
+            page.locator("[data-k=log]").click()
+            page.wait_for_function("st.data.job.running && st.log.length > 12", timeout=15000)
+            page.evaluate("document.querySelector('#log').scrollTop = 0")
+            meta = page.locator(".a-meta").text_content()
+            lines = page.evaluate("st.log.length")
+            page.wait_for_function(f"st.log.length > {lines + 6}", timeout=15000)
+            page.wait_for_timeout(300)
+            assert page.evaluate("document.querySelector('#log').scrollTop") == 0           # still being read
+            assert page.evaluate("document.querySelector('#log').textContent.split('\\n').length") == page.evaluate("st.log.length")
+            assert page.locator(".a-meta").text_content() != meta                             # the numbers move
+            assert page.evaluate("document.querySelector('#stepStatus')?.textContent") == "Slow test step started."
+            # scrolled to its end, the log follows new lines
+            page.evaluate("const l = document.querySelector('#log'); l.scrollTop = l.scrollHeight")
+            n = page.evaluate("st.log.length")
+            page.wait_for_function(f"st.log.length > {n + 4}", timeout=15000)
+            page.wait_for_timeout(300)
+            assert page.evaluate("const l = document.querySelector('#log'); l.scrollTop + l.clientHeight >= l.scrollHeight - 8")
+            page.wait_for_function("!st.data.job.running", timeout=20000)
+            page.wait_for_function("document.querySelector('#stepStatus').textContent === 'Slow test step done.'")
+            assert page.evaluate("window.__side") == 0          # the project list was never rebuilt
+        finally:
+            b.close()
