@@ -195,11 +195,30 @@ def as_1_26_24():
         _BEFORE_1_26_25.reset(token)
 
 
+# 1.26.27 reads a STELLARIS detector's operating mode as LAS X shows it (Analog, Digital or Counting). A
+# project scanned by 1.26.25 or 1.26.26 reads its slide and control images as then until it scans again.
+_BEFORE_1_26_27 = ContextVar("read_as_1_26_26", default=False)
+
+
+def _before_1_26_27():
+    return _before_1_26_25() or _BEFORE_1_26_27.get()
+
+
+@contextmanager
+def as_1_26_26():
+    """Read files as 1.26.25 and 1.26.26 did: without the rules of 1.26.27."""
+    token = _BEFORE_1_26_27.set(True)
+    try:
+        yield
+    finally:
+        _BEFORE_1_26_27.reset(token)
+
+
 def reading_as(version):
     """The reading for images read again for a project whose inventory was written by that version (the
     scanned_with column): "" for an inventory from before 1.26.20 (as_before), a version before 1.26.21
-    (as_1_26_20), before 1.26.23 (as_1_26_22), before 1.26.24 (as_1_26_23), before 1.26.25 (as_1_26_24), or
-    the current reading."""
+    (as_1_26_20), before 1.26.23 (as_1_26_22), before 1.26.24 (as_1_26_23), before 1.26.25 (as_1_26_24),
+    before 1.26.27 (as_1_26_26), or the current reading."""
     import contextlib
     if version is None:
         return contextlib.nullcontext()
@@ -212,7 +231,9 @@ def reading_as(version):
         return as_1_26_22()
     if parts < (1, 26, 24):
         return as_1_26_23()
-    return as_1_26_24() if parts < (1, 26, 25) else contextlib.nullcontext()
+    if parts < (1, 26, 25):
+        return as_1_26_24()
+    return as_1_26_26() if parts < (1, 26, 27) else contextlib.nullcontext()
 
 
 def _dyes(m):
@@ -572,9 +593,11 @@ def _leica_channels(elem):
             if gain is None and d.get("Channel") in m_dets:
                 gain = m_dets[d.get("Channel")].get("Gain")
             line_avg = s.get("LineAverage") or (master.get("LineAverage") if master is not None else None)
+            scan = _leica_scan(s, master)
+            mode = "" if _before_1_26_27() else _leica_mode(d)
             chans.append({"detector": d.get("Name"), "kind": _leica_detector_kind(d), "gain": float(gain or 0),
                           "band": f"{band.get('LeftWorld')}-{band.get('RightWorld')}" if band is not None else "",
-                          "lasers": lasers, "line_avg": line_avg, "scan": _leica_scan(s, master)})
+                          "lasers": lasers, "line_avg": line_avg, "scan": "; ".join(filter(None, (scan, mode)))})
     return chans
 
 
@@ -585,6 +608,22 @@ def _leica_channels(elem):
 # into the settings text, so no existing settings group or flat-field session moves.
 LEICA_SCAN = (("ScanSpeed", "{} Hz"), ("PinholeAiry", "pinhole {} AU"), ("FrameAverage", "frame avg {}"),
               ("Line_Accumulation", "line acc {}"), ("FrameAccumulation", "frame acc {}"))
+
+
+# 1.26.27: a STELLARIS detector's Operating Mode, as LAS X Office 1.4.11 shows it, from OperatingType and
+# AcquisitionMode (read off LAS X for four public STELLARIS files from LAS X 4.x, 23 November 2026: HyD S,
+# HyD X, HyD R, APD and Trans PMT). AcquisitionModeName alone misleads: a HyD S saved as "PhotonCounting"
+# with OperatingType 1 is Analog in LAS X. Counting and Analog give numbers of a different kind, so an
+# image's mode belongs with its settings. An SP8 file has no OperatingType and LAS X shows no mode for it:
+# nothing is read there, nor for a pair not seen in LAS X.
+LEICA_MODES = {("1", "1"): "Analog", ("1", "-1"): "Analog",
+               ("2", "0"): "Digital", ("2", "1"): "Counting"}
+
+
+def _leica_mode(det):
+    """The detector's operating mode as text for the scan settings ("Counting mode"), or ""."""
+    mode = LEICA_MODES.get((det.get("OperatingType"), det.get("AcquisitionMode")))
+    return f"{mode} mode" if mode else ""
 
 
 def _leica_scan(step, master):

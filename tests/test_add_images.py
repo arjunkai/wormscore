@@ -66,7 +66,26 @@ def test_adding_refuses_to_drop_or_find_nothing(fresh_project, tmp_path):
         prepare(fresh_project, add=True, reassign=True, log=quiet)
     add_new_worms(fresh_project, tmp_path, n=1)
     cfg = json.loads((fresh_project / "config.json").read_text())
-    cfg["sources"][0]["exclude"] = [{"match": "demo_control_01*", "reason": "test"}]
-    (fresh_project / "config.json").write_text(json.dumps(cfg))
+    from wormscore.files import write_csv
+    inv = fresh_project / "outputs" / "inventory.csv"
+    write_csv(inv, [r for r in read_csv(inv) if "demo_control_01" not in r["local_path"]])     # a coded image gone
     with pytest.raises(SystemExit, match="never removes"):
         prepare(fresh_project, add=True, log=quiet)
+
+
+def test_an_exclusion_rule_added_after_coding_keeps_the_image_coded(fresh_project, tmp_path):
+    # 1.26.27: it stopped Add new images ("never removes coded images") and every rebuild that keeps the
+    # codes; the image now stays coded, the build says so, and unblinding leaves it out (test_warnings)
+    key = {r["local_path"]: r["code"] for r in read_csv(fresh_project / "key" / "key.csv") if not r.get("repeat_of")}
+    add_new_worms(fresh_project, tmp_path, n=1)
+    cfg = json.loads((fresh_project / "config.json").read_text())
+    cfg["sources"][0]["exclude"] = [{"match": "demo_control_01*", "reason": "test"}]
+    (fresh_project / "config.json").write_text(json.dumps(cfg))
+    said = []
+    prepare(fresh_project, add=True, log=said.append)
+    after = {r["local_path"]: r["code"] for r in read_csv(fresh_project / "key" / "key.csv") if not r.get("repeat_of")}
+    assert {p: c for p, c in after.items() if p in key} == key
+    assert any("demo_control_01" in p for p in key)
+    assert any("an exclusion rule added after it was coded" in str(s) for s in said)
+    prepare(fresh_project, log=said.append)                 # a rebuild that keeps the codes
+    assert {r["local_path"]: r["code"] for r in read_csv(fresh_project / "key" / "key.csv") if not r.get("repeat_of")} == after

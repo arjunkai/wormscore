@@ -557,3 +557,85 @@ def test_a_welcome_tile_is_a_button_that_space_presses(desk, engine):
             assert "demo" in page.locator("#modal").inner_text().lower()
         finally:
             b.close()
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_check_now_in_settings_gives_the_keyboard_back(desk, monkeypatch, engine):
+    # Check now is off while it checks, and a button turned off loses the keyboard
+    sync_api = pytest.importorskip("playwright.sync_api")
+    fake = {"kind": "windows", "enabled": True, "checking": False, "error": None, "latest": "1.0.0", "newer": False,
+            "show": False, "notes": "", "page": "", "can_install": True, "pip_command": "", "phase": None,
+            "warning": "", "frac": None, "message": "", "result": None, "previous": None}
+    monkeypatch.setattr(desk["app"], "update_view", lambda statuses: dict(fake))
+    with sync_api.sync_playwright() as p:
+        try:
+            b = getattr(p, engine).launch()
+        except Exception as exc:
+            pytest.skip(f"{engine} is not installed for Playwright ({type(exc).__name__})")
+        try:
+            page = b.new_page(viewport={"width": 1200, "height": 800})
+            held = []
+            page.route("**/api/update", lambda route: held.append(route))      # no request to GitHub
+            page.goto(f"http://127.0.0.1:{desk['port']}/")
+            page.wait_for_function("st.data")
+            page.evaluate("() => { openSettings(); }")      # not awaited: it ends when the dialog closes
+            check = page.get_by_role("button", name="Check now")
+            check.focus()
+            page.keyboard.press("Enter")
+            page.wait_for_function("document.querySelector('#modal button[disabled]')")
+            for _ in range(50):
+                if held:
+                    break
+                page.wait_for_timeout(50)
+            held[0].fulfill(json={})
+            page.wait_for_function("[...document.querySelectorAll('#modal button')].some(b => b.textContent === 'Check now' && !b.disabled)")
+            assert page.evaluate("document.activeElement.textContent") == "Check now"
+        finally:
+            b.close()
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_adding_a_reference_image_stays_on_its_row_when_a_row_above_is_removed(desk, engine, tmp_path):
+    # "Adding..." was kept by the row's label ("Call 2"): removing Call 1 during the upload moved it to another row
+    sync_api = pytest.importorskip("playwright.sync_api")
+    from PIL import Image
+    png = tmp_path / "ref.png"
+    Image.new("RGB", (8, 8), "white").save(png)
+    port = desk["port"]
+    call(port, "POST", "/api/select", {"path": str(desk["project"])})
+    busy = "[...document.querySelectorAll('.sf-add-img')].filter(b => b.disabled).map(b => b.getAttribute('aria-label'))"
+    with sync_api.sync_playwright() as p:
+        try:
+            b = getattr(p, engine).launch()
+        except Exception as exc:
+            pytest.skip(f"{engine} is not installed for Playwright ({type(exc).__name__})")
+        try:
+            page = b.new_page(viewport={"width": 1400, "height": 800})
+            held = []
+            page.route("**/api/project-settings", lambda route: held.append(route)
+                       if "criteria-image" in (route.request.post_data or "") else route.continue_())
+            page.goto(f"http://127.0.0.1:{port}/")
+            page.wait_for_function("st.data && st.data.project")
+            page.evaluate("openProjectSettings('form')")
+            page.wait_for_selector("[aria-label='Call 1']")
+            for n in (1, 2):
+                add_def = page.locator(f"[aria-label='Add a definition for Call {n}']")
+                if add_def.count():
+                    add_def.click()
+            with page.expect_file_chooser() as fc:
+                page.locator("[aria-label='Add a reference image for Call 2']").click()
+            fc.value.set_files(str(png))
+            page.wait_for_function(f"{busy}.length === 1")
+            assert page.evaluate(busy) == ["Add a reference image for Call 2"]
+            page.locator("[aria-label='Remove call 1']").click()
+            page.wait_for_timeout(300)
+            assert page.evaluate(busy) == ["Add a reference image for Call 1"]       # the same call, now first
+            for _ in range(100):
+                if held:
+                    break
+                page.wait_for_timeout(50)
+            held[0].fulfill(json={"path": "criteria/ref.png"})
+            page.wait_for_function(f"{busy}.length === 0")
+            assert page.locator("[aria-label='Show the reference image for Call 1']").count() == 1
+        finally:
+            b.close()

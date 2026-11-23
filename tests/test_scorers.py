@@ -303,7 +303,7 @@ def test_unblinding_compares_scorers_and_leaves_primary_results_alone(made, tmp_
     calls = {r["measure"]: r for r in read_csv(out / "between_scorers.csv")}["neuron call"]
     assert calls["pairs"] == "8" and calls["same_answer"] == "7"
     (d,) = read_csv(out / "scorer_disagreements.csv")
-    assert (d["second_scorer"], d["answer"], d["primary"], d["second"]) == ("Sam K", "neuron 1 call", "missing", "dim")
+    assert (d["second_scorer"], d["answer"], d["primary"], d["second"]) == ("Sam K", "Neuron 1 call", "missing", "dim")
     assert "genotype" not in d and "control" not in json.dumps(d) and "mutant" not in json.dumps(d)
     methods = (out / "methods_text.md").read_text(encoding="utf-8")
     assert "A second scorer (Sam K) scored 4 of the included images (50% of each genotype" in methods
@@ -322,3 +322,17 @@ def test_nothing_changes_for_projects_without_a_second_scorer(fresh_project):
     assert not (out / "between_scorers.csv").exists() and not (out / "scorer_disagreements.csv").exists()
     assert "second scorer" not in (out / "methods_text.md").read_text(encoding="utf-8").lower()
     assert scorers.packages(fresh_project) == []
+
+
+def test_disagreements_name_every_answer_as_the_form_does():
+    # 1.26.27: "neuron 1 call" became the neuron's name, and the form's other questions are compared too
+    cfg = {"scoring": {"neurons": ["AWC", "ASE"], "sides": True,
+                       "neuron_questions": [{"id": "axon", "label": "Axon", "options": ["normal", "short"]}],
+                       "side_questions": [{"id": "dendrite", "label": "Dendrite", "options": ["yes", "no"]}],
+                       "animal_questions": [{"id": "posture", "options": ["straight", "curled"]}]}}
+    assert scorers.disagreement_fields(cfg) == [
+        ("usable", "score_usable"), ("cells seen", "score_cells_seen"),
+        ("AWC call", "score_n1_call"), ("AWC side", "score_n1_side"), ("AWC: Axon", "score_n1_axon"),
+        ("ASE call", "score_n2_call"), ("ASE side", "score_n2_side"), ("ASE: Axon", "score_n2_axon"),
+        ("Dendrite (left)", "score_left_dendrite"), ("Dendrite (right)", "score_right_dendrite"),
+        ("posture", "score_a_posture")]

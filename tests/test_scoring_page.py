@@ -273,8 +273,21 @@ def test_two_windows_that_save_outlines_one_after_the_other_both_say_so(playwrig
         one.wait_for_timeout(300)
         assert one.locator("#roiMsg").inner_text() == "Saved 1 outline"
 
-        two.locator("#saveRois").click()                             # the later save wins and says what it replaced
+        # 1.26.27: the later save asks first (outlines keep no history). Cancel, the focused choice, saves nothing.
+        two.locator("#saveRois").click()
+        two.wait_for_selector("#leaveDlg:not(.hidden)")
+        assert two.locator("#leaveTitle").inner_text() == "Replace the other window's outlines?"
+        assert two.evaluate("document.activeElement.id") == "leaveStay"
+        two.keyboard.press("Enter")
         two.wait_for_function("document.querySelector('#roiMsg').classList.contains('warn')")
+        assert two.evaluate(WARNING_BOX)["said"] == \
+            "Not saved. Another window saved outlines for this image: open it again to see them."
+        assert srv.project.load("rois.json", {})[code] == one.evaluate("st.rois")
+        assert two.evaluate("st.roisDirty") is True
+        two.locator("#saveRois").click()                             # asked again: Replace them
+        two.wait_for_selector("#leaveDlg:not(.hidden)")
+        two.locator("#leaveGo").click()
+        two.wait_for_function("document.querySelector('#roiMsg').textContent.includes('Saved 1 outline, replacing')")
         w = two.evaluate(WARNING_BOX)
         assert w["said"] == "Saved 1 outline, replacing those from another window. Use one scoring window at a time."
         assert srv.project.load("rois.json", {})[code] == two.evaluate("st.rois") != one.evaluate("st.rois")
@@ -328,6 +341,7 @@ def test_the_outline_warnings_keep_to_two_lines_in_a_narrow_window(playwright, f
         page.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
         page.locator("#markTab").click()
         for text in ("Another window changed this image's outlines. Open the image again to see them, or save yours.",
+                     "Not saved. Another window saved outlines for this image: open it again to see them.",
                      "Saved 12 outlines, replacing those from another window. Use one scoring window at a time."):
             page.evaluate("t => roiMessage(t, 'warn')", text)
             assert page.evaluate(WARNING_BOX)["lines"] <= 2, text
@@ -592,3 +606,128 @@ def test_score_and_outline_are_pressed_buttons_and_the_arrow_keys_still_move_pla
         buttons.first.focus()
         page.keyboard.press("ArrowRight" if z == 0 else "ArrowLeft")
         page.wait_for_function(f"st.z !== {z}")
+
+
+# ------------------------------------------------------------------ the keyboard after a change
+
+KEYBOARD_AT = "(a => a === document.body ? 'body' : a.getAttribute('aria-label') || a.id || a.tagName)(document.activeElement)"
+
+
+def test_removing_an_outline_by_keyboard_keeps_the_keyboard_in_the_outline_list(browser, url):
+    # the Remove button is replaced when the list is drawn again: the keyboard went back to the top of the page
+    page = open_page(browser, url)
+    page.evaluate("api(`/api/worm/${st.code}/score`, {usable: 'no', unusable_reason: 'x', flag_answers: {}})"
+                  ".then(() => openWorm(st.code))")
+    page.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
+    page.locator("#markTab").click()
+    page.locator("#sugList .item").nth(0).locator("button").nth(0).click()
+    page.locator("#sugList .item").nth(1).locator("button").nth(1).click()
+    page.locator("#roiList button").nth(0).focus()
+    page.keyboard.press("Enter")
+    assert page.evaluate(KEYBOARD_AT) == "Remove the Neuron 2 outline"
+    page.keyboard.press("Enter")
+    # after the last one: "Draw as", never Save (one more Enter would save none) or a suggested spot (it would add one)
+    assert page.evaluate("document.activeElement.closest('#labelSeg') !== null")
+    page.keyboard.press("Enter")
+    assert page.evaluate("st.rois.length") == 0
+
+
+def test_saving_outlines_by_keyboard_gives_the_keyboard_back_to_save(browser, url):
+    # Save is off while it saves, and a button turned off loses the keyboard
+    page = open_page(browser, url)
+    page.evaluate("api(`/api/worm/${st.code}/score`, {usable: 'no', unusable_reason: 'x', flag_answers: {}})"
+                  ".then(() => openWorm(st.code))")
+    page.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
+    page.locator("#markTab").click()
+    page.locator("#sugList .item").nth(0).locator("button").nth(0).click()
+    page.locator("#saveRois").focus()
+    page.keyboard.press("Enter")
+    page.wait_for_function("document.querySelector('#roiMsg').textContent === 'Saved 1 outline'")
+    page.wait_for_function("!document.querySelector('#saveRois').disabled")
+    assert page.evaluate(KEYBOARD_AT) == "saveRois"
+    # a click on the image while it saves: the keyboard is not pulled back to Save (found by review)
+    held = []
+    page.route("**/rois", lambda route: held.append(route))
+    page.locator("#sugList .item").nth(1).locator("button").nth(1).click()
+    page.locator("#saveRois").focus()
+    page.keyboard.press("Enter")
+    page.wait_for_function("document.querySelector('#saveRois').disabled")
+    page.locator("#cv").click(position={"x": 5, "y": 5})
+    page.evaluate("st.drawing = null")
+    for _ in range(100):
+        if held:
+            break
+        page.wait_for_timeout(50)
+    held[0].continue_()
+    page.wait_for_function("!document.querySelector('#saveRois').disabled")
+    assert page.evaluate(KEYBOARD_AT) != "saveRois"
+
+
+def test_next_image_while_outlines_save_is_ready_to_score(browser, url):
+    # N pressed while Save outlines ran: Save took the keyboard back, then its tab was hidden, and the
+    # next image's first question never got it (found by review)
+    page = open_page(browser, url)
+    page.evaluate("api(`/api/worm/${st.code}/score`, {usable: 'no', unusable_reason: 'x', flag_answers: {}})"
+                  ".then(() => openWorm(st.code))")
+    page.wait_for_function("document.querySelector('#markTab').getAttribute('aria-disabled') !== 'true'")
+    first = page.evaluate("st.code")
+    page.locator("#markTab").click()
+    page.locator("#sugList .item").nth(0).locator("button").nth(0).click()
+    held = []
+    page.route("**/rois", lambda route: held.append(route))
+    page.locator("#saveRois").focus()
+    page.keyboard.press("Enter")
+    page.wait_for_function("document.querySelector('#saveRois').disabled")
+    page.keyboard.press("n")
+    for _ in range(100):
+        if held:
+            break
+        page.wait_for_timeout(50)
+    held[0].continue_()
+    page.wait_for_function(f"st.code !== '{first}' && st.drawn && !st.loading")
+    page.wait_for_function("document.activeElement.tagName === 'FIELDSET'")
+
+
+def test_an_image_picked_in_the_list_by_keyboard_is_ready_to_score(browser, url):
+    page = open_page(browser, url)
+    page.wait_for_function("st.meta && st.drawn")
+    second = page.locator("#list button").nth(1)
+    code = second.inner_text().strip()[:5]
+    second.focus()
+    page.keyboard.press("Enter")
+    page.wait_for_function(f"st.code === '{code}' && st.drawn && !st.loading")
+    page.wait_for_function("document.activeElement.tagName === 'FIELDSET'")
+
+
+def test_browse_search_and_list_keep_the_keyboard(browser, tmp_path):
+    # the search box was taken out of the page and put back on every letter: only the first letter was typed
+    from wormscore import browse
+    from wormscore.demo import make_demo
+    from wormscore.pipeline import inventory
+    project = tmp_path / "p"
+    project.mkdir()
+    make_demo(project, n_per_group=4, log=lambda *a: None)
+    inventory(project, log=lambda *a: None)
+    srv = browse.make_server(project, 0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        page = browser.new_page(viewport={"width": 1536, "height": 500})
+        page.goto(f"http://127.0.0.1:{srv.server_address[1]}/")
+        page.wait_for_function("typeof st !== 'undefined' && st.meta && st.mip")
+        page.locator("#listFind").click()
+        page.keyboard.type("control")
+        assert page.locator("#listFind").input_value() == "control"
+        assert page.evaluate("document.activeElement.id") == "listFind"
+        rows = page.locator("#list button.brow")
+        assert rows.count() == 4 and all("control" in t for t in rows.all_inner_texts())
+        page.keyboard.press("Backspace")
+        assert page.locator("#listFind").input_value() == "contro"
+        page.locator("#listFind").fill("")
+        page.evaluate("document.querySelector('#list').scrollTop = 120")
+        rows.nth(3).focus()
+        page.keyboard.press("Enter")
+        page.wait_for_function("document.querySelector('#list button.cur') === document.activeElement")
+        assert page.evaluate("document.querySelector('#list').scrollTop") == 120
+    finally:
+        srv.shutdown()
+        srv.server_close()

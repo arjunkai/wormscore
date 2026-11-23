@@ -32,7 +32,7 @@ from .files import append_log, now, read_csv, write_csv  # noqa: F401  (re-expor
 from .browse import browse_log_line
 from .rescan import CHANNEL_COLUMNS, CHANNELS_FILE, channel_record, next_letter, same_reading, scan_changes  # noqa: F401  (re-exported)
 from .scoreform import form_log_lines
-from .inclusion import INCOMPLETE, include_reason  # noqa: F401  (moved in 1.26.23; re-exported)
+from .inclusion import INCOMPLETE, below_minimum, include_reason  # noqa: F401  (moved in 1.26.23; re-exported)
 
 
 INVENTORY_FIELDS = [
@@ -132,8 +132,9 @@ def inventory(project, log=print, progress=None):
     # is flagged, so the settings group can be checked; the group itself does not change.
     # Each value is compared on its own, among the images that record it, with the value a strict majority of
     # them has (a value an image does not record, or a group split evenly, is not a difference; found by review).
+    # 1.26.27: a detector's operating mode ("Counting mode", "Analog mode") is one setting, compared as such
     def scan_parts(text):
-        return {re.sub(r"[\d.]+", "#", x): x for x in text.split("; ") if x}
+        return {"mode" if x.endswith(" mode") else re.sub(r"[\d.]+", "#", x): x for x in text.split("; ") if x}
     for combo in sorted({(r["system"], r["settings"]) for r in rows if r.get("scan_settings")}):
         same = [(r, scan_parts(r["scan_settings"])) for r in rows
                 if (r["system"], r["settings"]) == combo and r.get("scan_settings")]
@@ -691,11 +692,14 @@ def _build(project, reassign, add, log, run):
     key_file = project / "key" / "key.csv"
     coded = set() if reassign or not key_file.is_file() else {
         (r["local_path"], r["location_in_file"]) for r in read_csv(key_file) if not r.get("repeat_of")}
-    kept = 0
+    kept = ruled = 0
     for img in load_images(project):
         mine = (img["local_path"], img["location_in_file"]) in coded
         reason = include_reason(img, cfg, mine)
-        if not reason and mine and include_reason(img, cfg):
+        # each counted on its own: an image can be both (found by review)
+        if not reason and mine and C.exclude_rule_for(cfg, img["source"], img["relative_path"]):
+            ruled += 1
+        if not reason and mine and below_minimum(img["objective"], cfg):
             kept += 1
         if reason:
             excluded.append({k: img[k] for k in ("system", "genotype", "original_path", "local_path",
@@ -709,6 +713,11 @@ def _build(project, reassign, add, log, run):
         log(f"Warning: {kept} coded image{'s are' if kept != 1 else ' is'} kept although {'their' if kept != 1 else 'its'} "
             f"objective is below the minimum ({cfg['inclusion']['min_objective_magnification']}x): the minimum decides "
             f"which images are coded, and a rebuild with new codes applies it.")
+    if ruled:
+        log(f"Warning: {ruled} coded image{'s match' if ruled != 1 else ' matches'} an exclusion rule added after "
+            f"{'they were' if ruled != 1 else 'it was'} coded. {'They stay' if ruled != 1 else 'It stays'} in the blind set; "
+            f"unblinding leaves {'them' if ruled != 1 else 'it'} out and lists {'them' if ruled != 1 else 'it'}. "
+            f"Before scoring begins, a rebuild with new codes leaves {'them' if ruled != 1 else 'it'} out of the blind set.")
     if not images:
         raise SystemExit("No images passed the inclusion rules. See outputs/excluded.csv.")
     # only the images this run renders: when adding, coded images keep the planes they were scored on
@@ -820,7 +829,7 @@ def _build(project, reassign, add, log, run):
             # Sorted order (as on a first build) could swap the letters on the rebuild after a warned change.
             letters = dict(ch["letters"])
         # 1.26.22: channel lines get a warning of their own (channel_warning), which names the codes
-        said = [l for l, k in zip(ch["lines"], ch["kinds"]) if not k.startswith("channels")]
+        said = [l for l, k in zip(ch["lines"], ch["kinds"]) if not k.startswith("channels") and k != "ruled"]
         if not add and said:
             scan_lines = ["Warning: this build changes what was recorded for coded images, because Scan data now reads "
                           f"them differently: {'; '.join(said)}. Scores are unchanged. Compare brightness only "

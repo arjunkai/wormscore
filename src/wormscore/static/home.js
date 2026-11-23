@@ -39,10 +39,11 @@ function warnNote(text, extra = {}) {
   return h("p", { class: "warn-note", ...extra }, icon("warn", 16), h("span", { class: "sr" }, "Warning: "), h("span", {}, text));
 }
 
-// What the last scan reads differently, one line per change (1.26.21)
+// What the last scan reads differently, one line per change (1.26.21). 1.26.27: also an exclusion rule added
+// since the images were coded, which is no new reading, so the heading names neither (found by review)
 function scanNote(lines) {
-  const head = "The last scan reads coded images differently";
-  if (lines.length === 1) return warnNote(`${head}. ${lines[0]}`);
+  const head = "Since the blind set was built";
+  if (lines.length === 1) return warnNote(`${head}: ${lines[0].charAt(0).toLowerCase()}${lines[0].slice(1)}`);
   return h("div", { class: "warn-note scan-note" }, icon("warn", 16), h("span", { class: "sr" }, "Warning: "),
     h("div", {}, h("p", {}, `${head}:`), h("ul", {}, lines.map(t => h("li", {}, t)))));
 }
@@ -994,16 +995,24 @@ function formSection(info) {
 
   // One answer's definition and optional reference image, under the answer. get() is {text, image};
   // put(patch) changes it. The image is copied into the project's criteria/ folder when it is added.
-  // which answers' images are being added: a redraw meanwhile keeps their button busy
+  // which answers' images are being added: a redraw meanwhile keeps their button busy. Each answer has a
+  // token tied to its call or question (not to its place, "Call 2", which changes when a row above is
+  // removed during an upload: "Adding..." then showed on another row)
   const adding = new Set();
+  const tokens = new WeakMap();
+  const token = (obj, sub = "") => {
+    let m = tokens.get(obj);
+    if (!m) tokens.set(obj, (m = new Map()));
+    if (!m.has(sub)) m.set(sub, {});
+    return m.get(sub);
+  };
   // the answer's image button: its thumbnail, or Add image
-  const imageButton = what => edit.querySelector(`[aria-label="${CSS.escape(`Show the reference image for ${what}`)}"]`)
-    || edit.querySelector(`[aria-label="${CSS.escape(`Add a reference image for ${what}`)}"]`);
-  const addImage = (what, put) => {
+  const imageButton = tok => [...edit.querySelectorAll(".sf-thumb, .sf-add-img")].find(b => b.wsTok === tok);
+  const addImage = (tok, put) => {
     const busy = on => {
-      on ? adding.add(what) : adding.delete(what);
+      on ? adding.add(tok) : adding.delete(tok);
       drawAll();
-      if (!on && document.activeElement === document.body) imageButton(what)?.focus();
+      if (!on && document.activeElement === document.body) imageButton(tok)?.focus();
     };
     const pick = h("input", { type: "file", accept: "image/png,image/jpeg", hidden: true, onchange: () => {
       const file = pick.files?.[0];
@@ -1025,7 +1034,7 @@ function formSection(info) {
     setTimeout(() => pick.remove(), 60000);
   };
   const opened = new Set();     // answers whose empty definition line was asked for
-  const defLine = (what, get, put) => {
+  const defLine = (what, tok, get, put) => {
     const d = get();
     if (!d.text && !d.image && !opened.has(what)) return off ? null : h("button", { class: "linkish sf-def-add",
       "aria-label": `Add a definition for ${what}`, onclick: () => {
@@ -1037,19 +1046,19 @@ function formSection(info) {
       h("span", { class: "sf-def-k", "aria-hidden": "true" }, "means"),
       text(d.text, v => put({ text: v }), { placeholder: "What it looks like (optional)", "aria-label": `${what}: definition`, maxlength: 300 }),
       d.image ? h("span", { class: "sf-img" },
-        h("button", { class: "sf-thumb", title: "Show the reference image", "aria-label": `Show the reference image for ${what}`,
-          onclick: () => wsForm.zoom(h, d.image, what, d.text) }, h("img", { src: "/" + d.image, alt: "" })),
+        Object.assign(h("button", { class: "sf-thumb", title: "Show the reference image", "aria-label": `Show the reference image for ${what}`,
+          onclick: () => wsForm.zoom(h, d.image, what, d.text) }, h("img", { src: "/" + d.image, alt: "" })), { wsTok: tok }),
         off ? null : h("button", { class: "ghost icon sm", title: "Remove the image", "aria-label": `Remove the reference image for ${what}`,
-          onclick: () => { put({ image: "" }); drawAll(); imageButton(what)?.focus(); } }, icon("close", 14)))
-        : off ? null : h("button", { class: "btn subtle sm sf-add-img",
+          onclick: () => { put({ image: "" }); drawAll(); imageButton(tok)?.focus(); } }, icon("close", 14)))
+        : off ? null : Object.assign(h("button", { class: "btn subtle sm sf-add-img",
           title: "A PNG or JPEG example from outside this blind set, such as a pilot or a published figure. "
             + "The scorer compares its shape; its brightness depends on how it was saved.",
-          "aria-label": `Add a reference image for ${what}`, disabled: adding.has(what), onclick: () => addImage(what, put) },
-          adding.has(what) ? "Adding..." : "Add image"));
+          "aria-label": `Add a reference image for ${what}`, disabled: adding.has(tok), onclick: () => addImage(tok, put) },
+          adding.has(tok) ? "Adding..." : "Add image"), { wsTok: tok }));
   };
-  const callDef = (c, j) => defLine(`Call ${j + 1}`, () => ({ text: c.def || "", image: c.image || "" }),
+  const callDef = (c, j) => defLine(`Call ${j + 1}`, token(c), () => ({ text: c.def || "", image: c.image || "" }),
     p => { if ("text" in p) c.def = p.text; if ("image" in p) c.image = p.image; });
-  const answerDef = (q, j, a) => defLine(`Question ${j + 1}, answer ${a}`, () => (q.defs ||= {})[a] || { text: "", image: "" },
+  const answerDef = (q, j, a) => defLine(`Question ${j + 1}, answer ${a}`, token(q, a), () => (q.defs ||= {})[a] || { text: "", image: "" },
     p => { q.defs ||= {}; q.defs[a] = { text: "", image: "", ...q.defs[a], ...p }; });
   // a renamed answer keeps its definition
   const renameDef = (q, from, to) => {
@@ -1986,6 +1995,8 @@ async function openSettings() {
   // dialog opens by itself; otherwise the status line just changes.
   const status = h("span", {}, statusText(u));
   const checkNow = async () => {
+    // a button turned off while it has the keyboard loses it; it gets it back when it is on again
+    const keyboard = document.activeElement === verBtn;
     verBtn.disabled = true;
     verBtn.textContent = status.textContent = "Checking...";
     try { await api("/api/update", { action: "check" }); } catch (e) { toast(e.message); }
@@ -1998,6 +2009,7 @@ async function openSettings() {
     status.textContent = statusText(st.data.update);
     verBtn.disabled = false;
     verBtn.textContent = "Check now";
+    if (keyboard && verBtn.isConnected && [document.body, verBtn].includes(document.activeElement)) verBtn.focus();
   };
   const verBtn = u.newer
     ? h("button", { class: "primary", onclick: choose("see") }, "See update")

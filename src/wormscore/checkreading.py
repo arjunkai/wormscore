@@ -72,7 +72,9 @@ VENDOR = {
              # Setting "Seq. n".
              zoom="Confocal Settings, Zoom", scan="Confocal Settings, by the same names",
              note="LAS X gives two decimals. In a sequential scan, and on a STELLARIS, the laser and gain are "
-                  "under the reporter's Setting \"Seq. n\": Laser Line, and Spectral Positions/Gain/Offset.")),
+                  "under the reporter's Setting \"Seq. n\": Laser Line, and Spectral Positions/Gain/Offset. "
+                  "In the Scan line, WLL is under Lasers, and a mode is the reporter detector's Operating Mode "
+                  "(STELLARIS).")),
     # 1.26.23: a file saved by LAS AF (TCS SP5; Scan data names its model) is shown by LAS X Office 1.4.11 in
     # other sections (Fig6c.lif of Zenodo 13752242, 22 November 2026): every value matched once read
     "Leica LAS AF": (

@@ -25,22 +25,27 @@ def stack_shapes(rows):
 
 
 def excluded_after_scoring(project, cfg, rows):
-    """{code: reason} for coded images matching an exclusion rule, only in projects whose image folders were
-    changed in the app after scoring began (1.21.2); other projects report exactly as before."""
-    from .editconfig import FOLDERS_TITLE
-    log_path = Path(project) / "log.md"
-    if not log_path.is_file() or f" {FOLDERS_TITLE}\n" not in log_path.read_text(encoding="utf-8"):
-        return {}
+    """{code: reason} for coded images matching an exclusion rule: rules added after the image was coded
+    (Build keeps such images coded). 1.21.2 applied them only in projects whose image folders were changed
+    in the app after scoring began; a rule written into config.json by hand was counted with a warning.
+    From 1.26.27 every project leaves them out and lists them, however the rule was added."""
     srcs = {s.get("name"): s for s in cfg["sources"]}
+    # the path inside its folder as Build matches rules (inventory.csv), so the build's warning and this agree
+    # even when a folder's path in config.json no longer starts the image's path (found by review)
+    inv = Path(project) / "outputs" / "inventory.csv"
+    rels = {(x.get("local_path"), x.get("location_in_file")): x.get("relative_path")
+            for x in read_csv(inv)} if inv.is_file() else {}
     out = {}
     for r in rows:
         s = srcs.get(r.get("source"))
         if not s or not s.get("exclude"):
             continue
-        try:
-            rel = str(Path(r.get("local_path", "")).relative_to(Path(s["path"]))).replace("\\", "/")
-        except ValueError:
-            continue
+        rel = rels.get((r.get("local_path"), r.get("location_in_file")))
+        if not rel:
+            try:
+                rel = str(Path(r.get("local_path", "")).relative_to(Path(s["path"]))).replace("\\", "/")
+            except ValueError:
+                continue
         rule = C.exclude_rule_for(cfg, r["source"], rel)
         if rule:
             out[r["code"]] = rule.get("reason", "")
@@ -175,19 +180,15 @@ def unblind(project, finished=False, anyway=False, log=print):
                      f"score changed, after this project was first unblinded ({earlier}): {', '.join(after_unblinding)}. "
                      "Those scores were not blind. They are counted below and marked in merged.csv "
                      "(score_saved_after_unblinding); report them as not blind.")
-    rules_g, rules_x = rules_differ(cfg, [r for r in rows if not r.get("repeat_of") and r["code"] not in late_excl])
+    rules_g, _ = rules_differ(cfg, [r for r in rows if not r.get("repeat_of") and r["code"] not in late_excl])
     if rules_g:
         lines.append(f"WARNING: {rules_g} coded image{'s have' if rules_g != 1 else ' has'} another genotype under the "
                      "genotype rules now in config.json than in the key: the rules were changed after Scan data. "
                      "These results use the key. To use the new rules, run Scan data, rebuild keeping the codes, "
                      "and unblind again.")
-    if rules_x:
-        lines.append(f"WARNING: {rules_x} coded image{'s match' if rules_x != 1 else ' matches'} an exclusion rule now "
-                     "in config.json but " + ("are" if rules_x != 1 else "is") + " counted here: the rule was added "
-                     "after the blind set was built.")
     if late_excl:
-        lines.append(f"WARNING: {len(late_excl)} coded image(s) left out by exclusion rules changed after scoring "
-                     "began: " + "; ".join(f"{c} ({why})" for c, why in sorted(late_excl.items())) + ".")
+        lines.append(f"WARNING: {len(late_excl)} coded image(s) left out by exclusion rules added after they were "
+                     "coded: " + "; ".join(f"{c} ({why})" for c, why in sorted(late_excl.items())) + ".")
     unscored = [r["code"] for r in rows if not r.get("score_saved")]
     if unscored:
         lines.append(f"Unscored: {', '.join(unscored)}")
@@ -420,7 +421,10 @@ def unblind(project, finished=False, anyway=False, log=print):
                          + ("in the data" if pooled else "on the same microscope") + ")")
                 lines.append("  " + inote)
     by_code = {r["code"]: r for r in rows}
-    pairs = [(by_code[r["repeat_of"]], r) for r in rows if r.get("repeat_of")]
+    # images left out by a rule added after they were coded are left out here too, with their hidden
+    # repeats, and from the second scorer's comparison (found by review: they still counted in the kappas)
+    kept = [r for r in rows if r["code"] not in late_excl and r.get("repeat_of") not in late_excl]
+    pairs = [(by_code[r["repeat_of"]], r) for r in kept if r.get("repeat_of")]
     rel = []
     if pairs:
         scored = [(a, b) for a, b in pairs if a.get("score_saved") and b.get("score_saved")]
@@ -431,7 +435,7 @@ def unblind(project, finished=False, anyway=False, log=print):
         for x in rel:
             lines.append(f"  {x['measure']}: {x['same_answer']}/{x['pairs']} same ({x['percent_agreement']}%), "
                          f"kappa {x['kappa'] if x['kappa'] != '' else 'undefined'} ({x['kappa_type']})")
-    between, differ, second = scorers.between_scorers(project, rows, cfg)
+    between, differ, second = scorers.between_scorers(project, kept, cfg)
     if second:
         lines.append("")
         lines.append("Agreement between scorers (outputs/unblinded/between_scorers.csv; the primary results above "

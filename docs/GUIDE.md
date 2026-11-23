@@ -110,7 +110,7 @@ to `log.md`:
 - A corrected genotype rule is applied to the coded images. Each change is listed in
   `key/changes_after_scoring.csv`.
 - A new exclusion rule leaves matching images out at unblinding. The summary and the Methods draft
-  say so.
+  say so. The images keep their codes, so rebuilds and Add new images go on working.
 
 ### 4. Score
 

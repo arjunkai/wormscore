@@ -93,7 +93,10 @@ def test_genotype_rules_changed_after_scan_are_pointed_out(fresh_project):
     assert "WARNING: 1 coded image has another genotype under the genotype rules now in config.json" in summary
     edit_config(fresh_project, lambda c: c["sources"][0].update(exclude=[{"match": "*control_02*", "reason": "test"}]))
     out = unblind(fresh_project, finished=True, log=quiet)
-    assert "WARNING: 1 coded image matches an exclusion rule now in config.json" in (out / "summary.txt").read_text(encoding="utf-8")
+    # 1.26.27: left out and listed (it was counted, with a warning, unless the folders were changed in the app)
+    summary = (out / "summary.txt").read_text(encoding="utf-8")
+    assert "WARNING: 1 coded image(s) left out by exclusion rules added after they were coded: " in summary
+    assert "(test)" in summary and "matches an exclusion rule now" not in summary
 
 
 def test_a_misspelled_genotype_in_the_analysis_settings_is_named(fresh_project):

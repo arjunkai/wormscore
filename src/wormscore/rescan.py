@@ -256,6 +256,13 @@ def scan_changes(project, cfg=None):
     out["lines"] += [f"{n} coded image{'s' if n != 1 else ''} no longer pass{'' if n != 1 else 'es'} the inclusion "
                      f"rules: {reason}" for reason, n in sorted(left.items())]
     out["kinds"] += ["left"] * len(left)
+    # 1.26.27: a coded image an exclusion rule added since matches stays coded (include_reason), and the card
+    # says so: before scoring, a rebuild with new codes is what leaves it out of the blind set (found by review)
+    ruled = sum(1 for _, s in pairs if s.get("source") and C.exclude_rule_for(cfg, s["source"], s.get("relative_path") or ""))
+    if ruled:
+        out["lines"].append(f"{ruled} coded image{'s match' if ruled != 1 else ' matches'} an exclusion rule added "
+                            f"after {'they were' if ruled != 1 else 'it was'} coded")
+        out["kinds"].append("ruled")
     # 1.26.22: a scan that names other channels of a coded image's file as the reporter, the identity channel
     # or brightfield than the build used (key/channels.csv). Before, nothing compared them, so a rebuild after
     # a newer reading could show a scored image's other channel without a word.
@@ -377,7 +384,8 @@ def scan_changes(project, cfg=None):
                              f"the slide images again so theirs are read the same way"]
             out["kinds"].append("day")
     # 1.26.23: "left" (a coded image no longer passes the inclusion rules: a rebuild that keeps the codes
-    # would stop until the image or the rule is restored)
+    # would stop until the image or the rule is restored); 1.26.27: "ruled" (a coded image matches an
+    # exclusion rule added since: it stays coded and unblinding leaves it out, so nothing stops)
     # 1.26.21: kinds says what each line asks for, for the Build card: "rebuild" (a rebuild that keeps the
     # codes applies it, and the line goes); "slides" (it stays, also after a rebuild, until the slide images
     # are chosen again, which rebuilds the blind set itself); "day" (a rebuild applies it with the nearest
@@ -404,7 +412,14 @@ def scan_change_lines(project, changes):
                 "Do not rebuild before that.",
         "left": "Until every coded image passes again, a rebuild that keeps the codes, and Add new images, would "
                 "stop. If a setting caused this, setting it back lets the build go on.",
+        "ruled": "They keep their codes, and unblinding leaves them out and lists them.",
     }
+    if "ruled" in changes["kinds"]:
+        if changes["lines"][changes["kinds"].index("ruled")].startswith("1 "):       # one image (found by review)
+            steps["ruled"] = "It keeps its code, and unblinding leaves it out and lists it."
+        if not lock_reason(project):
+            steps["ruled"] += " Before scoring begins, Rebuild with NEW codes leaves " + (
+                "it" if steps["ruled"].startswith("It") else "them") + " out of the blind set."
     # 1.26.23: while a coded image no longer passes, a rebuild that keeps the codes stops (choosing the slide
     # images again ends in one too), so every other step waits for it (found by review)
     if "left" in changes["kinds"]:
@@ -437,7 +452,7 @@ def scan_change_lines(project, changes):
                 step += " The Build log will name the codes."
             out.append(f"{line[:1].upper()}{line[1:]}. {step}")
             continue
-        if kind not in ("rebuild", "left"):
+        if kind not in ("rebuild", "left", "ruled"):
             if locked is None:
                 locked = bool(lock_reason(project))
             if locked:

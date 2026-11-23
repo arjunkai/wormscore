@@ -5,6 +5,40 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.27
+
+**Outlines saved in another window are never replaced without asking; exclusion rules added after coding apply
+the same way in every project; the second-scorer table names answers as the form does; a STELLARIS detector's
+operating mode is recorded.**
+- Two scoring windows on one image: when the other window saved other outlines after this one opened the
+  image, Save outlines now asks "Replace the other window's outlines?" (Cancel has the focus) and saves nothing
+  unless you choose Replace. Outlines keep no history, so the later save used to replace them with only a
+  warning. Scores are still saved with a warning, as every saved score stays in score_history.csv.
+- Exclusion rules added after the images were coded: Build keeps such images in the blind set with their
+  codes and says so in its log and on the Build card; a rebuild that keeps the codes, and Add new images,
+  no longer stop. Unblinding leaves them out of every table (with their hidden repeats, and from the
+  agreement with a second scorer) and lists them, however the rule was added. Before, a rule written into
+  config.json by hand was counted with a warning, a rule added in the app was applied, and either stopped
+  the next rebuild. Browse images notes them. Before scoring begins, a rebuild with new codes still leaves
+  them out of the blind set.
+- scorer_disagreements.csv names each answer as the scoring form does ("AWC call" instead of "neuron 1
+  call") and also compares the neuron, left/right and per-animal questions, which it left out.
+- Leica STELLARIS: each image's detector Operating Mode is recorded in scan_settings as LAS X shows it
+  ("Analog mode", "Digital mode" or "Counting mode"), with the Scan data flag when an image differs from
+  most images with the same settings. The file's own word for it misleads (a HyD S saved as photon counting
+  is Analog in LAS X); the mode was read off LAS X Office for four public STELLARIS files. An SP8 records
+  no mode that LAS X shows, so none is read there.
+- Keyboard: in Browse images the search box keeps the keyboard while you type (it took one letter, then
+  lost it), and opening an image from the list keeps the keyboard on it. Removing an outline moves the
+  keyboard to the next outline's Remove button (after the last one, to Draw as), not to the top of the page.
+  Save outlines and Settings' Check now give the keyboard back when they finish, unless you moved on.
+- Scoring criteria: "Adding..." stays on the answer whose reference image is being added when a row above
+  it is removed meanwhile.
+- **Who is affected:** projects with a second scorer (the disagreements table's answer names, after the next
+  Unblind); projects with an exclusion rule that matches coded images (left out at the next Unblind, if a
+  hand-written rule counted them before); STELLARIS projects (the scan_settings column after the next Scan
+  data; images scanned before read as then). Nothing else changes.
+
 ## 1.26.26
 
 **The image fits its area again when the area changes; the keys line under the image keeps its height; the update

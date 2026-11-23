@@ -332,7 +332,6 @@ def between_scorers(project, rows, cfg):
     agree, differ, about = [], [], []
     log_text = (project / "log.md").read_text(encoding="utf-8") if (project / "log.md").is_file() else ""
     unblinded = sorted(re.findall(r"^## (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) unblinded$", log_text, re.M))
-    n = len(cfg["scoring"]["neurons"])
     for sid in scorer_ids(project):
         rec = json.loads((project / "scorers" / sid / PACKAGE_FILE).read_text(encoding="utf-8"))
         path = project / "scorers" / sid / "scoring" / "scores.csv"
@@ -344,9 +343,7 @@ def between_scorers(project, rows, cfg):
         for x in stats.reliability(pairs, cfg):
             agree.append({"second_scorer": rec["scorer"], "package": sid, **x})
         for a, b in pairs:
-            fields = [("usable", "score_usable"), ("cells seen", "score_cells_seen")] + \
-                     [(f"neuron {i} call", f"score_n{i}_call") for i in range(1, n + 1)]
-            for label, f in fields:
+            for label, f in disagreement_fields(cfg):
                 if a.get(f, "") != b.get(f, ""):
                     differ.append({k: safe_cell(v) for k, v in {
                         "second_scorer": rec["scorer"], "code": a["code"], "answer": label,
@@ -357,6 +354,24 @@ def between_scorers(project, rows, cfg):
                       "first": saved[0][:10] if saved else "", "last": saved[-1][:10] if saved else "",
                       "after_unblinding": bool(unblinded and saved and saved[0][:16] > unblinded[0])})
     return agree, differ, about
+
+
+def disagreement_fields(cfg):
+    """The answers compared in scorer_disagreements.csv, as (name, column): every answer of the form,
+    named as the form names it (1.26.27: neurons by their names, e.g. "AWC call" where the table said
+    "neuron 1 call"; the neuron, side and animal questions were left out)."""
+    sc = cfg["scoring"]
+    label = lambda q: q.get("label") or q["id"]
+    fields = [("usable", "score_usable"), ("cells seen", "score_cells_seen")]
+    for i, name in enumerate(sc["neurons"], 1):
+        fields.append((f"{name} call", f"score_n{i}_call"))
+        if sc.get("sides"):
+            fields.append((f"{name} side", f"score_n{i}_side"))
+        fields += [(f"{name}: {label(q)}", f"score_n{i}_{q['id']}") for q in sc.get("neuron_questions") or []]
+    fields += [(f"{label(q)} ({s})", f"score_{s}_{q['id']}")
+               for q in sc.get("side_questions") or [] for s in ("left", "right")]
+    fields += [(label(q), f"score_a_{q['id']}") for q in sc.get("animal_questions") or []]
+    return fields
 
 
 def package_folder(project, sid):

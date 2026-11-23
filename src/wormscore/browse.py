@@ -125,9 +125,16 @@ class Browse:
         if self.state() == "after":
             key = sorted(read_csv(p / "key" / "key.csv"), key=lambda r: r["code"])
             by_place = {where(s): s for s in images}
+            # 1.26.27: images an exclusion rule added after coding leaves out of the results say so, as in merged.csv
+            from .unblind import excluded_after_scoring
+            late = excluded_after_scoring(p, cfg, [r for r in key if not r.get("repeat_of")])
             for r in key:
-                items.append({"id": r["code"], "coded": True, "row": r, "img": by_place.get(where(r)),
-                              "note": f"Hidden repeat of {r['repeat_of']}" if r.get("repeat_of") else ""})
+                orig = r.get("repeat_of") or r["code"]
+                gone = late.get(orig)          # the reason; "" when the rule gives none
+                note = f"Hidden repeat of {r['repeat_of']}" if r.get("repeat_of") else ""
+                if orig in late:
+                    note = "; ".join(filter(None, [note, f"Left out of the results: {gone or 'an exclusion rule'}"]))
+                items.append({"id": r["code"], "coded": True, "row": r, "img": by_place.get(where(r)), "note": note})
             coded = {where(r) for r in key}
             left = {where(r): r["reason"] for r in read_csv(p / "outputs" / "excluded.csv")
                     if r.get("local_path")} if (p / "outputs" / "excluded.csv").is_file() else {}

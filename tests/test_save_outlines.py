@@ -229,27 +229,33 @@ def running(project):
     return srv, srv.server_address[1]
 
 
-def test_a_save_says_when_it_replaced_outlines_another_window_saved_meanwhile(fresh_project):
+def test_outlines_another_window_saved_meanwhile_are_replaced_only_when_asked(fresh_project):
     """Two scoring windows saved one image's outlines one after the other: the later save replaced the
-    earlier one and neither window was told. The later save still wins. The window that saves now learns
-    that it replaced outlines saved since it loaded them, and the other can ask which outlines are saved."""
+    earlier one. Outlines keep no history, so from 1.26.27 a window that never saw outlines saved since it
+    loaded its own is answered "conflict" and nothing is written; the page asks, and sends "replace" when
+    the scorer says so. That save is told it replaced them. The other window can ask which are saved."""
     srv, port = running(fresh_project)
-    save = lambda rois, loaded: json.loads(post(port, "/api/worm/W0001/rois", {"rois": rois, "loaded": loaded})[1])
+    save = lambda rois, loaded, **kw: json.loads(post(port, "/api/worm/W0001/rois", {"rois": rois, "loaded": loaded, **kw})[1])
+    stored = lambda: json.loads((fresh_project / "scoring" / "rois.json").read_text(encoding="utf-8"))["W0001"]
     try:
         opened = get(port, "/api/worm/W0001")[1]["rois_v"]               # both windows open the image: no outlines yet
         assert get(port, "/api/worm/W0001/rois-version")[1] == {"version": opened}
         a = save(FIRST, opened)                                          # window A
         assert a == {"ok": True, "n_regions": 1, "version": a["version"]} and a["version"] != opened
         assert get(port, "/api/worm/W0001/rois-version")[1] == {"version": a["version"]}    # A looks again: still its own
-        b = save(LATER, opened)                                          # window B, which never saw A's outlines
+        assert save(LATER, opened) == {"ok": False, "conflict": True}    # window B, which never saw A's outlines
+        assert stored() == FIRST                                         # nothing replaced
+        assert save(LATER, opened, replace="yes") == {"ok": False, "conflict": True}    # only true counts
+        b = save(LATER, opened, replace=True)                            # B's scorer said replace them
         assert b == {"ok": True, "n_regions": 1, "version": b["version"], "replaced": True}
-        assert json.loads((fresh_project / "scoring" / "rois.json").read_text(encoding="utf-8"))["W0001"] == LATER
+        assert stored() == LATER
         assert get(port, "/api/worm/W0001/rois-version")[1]["version"] == b["version"] != a["version"]   # A looks again: replaced
         assert get(port, "/api/worm/W0001")[1]["rois_v"] == b["version"]
-        again = save(FIRST, a["version"])                                # A saves anyway: it wins, and is told
+        again = save(FIRST, a["version"], replace=True)                  # A saves anyway: it wins, and is told
         assert again["replaced"] is True and again["version"] == a["version"]       # the same outlines, the same version
         assert "replaced" not in save(LATER, again["version"])           # a window that saw the saved outlines
         assert "replaced" not in save(LATER, a["version"])               # the same outlines again replace nothing
+        assert save([], opened) == {"ok": False, "conflict": True}       # removing all of them is a replace too
         assert get(port, "/api/worm/W0002/rois-version")[1] == {"version": opened}          # another image: none saved
         assert get(port, "/api/worm/W9999/rois-version")[0] == 404
     finally:

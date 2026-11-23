@@ -436,11 +436,25 @@ async function loadList() {
 
 function renderList() {
   const nav = $("#list");
+  // Browse: the list is drawn again after each change; the keyboard stays in it, on the image just
+  // opened (it was on a button that is replaced, so it went back to the top of the page). Scoring: an
+  // image picked in the list takes the keyboard to its first question instead (focusFirstQuestion).
+  const inList = browsing() && nav.contains(document.activeElement) && document.activeElement !== st.listFind;
+  const keep = () => {
+    const cur = inList && nav.querySelector("button.cur");
+    if (!cur) return;
+    cur.focus({ preventScroll: true });
+    cur.scrollIntoView({ block: "nearest" });      // N from the list: the new image's row is in view
+  };
   if (browsing()) {
     const q = (st.listFind.value || "").trim().toLowerCase();
     const shown = st.worms.filter(w => !q || [w.code, w.file, w.genotype, w.location, w.autofluor ? "gut autofluorescence" : ""].some(x => (x || "").toLowerCase().includes(q)));
-    nav.replaceChildren(st.listFind, ...shown.map(browseRow),
-      ...(shown.length ? [] : [h("p", { class: "small" }, "No image matches.")]));
+    // The search box stays where it is: taking it out of the page while it is typed in lost the
+    // keyboard after the first letter.
+    if (nav.firstChild !== st.listFind) nav.prepend(st.listFind);
+    while (st.listFind.nextSibling) st.listFind.nextSibling.remove();
+    nav.append(...shown.map(browseRow), ...(shown.length ? [] : [h("p", { class: "small" }, "No image matches.")]));
+    keep();
     const coded = st.worms.filter(w => w.coded).length;
     $("#progText").textContent = `Browsing ${st.worms.length} images` + (coded ? ` (${coded} coded)` : "")
       + (st.cfg.stage === "before" ? ". Each image you open is recorded in log.md." : "");
@@ -456,6 +470,7 @@ function renderList() {
       h("span", { class: w.scored ? "dot done" : w.draft ? "dot draft" : "dot", "aria-hidden": "true" }), w.code,
       w.unanswered_flags ? h("span", { class: "flagmark", title: "questions to confirm" }, `${w.unanswered_flags}?`) : null);
   }));
+  keep();
   // A new image opened (Next, Ctrl+Enter, the N key) is scrolled into view in a long list; a list
   // the scorer scrolled on purpose stays where it is when the same image is redrawn.
   if (st.listShown !== st.code) {
@@ -470,9 +485,18 @@ function renderList() {
 }
 
 // Asks before unsaved outlines are left behind, in the app's own dialog. Stay has the focus, so one
-// Enter press never throws outlines away; Escape stays too. Resolves true to leave.
-function confirmLeave() {
+// Enter press never throws outlines away; Escape stays too. Resolves true to leave. The same dialog
+// asks before outlines saved from another window are replaced (words: REPLACE_OUTLINES).
+const LEAVE_OUTLINES = { title: "Leave without saving the outlines?", go: "Leave without saving", stay: "Stay",
+  text: "The outlines you drew on this image are not saved. Your score is not affected." };
+const REPLACE_OUTLINES = { title: "Replace the other window's outlines?", go: "Replace them", stay: "Cancel",
+  text: "Another window saved outlines for this image after you opened it. Saving yours replaces them, and they cannot be got back." };
+function confirmLeave(words = LEAVE_OUTLINES) {
   const m = $("#leaveDlg"), stay = $("#leaveStay"), go = $("#leaveGo"), opener = document.activeElement;
+  $("#leaveTitle").textContent = words.title;
+  $("#leaveText").textContent = words.text;
+  stay.textContent = words.stay;
+  go.textContent = words.go;
   return new Promise(resolve => {
     const done = leave => {
       m.classList.add("hidden");
@@ -570,12 +594,14 @@ async function openWorm(code) {
 }
 
 // After the next image opens, keyboard scoring starts again at its first question, if the keyboard was in
-// the form (or nowhere); a click in the image list keeps its place. The question's group gets the focus, not
+// the form (or nowhere, as after a pick in the image list, whose buttons are drawn again); elsewhere it keeps
+// its place. The question's group gets the focus, not
 // its first answer: a focused answer keeps the arrow keys, so moving through planes would change it.
 // One Tab then reaches the answers.
 function focusFirstQuestion() {
   const form = $("#scoreForm");
-  const at = document.activeElement;
+  let at = document.activeElement;
+  if (at && !at.offsetParent && at !== document.body) at = document.body;      // on a control now hidden: nowhere
   if (!form || form.classList.contains("hidden") || (at && at !== document.body && !form.contains(at))) return;
   if (at && at.tagName === "TEXTAREA") return;      // typing a note while the image loaded: stay there
   const group = form.querySelector("fieldset");
@@ -1205,11 +1231,12 @@ function renderSuggestions() {
 }
 
 function renderRoiList() {
-  $("#roiList").replaceChildren(...st.rois.map(r =>
+  $("#roiList").replaceChildren(...st.rois.map((r, i) =>
     h("div", { class: "item" },
       h("span", { class: "sw", style: `background:${st.colors[r.label] || "#fff"}` }), r.label,
       h("span", { class: "small" }, r.source),
-      h("span", { class: "btns" }, h("button", { type: "button", onclick: () => {
+      h("span", { class: "btns" }, h("button", { type: "button", "aria-label": `Remove the ${r.label} outline`, onclick: e => {
+        const keyboard = document.activeElement === e.currentTarget;
         st.rois = st.rois.filter(x => x !== r);
         if (!browsing()) {
           st.roisDirty = true;
@@ -1217,6 +1244,14 @@ function renderRoiList() {
         }
         renderRoiList();
         draw();
+        // The button is gone: the keyboard goes to the next outline's Remove (or the one before), and
+        // after the last one to "Draw as", where outlines start and one more Enter changes nothing. Not
+        // to Save or a suggested spot, where it would save or add an outline (found by review).
+        if (keyboard) {
+          const rm = $$("#roiList button");
+          (rm[i] || rm[i - 1] || [...$$("#labelSeg button.on"), ...$$("#labelSeg button")].find(b => b.offsetParent))
+            ?.focus({ preventScroll: true });
+        }
       } }, "Remove")))));
 }
 
@@ -1227,11 +1262,31 @@ $("#saveRois").onclick = () => {
   if (browsing()) return measure();
   if (st.roisSaving) return;
   const code = st.code, sent = JSON.stringify(st.rois), n = st.rois.length, btn = $("#saveRois");
+  // A button turned off while it has the keyboard loses it; it gets it back when it is on again, unless
+  // the scorer clicked or pressed a key meanwhile (N for the next image, a click on the image: found by review).
+  let keyboard = document.activeElement === btn;
+  const moved = () => { keyboard = false; };
+  if (keyboard) for (const ev of ["pointerdown", "keydown"]) document.addEventListener(ev, moved, { capture: true, once: true });
   roiMessage("Saving...");
   btn.disabled = true;
   st.roisSaving = (async () => {
     try {
-      const r = await api(`/api/worm/${code}/rois`, { rois: JSON.parse(sent), ...(st.roisV ? { loaded: st.roisV } : {}) });
+      const send = replace => api(`/api/worm/${code}/rois`,
+        { rois: JSON.parse(sent), ...(st.roisV ? { loaded: st.roisV } : {}), ...(replace ? { replace: true } : {}) });
+      let r = await send(false);
+      if (r.conflict) {
+        // another window saved other outlines for this image since this one loaded: nothing is replaced unless the scorer says so
+        const had = keyboard;
+        const replace = st.code === code && await confirmLeave(REPLACE_OUTLINES);
+        keyboard = had;          // keys pressed in the dialog are not a move elsewhere
+        if (had) for (const ev of ["pointerdown", "keydown"]) document.addEventListener(ev, moved, { capture: true, once: true });
+        if (!replace) {
+          if (st.code === code) roiMessage("Not saved. Another window saved outlines for this image: open it again to see them.", "warn");
+          return;
+        }
+        roiMessage("Saving...");
+        r = await send(true);
+      }
       // Two scoring windows saved this image's outlines and the other click came later: its outlines
       // are the saved ones, whichever finished first. These stay unsaved, and the message says so.
       if (r.superseded) throw new Error("another window saved this image's outlines just after you clicked; those are kept.");
@@ -1250,6 +1305,8 @@ $("#saveRois").onclick = () => {
     } finally {
       st.roisSaving = null;
       btn.disabled = false;
+      for (const ev of ["pointerdown", "keydown"]) document.removeEventListener(ev, moved, { capture: true });
+      if (keyboard && st.code === code && btn.offsetParent && [document.body, btn].includes(document.activeElement)) btn.focus({ preventScroll: true });
     }
   })();
   return st.roisSaving;

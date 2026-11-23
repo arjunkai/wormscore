@@ -518,9 +518,9 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         "(https://github.com/arjunkai/wormscore). Inclusion rules were set before scoring and applied "
         f"without regard to genotype: {n_included} of {n_included + n_excluded} images were included"
         + (" (the reason for each exclusion is listed in excluded.csv)" if n_excluded else "")
-        + (". After scoring began, " + "; ".join(f"{n} image{'s were' if n != 1 else ' was'} left out because "
+        + (". After the images were coded, " + "; ".join(f"{n} image{'s were' if n != 1 else ' was'} left out because "
                                                   f"{why.rstrip('.') or '[reason]'}" for why, n in sorted(late_excluded.items()))
-           + " (by exclusion rules changed after scoring began)" if late_excluded else "")
+           + " (by exclusion rules added since)" if late_excluded else "")
         + kept_below_minimum(project, cfg, key_rows)
         + f". On {coded_date(project)}, "
         f"{who('coded_by', '[name]')} assigned every included image a random code; the key linking codes to "

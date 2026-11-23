@@ -27,10 +27,12 @@ def include_reason(img, cfg, coded=False):
     and the build keeps the codes. 1.26.23: the minimum magnification decides which images are coded; a coded
     image is not left out for it later. A TCS SP5 image coded before its objective was read (20x, say) would
     otherwise stop every later build of a project scored on it (found by review). The Build log says so;
-    a rebuild with new codes applies the minimum to every image."""
+    a rebuild with new codes applies the minimum to every image. 1.26.27: the same for an exclusion rule
+    added after the image was coded. It stopped every later rebuild and Add new images; the image now
+    stays coded, and unblinding leaves it out and lists it (unblind.excluded_after_scoring)."""
     inc = cfg["inclusion"]
     rule = C.exclude_rule_for(cfg, img["source"], img["relative_path"])
-    if rule:
+    if rule and not coded:
         return f"excluded by config rule '{rule['match']}': {rule.get('reason') or 'no reason given'}"
     if img["marker_channel"] is None:
         return f"{cfg['marker']['label']} channel could not be identified from metadata"

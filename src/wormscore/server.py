@@ -523,17 +523,24 @@ def make_handler(project):
                 ticket = project.roi_ticket()       # before measuring: the order of the clicks
                 check_writable(*(project.scoring / n for n in project.ROI_FILES))
                 rows = project.measure_rois(code, rois) if rois else []
-                # Two windows that save one after the other: the later save wins, as before, and is told
-                # when it replaced outlines saved since its window loaded them ("loaded": the version the
-                # page got with the image or with its last save). What is written does not depend on it.
+                # Two windows that save one after the other ("loaded": the version the page got with the
+                # image or with its last save). Outlines keep no history, so other outlines saved since
+                # this window loaded its own are not replaced unless the scorer said so ("replace": the
+                # page asked); the save is then told it replaced them. Scores keep every save in
+                # score_history.csv, so a score is saved and told instead.
                 loaded, told = body.get("loaded"), {}
                 with project.lock:
                     before = project.rois_version(code) if isinstance(loaded, str) else None
-                    written = project.save_rois_in_order(code, rois, rows, ticket)
+                    # a later click already saved (overlapping saves): that is said as before, not asked
+                    conflict = before is not None and before not in (loaded, project.rois_version(code, rois)) \
+                        and body.get("replace") is not True and project.roi_written.get(code, 0) <= ticket
+                    written = not conflict and project.save_rois_in_order(code, rois, rows, ticket)
                     if written and before is not None:
                         told["version"] = project.rois_version(code)
                         if before not in (loaded, told["version"]):
                             told["replaced"] = True
+                if conflict:
+                    return self.send_json({"ok": False, "conflict": True})
                 if not written:
                     # another window saved this code's outlines after this click, and finished first
                     return self.send_json({"ok": False, "superseded": True})

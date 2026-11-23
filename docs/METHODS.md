@@ -1143,8 +1143,9 @@ Only when a second scorer's scores were imported.
   images both scored (repeats are left out, so no image counts twice), with the same measures and
   statistics as for hidden repeats (percent agreement, Cohen's kappa, weighted for ordered calls, and
   the optional extra statistics).
-- `scorer_disagreements.csv` lists each code and answer (usable, cells seen, each neuron's call) where
-  the two differ, with no genotype.
+- `scorer_disagreements.csv` lists each code and answer where the two differ, with no genotype: usable,
+  cells seen, and from 1.26.27 every answer of the form, named as the form names it (e.g. "AWC call";
+  earlier versions listed only the calls, as "neuron 1 call").
 - Every results table uses the primary scorer's answers only; the second scorer's answers are never
   merged in or used to settle disagreements.
 - The Methods draft says how many images the second scorer scored, the share, when, and that they
@@ -1193,7 +1194,9 @@ With a reason typed in the app:
 - a changed genotype rule is applied to the coded images, each change listed in
   `key/changes_after_scoring.csv` (not in `log.md`, which never names a code's genotype);
 - a new exclusion rule leaves matching coded images out at unblinding, and the summary and the Methods
-  draft give the number and the reason.
+  draft give the number and the reason. From 1.26.27 this holds however the rule was added (in the app
+  or in config.json by hand), and the images stay coded: a rebuild that keeps the codes, or Add new
+  images, keeps them in the blind set with a warning instead of stopping.
 
 Folders with coded images cannot be removed.
 
