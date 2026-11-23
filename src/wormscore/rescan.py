@@ -75,6 +75,84 @@ def reworded(pairs):
     return {old: next(iter(new)) for old, new in now.items() if old != next(iter(new))}
 
 
+# 1.26.22: which channel of its file each coded image was built from (key/channels.csv, written by the build)
+CHANNELS_FILE = "channels.csv"
+CHANNEL_COLUMNS = ("channel_names", "channel_roles", "marker_channel", "identity_channel", "bf_channel")
+ROLE_COLUMNS = CHANNEL_COLUMNS[1:]
+
+
+def channel_record(s):
+    """The channels an image is built from, as key/channels.csv holds them (all text). s: an inventory
+    row or a build's image record (channel_names and channel_roles as text or lists)."""
+    out = {}
+    for k in CHANNEL_COLUMNS:
+        v = s.get(k)
+        out[k] = "/".join(v) if isinstance(v, list) else "" if v is None else str(v)
+    return out
+
+
+def _used(rec, by_name):
+    """The channels a coded image is drawn from: every role but OTHER (OTHER channels feed only quality-check
+    numbers, never the coded image), each with its position, or (by_name) its channel's name; None when the
+    file does not name every channel used."""
+    roles = (rec.get("channel_roles") or "").split("/")
+    names = (rec.get("channel_names") or "").split("/")
+    used = [(i, r) for i, r in enumerate(roles) if r and r != "OTHER"]
+    if not by_name:
+        return sorted((r, i) for i, r in used)
+    if len(names) != len(roles) or not all(names[i] for i, _ in used):
+        return None
+    return sorted((r, names[i]) for i, r in used)
+
+
+def channels_differ(rec, s):
+    """True when a new reading would build a coded image from other channels than its record (rec, a row of
+    key/channels.csv): another channel as the reporter, the identity channel, brightfield or an extra identity
+    channel. A difference both by position and by channel name (when the file names its channels): a channel
+    read in addition (positions move, names stay) or one only renamed (names change, positions stay) is not."""
+    now = channel_record(s)
+    if _used(rec, False) == _used(now, False):
+        return False
+    a, b = _used(rec, True), _used(now, True)
+    return a is None or b is None or a != b
+
+
+def _which(pairs_rec):
+    """ "its reporter and identity channels" (one image), or "the reporter channel of 2, the identity
+    channel of 1" (several)."""
+    counts = Counter()
+    for c, s in pairs_rec:
+        now = channel_record(s)
+        moved = [name for col, name in (("marker_channel", "reporter"), ("identity_channel", "identity"),
+                                        ("bf_channel", "brightfield")) if (c.get(col) or "") != now[col]]
+        for name in moved or ["extra identity"]:
+            counts[name] += 1
+    names = [k for k in ("reporter", "identity", "brightfield", "extra identity") if counts[k]]
+    if len(pairs_rec) == 1:
+        return "its " + (names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]) +             f" channel{'s' if len(names) != 1 else ''}"
+    return ", ".join(f"the {k} channel of {counts[k]}" for k in names)
+
+
+def locked_codes(project):
+    """(originals with a saved score, their own or a hidden repeat's; codes in a second-scorer package), for the
+    Build card's channel lines. Anything unreadable counts as nothing, so the card never fails on it."""
+    project = Path(project)
+    scored, packaged = set(), set()
+    try:
+        repeat_of = {r["code"]: r.get("repeat_of") or r["code"] for r in read_csv(project / "key" / "key.csv")}
+        if (project / "scoring" / "scores.csv").is_file():
+            scored = {repeat_of.get(r.get("code"), r.get("code")) for r in read_csv(project / "scoring" / "scores.csv")}
+    except (OSError, KeyError, ValueError):
+        pass
+    for f in (project / "scorers").glob("*/package.json") if (project / "scorers").is_dir() else []:
+        try:
+            rec = json.loads(f.read_text(encoding="utf-8"))
+            packaged |= set(rec.get("originals") or []) | set(rec.get("order") or [])
+        except (OSError, ValueError, AttributeError, TypeError):
+            continue
+    return scored, packaged
+
+
 _scan_changes = {}
 
 
@@ -89,20 +167,22 @@ def scan_changes(project, cfg=None):
     that really change group are named. It holds counts and group letters only, never a genotype."""
     project = Path(project)
     key_path, inv_path = project / "key" / "key.csv", project / "outputs" / "inventory.csv"
-    none = {"lines": [], "kinds": [], "letters": None, "changed": False, "reworded": {}}
+    none = {"lines": [], "kinds": [], "letters": None, "changed": False, "reworded": {}, "channel_codes": {}}
     if not key_path.is_file() or not inv_path.is_file():
         return none
     # the files' contents, not only their times: two writes within one tick of the clock (GitHub's Windows
     # machines; FAT32 and exFAT keep times to 2 seconds) kept the result of the first (1.26.18)
     stamp = tuple((p.stat().st_mtime_ns, hashlib.blake2b(p.read_bytes(), digest_size=16).digest())
-                  for p in (key_path, inv_path, project / "config.json") if p.is_file())
+                  for p in (key_path, inv_path, project / "config.json", project / "key" / CHANNELS_FILE) if p.is_file())
+    chan_file = project / "key" / CHANNELS_FILE
     if _scan_changes.get(str(project), (None,))[0] == stamp:
         return _scan_changes[str(project)][1]
     cfg = cfg or C.load(project)
     images = {(s["local_path"], s["location_in_file"]): s for s in read_csv(inv_path)}
     rows = [r for r in read_csv(key_path) if not r.get("repeat_of") and (r["local_path"], r["location_in_file"]) in images]
     pairs = [(r, images[(r["local_path"], r["location_in_file"])]) for r in rows]
-    out = {**none, "lines": [], "kinds": []}
+    rec = {r["code"]: r for r in read_csv(chan_file)} if chan_file.is_file() else {}    # 1.26.22
+    out = {**none, "lines": [], "kinds": [], "channel_codes": {}}
     # 1.26.13: settings that are only worded differently (reworded) are not a change
     out["reworded"] = reworded(pairs)
     out["changed"] = out["reworded"] is None
@@ -147,6 +227,28 @@ def scan_changes(project, cfg=None):
     out["lines"] += [f"the number of planes of {n} coded image{'s' if n != 1 else ''} changes from {a} to {b}"
                      for (a, b), n in sorted(planes.items())]
     out["kinds"] = ["rebuild"] * len(out["lines"])      # each of these a rebuild that keeps the codes applies
+    # 1.26.22: a scan that names other channels of a coded image's file as the reporter, the identity channel
+    # or brightfield than the build used (key/channels.csv). Before, nothing compared them, so a rebuild after
+    # a newer reading could show a scored image's other channel without a word.
+    differ = [(r["code"], rec[r["code"]], s) for r, s in pairs if r["code"] in rec and channels_differ(rec[r["code"]], s)]
+    if differ:
+        n = len(differ)
+        out["lines"].append(f"{n} coded image{'s' if n != 1 else ''} would be built from other channels than before, "
+                            f"as Scan data now reads {'them' if n != 1 else 'it'} ({_which([(c, s) for _, c, s in differ])})")
+        out["kinds"].append("channels")
+        out["channel_codes"][out["lines"][-1]] = sorted(code for code, _, _ in differ)
+    if cfg.get("identity"):
+        # built before 1.26.22 (or added to such a project): only whether each image had an identity channel is
+        # recorded (key.csv), so that is what is compared for images without a record
+        old = [(r, s) for r, s in pairs if r["code"] not in rec]
+        gained = sorted(r["code"] for r, s in old if r.get("identity_channel_used") == "False" and s.get("identity_channel"))
+        lost = sorted(r["code"] for r, s in old if r.get("identity_channel_used") == "True" and not s.get("identity_channel"))
+        for codes, text in ((gained, "now finds an identity channel in {n} coded image{s} built without one"),
+                            (lost, "no longer finds the identity channel of {n} coded image{s} built with one")):
+            if codes:
+                out["lines"].append("Scan data " + text.format(n=len(codes), s="s" if len(codes) != 1 else ""))
+                out["kinds"].append("channels-unrecorded")
+                out["channel_codes"][out["lines"][-1]] = codes
     # 1.26.18: dates written day first with AM/PM have a flat-field day only from a new scan (acquired_day)
     if isinstance(cfg.get("flat_field"), dict):
         from .flatfield import DAY_COLUMN, acquired_day
@@ -248,6 +350,22 @@ def scan_change_lines(project, changes):
     locked = None
     out = []
     for line, kind in zip(changes["lines"], changes["kinds"]):
+        if kind.startswith("channels"):
+            # 1.26.22: a rebuild always uses the new reading; the line says how many of these images are already
+            # scored or in a second scorer's package (counts only), as those would change
+            codes = set(changes.get("channel_codes", {}).get(line, []))
+            scored, packaged = locked_codes(project)
+            ns, np_ = len(codes & scored), len(codes & packaged)
+            step = steps["rebuild"]
+            one = len(codes) == 1
+            if ns:
+                step += " It is already scored and would look different." if one else                     f" {ns} of them {'are' if ns != 1 else 'is'} already scored and would look different."
+            if np_:
+                step += (" It is" if one else f" {np_} {'are' if np_ != 1 else 'is'}") +                     " in a second scorer's package, which could then no longer be imported."
+            if ns or np_:
+                step += " The Build log will name the codes."
+            out.append(f"{line[:1].upper()}{line[1:]}. {step}")
+            continue
         if kind != "rebuild":
             if locked is None:
                 locked = bool(lock_reason(project))

@@ -140,6 +140,10 @@ def test_a_practice_result_is_recorded_and_named_in_the_methods(demo_project, fr
     sentence = methods.practice_sentence(mine)
     assert sentence.startswith("Before scoring, the scorer practised on a set of 6 coded images")
     assert "11 of 12 neuron calls" in sentence and key["sha256"][:16] in sentence
+    # 1.26.22: neuron calls have 3 ordered levels, so their kappa is weighted and named so; and the key is
+    # described by what wormscore knows (that project's saved answers), not by the scorer's experience
+    assert "weighted kappa" in sentence and "Cohen's kappa" not in sentence
+    assert "answer key made from that project's saved answers" in sentence and "experienced" not in sentence
     s = PR.summary(mine)["results"][0]
     assert s["total"] == 6 and s["measure"] == "neuron call"
     # the set's own project counts the sets it made

@@ -407,9 +407,12 @@ Inter-rater reliability: agreement between two people.
    folder back when finished.
 4. **Import scores...** (`wormscore import-scorer my_project D:\from_sam`) checks that it is the
    package made from this project, with the same images and scoring criteria, and stores the answers
-   in `scorers/`.
+   in `scorers/`. A package from another project is refused. Importing the same package again
+   replaces the answers imported before; when any differ, wormscore says how many, and `log.md`
+   records each import.
 
-At unblinding, `between_scorers.csv` gives percent agreement and Cohen's kappa for each answer,
+At unblinding, `between_scorers.csv` gives percent agreement and kappa for each answer (weighted for
+answers with more than two ordered choices; the `kappa_type` column says which),
 `scorer_disagreements.csv` lists each image where the answers differ (codes only), and the Methods
 draft gets a sentence about it. Your own scores are never changed, and all results tables use only
 your answers.
@@ -425,7 +428,7 @@ has already scored.
    are used, unless you untick that or add `--any-confidence`. The set has no genotypes, file names
    or analysis plan; the key is in `practice_key.json`.
 2. The new scorer opens the folder in wormscore and scores every image. The set then shows the
-   agreement with the key for each answer (percent agreement and Cohen's kappa) and lists each image
+   agreement with the key for each answer (percent agreement and kappa, weighted as above) and lists each image
    where the answers differ, with both answers.
 3. In their own project, before scoring, they click **Add a practice result...**
    (`wormscore add-practice my_project D:\practice`). It checks the set, computes the agreement again

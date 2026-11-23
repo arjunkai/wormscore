@@ -30,7 +30,7 @@ from . import measure as M
 from . import readers as R
 from .files import append_log, now, read_csv, write_csv  # noqa: F401  (re-exported)
 from .browse import browse_log_line
-from .rescan import next_letter, same_reading, scan_changes  # noqa: F401  (re-exported)
+from .rescan import CHANNEL_COLUMNS, CHANNELS_FILE, channel_record, next_letter, same_reading, scan_changes  # noqa: F401  (re-exported)
 from .scoreform import form_log_lines
 
 INCOMPLETE = "file is incomplete"       # inventory flag (readers.ome_images), an exclusion reason at Build
@@ -397,7 +397,7 @@ def assign_codes(project, images, reassign, add=False, cfg=None, later=None, und
         if key_path.exists():
             old_dir = key_dir / f"superseded_{stamp}"
             old_dir.mkdir()
-            for f in ("key.csv", "seed.txt", "settings_groups.csv", "coded_on.txt"):
+            for f in ("key.csv", "seed.txt", "settings_groups.csv", "coded_on.txt", CHANNELS_FILE):
                 if (key_dir / f).exists():
                     (key_dir / f).rename(old_dir / f)
         # Unsaved answers belong to the old codes; with new codes they would open on other images.
@@ -410,7 +410,7 @@ def assign_codes(project, images, reassign, add=False, cfg=None, later=None, und
         (key_dir / "seed.txt").unlink(missing_ok=True)
         (key_dir / "coded_on.txt").unlink(missing_ok=True)
         if old_dir.is_dir():
-            for f in ("key.csv", "seed.txt", "settings_groups.csv", "coded_on.txt"):
+            for f in ("key.csv", "seed.txt", "settings_groups.csv", "coded_on.txt", CHANNELS_FILE):
                 if (old_dir / f).exists():
                     (old_dir / f).replace(key_dir / f)
             if not any(old_dir.iterdir()):
@@ -586,6 +586,26 @@ def encode_images(images, put):
         return [job.result() for job in jobs]
     finally:
         pool.shutdown(wait=True, cancel_futures=True)
+
+
+# 1.26.22: which channel of its file each coded image was built from (key/channels.csv; rescan.channel_record).
+# A newer reading could name another channel the reporter (or the identity channel or brightfield); the Build
+# card then says so before a rebuild (rescan.scan_changes), and the Build log names the codes it changes. In
+# key/, not in key.csv, so merged.csv and every other table stay as before. A project built before 1.26.22 has
+# no record until its next full build (adding images does not start one: it would cover only the new ones).
+
+
+def channel_warning(ch, todo):
+    """The Build log line naming the coded images this rebuild builds from other channels (rescan.scan_changes'
+    channel lines, with or without a record), among the images it builds."""
+    built = {s["code"] for s in todo}
+    codes = sorted({c for cs in (ch.get("channel_codes") or {}).values() for c in cs} & built)
+    if not codes:
+        return []
+    n = len(codes)
+    return [f"Warning: {n} coded image{'s are' if n != 1 else ' is'} built from other channels than before, as Scan data "
+            f"now reads {'them' if n != 1 else 'it'}: {', '.join(codes[:20])}{', ...' if n > 20 else ''}. "
+            f"{'Those already scored look' if n != 1 else 'If it was already scored, it looks'} different now."]
 
 
 BUILDING = "blind_building"     # the coded images of a build under way; moved into blind/ when all are made
@@ -796,9 +816,11 @@ def _build(project, reassign, add, log, run):
             # 1.26.10: a rebuild that keeps the codes keeps each settings group's letter too, from the key.
             # Sorted order (as on a first build) could swap the letters on the rebuild after a warned change.
             letters = dict(ch["letters"])
-        if not add and ch["lines"]:
+        # 1.26.22: channel lines get a warning of their own (channel_warning), which names the codes
+        said = [l for l, k in zip(ch["lines"], ch["kinds"]) if not k.startswith("channels")]
+        if not add and said:
             scan_lines = ["Warning: this build changes what was recorded for coded images, because Scan data now reads "
-                          f"them differently: {'; '.join(ch['lines'])}. Scores are unchanged. Compare brightness only "
+                          f"them differently: {'; '.join(said)}. Scores are unchanged. Compare brightness only "
                           "within the new settings groups."]
         for line in scan_lines:
             log(line)
@@ -807,6 +829,10 @@ def _build(project, reassign, add, log, run):
     todo = assign_codes(project, images, reassign, add, cfg, later=key_changes, undo=key_undo)
     repeats = [s for s in todo if "_orig" in s]
     todo = [s for s in todo if "_orig" not in s]
+    if not reassign and not add and (project / "key" / "key.csv").is_file():   # 1.26.22: those built from other channels
+        for line in channel_warning(scan_changes(project, cfg), todo):
+            scan_lines.append(line)
+            log(line)
     by_field = {}
     for s in images:
         by_field.setdefault(s["field_group"], []).append(s["code"])
@@ -963,11 +989,12 @@ def _build(project, reassign, add, log, run):
 
     out = project / "outputs"
     real, key_file = project / "blind", project / "key" / "key.csv"
+    chan_file = project / "key" / CHANNELS_FILE
     if add:
         key_before = key_file.read_bytes()
         key_rows = read_csv(key_file) + key_rows
         auto_rows = [r for r in read_csv(out / "auto_measurements.csv") if r.get("code") != "none"] + auto_rows
-    for f in (key_file, project / "key" / "settings_groups.csv", out / "auto_measurements.csv", out / "display_ranges.csv"):
+    for f in (key_file, chan_file, project / "key" / "settings_groups.csv", out / "auto_measurements.csv", out / "display_ranges.csv"):
         if f.exists():       # a table open in Excel is found before anything changes
             try:
                 with open(f, "r+b"):
@@ -1018,6 +1045,14 @@ def _build(project, reassign, add, log, run):
         run["phase"] = "saving"
         shutil.rmtree(previous, ignore_errors=True)
         write_csv(key_file, key_rows)
+    # 1.26.22: the channels each coded image was built from, right after the key. Adding keeps the record of the
+    # coded ones; adding to a project without a record starts none (it would cover the new images only, and the
+    # coded ones would lose the identity-channel comparison rescan.scan_changes makes without a record)
+    if not add or chan_file.is_file():
+        chan = {r["code"]: r for r in read_csv(chan_file)} if add else {}
+        for s in todo:
+            chan[s["code"]] = {"code": s["code"], **channel_record(s)}
+        write_csv(chan_file, [chan[c] for c in sorted(chan)], fields=["code", *CHANNEL_COLUMNS])
     if corr is not None:
         FF.record_build(project, key_rows, corr.used_now)
     write_csv(project / "key" / "settings_groups.csv",

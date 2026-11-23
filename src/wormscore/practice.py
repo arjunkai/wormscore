@@ -325,12 +325,14 @@ def methods_sentence(project):
     for r in results(project):
         h = _headline(r.get("measures") or [])
         when = "Before scoring" if r.get("before_scoring") else "After scoring had begun"
+        # 1.26.22: a weighted kappa is named as one (it was "Cohen's kappa"), as the second-scorer sentence does
+        kind = {"unweighted": "Cohen's kappa", "": "kappa"}.get(h.get("kappa_type", "") if h else "", "weighted kappa")
         agree = (f", agreeing with the key on {h['same_answer']} of {h['pairs']} {h['measure']}s ({h['percent_agreement']}%"
-                 + (f"; Cohen's kappa {h['kappa']}" if h["kappa"] != "" else "") + ")") if h else ""
+                 + (f"; {kind} {h['kappa']}" if h["kappa"] != "" else "") + ")") if h else ""
         crit = "" if r.get("same_criteria") else " with scoring criteria that differ from this project's"
         part = f"{r['scored']} of " if r.get("scored") else ""
         out.append(f"{when}, {who} practised on {part}a set of {r['total']} coded images from an earlier project "
-                   f"(\"{r['source']}\"){crit}, scored against an answer key of an experienced scorer's saved answers{agree}; "
+                   f"(\"{r['source']}\"){crit}, scored against an answer key made from that project's saved answers{agree}; "
                    f"answer key SHA-256 {str(r['key_sha256'])[:16]}, full value in log.md. ")
     return "".join(out)
 

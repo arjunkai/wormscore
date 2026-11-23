@@ -268,7 +268,7 @@ def test_settings_text_that_changes_for_every_image_alike_moves_no_image(tmp_pat
     prepare(project, log=quiet)
     inventory(project, log=quiet)
     assert scan_changes(project) == {"lines": [], "kinds": [], "letters": {("OME-TIFF (instrument not named)", "gain 2; detector 600 V"): "A"},
-                                     "changed": True, "reworded": None}
+                                     "changed": True, "reworded": None, "channel_codes": {}}
     lines = []
     prepare(project, log=lines.append)
     assert not any(line.startswith("Warning") for line in lines)

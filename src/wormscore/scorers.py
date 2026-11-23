@@ -275,22 +275,50 @@ def import_scores(project, package, log=print):
     extra = sorted({r["code"] for r in rows} - set(rec["order"]))
     if extra:
         raise SystemExit(f"The package's scores include codes it never had: {', '.join(extra[:5])}.")
+    for name in RETURNED:        # checked before the scores imported earlier are removed (1.26.22)
+        if (src / name).is_symlink():
+            raise SystemExit(f"The package's {name} is a link; it cannot be used.")
     dest = own / "scoring"
+    replaced, changed = [], 0
+    if (dest / "scores.csv").is_file():
+        # 1.26.22: imported before; say what the new copy replaces, here and in log.md (it was silent)
+        try:
+            changed = _changed_answers(read_scores(dest / "scores.csv"), rows)
+        except Exception:        # the earlier copy cannot be read: replaced without a count, never refused
+            changed = -1
+        replaced = ["These scores replace the ones imported before from this package, which could not be read."
+                    if changed < 0 else
+                    f"These scores replace the ones imported before from this package: {changed} answer"
+                    f"{' differs' if changed == 1 else 's differ'}." if changed else
+                    "Imported before from this package: the answers are the same."]
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir()
     for name in RETURNED:
         f = src / name
-        if f.is_symlink():
-            raise SystemExit(f"The package's {name} is a link; it cannot be used.")
         if f.is_file():
             shutil.copyfile(f, dest / name)
+    if replaced:
+        log(("Warning: " if changed else "") + replaced[0])
     append_log(project, f"second-scorer scores imported ({sid})", [
         f"Scorer: {rec['scorer']}. {len(rows)} of {len(rec['order'])} package images scored. "
         "Checked: same package, scoring criteria and images. Stored in scorers/{sid}/scoring/; "
-        "the primary scores in scoring/ are unchanged.".replace("{sid}", sid)])
+        "the primary scores in scoring/ are unchanged.".replace("{sid}", sid)] + replaced)
     log(f"Imported {len(rows)} scores from {rec['scorer']}.")
     return own
+
+
+def _changed_answers(old, new):
+    """How many answers differ between two copies of a second scorer's scores (one per code and
+    question; an image scored in only one copy counts each of its answers). Save times are not answers."""
+    skip = {"code", "saved", "display_preset_when_saved"}
+    a, b = {r["code"]: r for r in old}, {r["code"]: r for r in new}
+    n = 0
+    for code in set(a) | set(b):
+        x, y = a.get(code, {}), b.get(code, {})
+        empty = lambda v: "" if v in (None, "", "{}", {}) else v      # flag_answers unanswered is written "{}"
+        n += sum(1 for k in (set(x) | set(y)) - skip if empty(x.get(k)) != empty(y.get(k)))
+    return n
 
 
 def between_scorers(project, rows, cfg):

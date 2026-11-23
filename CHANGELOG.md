@@ -5,6 +5,32 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.22
+
+**The Build card says when a new scan reads other channels for coded images; a second import of a scorer's
+package says what it replaces; the practice sentence names its kappa correctly.**
+- Build now records which channel of its file each coded image was built from (key/channels.csv: the
+  channel names and roles, and the reporter, identity and brightfield channel). After a new Scan data, the
+  Build card says when coded images would be built from other channels, and how many of them are already
+  scored (they would look different) or in a second scorer's package (which could then no longer be
+  imported). The rebuild's Build log names the codes. A channel read in addition, which the coded image
+  does not use, is not counted. Before, nothing compared a coded image's channels with a new scan, so a newer reading could
+  change a scored image on a rebuild without a word. Found in the audit; no reading in this version
+  changes channels. A project built before this version has a record from its next full build; until then
+  only whether each image has its identity channel is compared (in a project with an identity channel). key.csv and every results table are as
+  before.
+- Importing the same second-scorer package again replaces the answers imported before, as it did, and now
+  says so, with how many answers (including notes and confidence) differ, on screen and in log.md. Before, it was silent. The package's files are
+  also checked before the earlier answers are removed. Found in an end-to-end test of the released 1.26.21
+  app on two computers' worth of app folders.
+- The Methods draft's practice sentence called a weighted kappa "Cohen's kappa" and described the answer
+  key as "an experienced scorer's saved answers", which wormscore cannot know. It now says "weighted kappa"
+  when it is one (as the second-scorer sentence does) and "an answer key made from that project's saved
+  answers". The Guide and the app's help text say kappa is weighted for ordered answers where it is.
+- **Who is affected:** a project with a recorded practice result gets the corrected practice sentence at
+  its next Unblind; nothing else in its results changes. Everything else applies from the next build or
+  import.
+
 ## 1.26.21
 
 **Every scan change on the Build card, each with its own next step; lifetime images, near laser lines and the

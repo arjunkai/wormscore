@@ -140,6 +140,48 @@ def test_import_keeps_the_scores_apart_from_the_primary_ones(made):
     assert info["imported"] and info["scored"] == info["images"] == 4
 
 
+def test_importing_again_says_what_it_replaces(made):
+    """1.26.22: a second import of the same package replaced the first without a word (found in the
+    end-to-end run on the released 1.26.21 app). It still replaces it, and says so with the count."""
+    project, pkg = made
+    score_package(pkg)
+    said = []
+    scorers.import_scores(project, pkg, log=said.append)
+    assert not any(x.startswith("Warning:") for x in said)
+    scorers.import_scores(project, pkg, log=said.append)           # the same answers again: no warning
+    assert not any(x.startswith("Warning:") for x in said)
+    log = (project / "log.md").read_text(encoding="utf-8")
+    assert log.count("Imported before from this package: the answers are the same.") == 1
+
+    def two(rows):
+        rows[0]["n1_call"] = "dim"
+        rows[1]["cells_seen"] = "1"
+    score_package(pkg, change=two)
+    said.clear()
+    own = scorers.import_scores(project, pkg, log=said.append)
+    assert "Warning: These scores replace the ones imported before from this package: 2 answers differ." in said
+    assert "2 answers differ." in (project / "log.md").read_text(encoding="utf-8")
+
+    def one(rows):
+        rows[0]["n1_call"] = "dim"
+        rows[1]["cells_seen"] = "1"
+        rows[2]["n2_call"] = "dim"
+    score_package(pkg, change=one)
+    said.clear()
+    scorers.import_scores(project, pkg, log=said.append)
+    assert "Warning: These scores replace the ones imported before from this package: 1 answer differs." in said
+    assert (own / "scoring" / "scores.csv").read_bytes() == (pkg / "scoring" / "scores.csv").read_bytes()
+
+
+def test_changed_answers_counts_answers_not_save_times():
+    a = [{"code": "W1", "saved": "1", "n1_call": "normal", "notes": ""}]
+    assert scorers._changed_answers(a, [{"code": "W1", "saved": "2", "n1_call": "normal", "notes": ""}]) == 0
+    assert scorers._changed_answers(a, [{"code": "W1", "saved": "2", "n1_call": "dim", "notes": "x"}]) == 2
+    assert scorers._changed_answers(a, a + [{"code": "W2", "n1_call": "dim"}]) == 1
+    # an image scored in one copy only: an unanswered flag_answers ("{}") is not an answer
+    assert scorers._changed_answers(a, a + [{"code": "W2", "n1_call": "dim", "flag_answers": "{}"}]) == 1
+
+
 def damage_image(pkg):
     f = next(p for p in (pkg / "blind").rglob("*") if p.is_file() and p.suffix != ".json")
     data = f.read_bytes()
