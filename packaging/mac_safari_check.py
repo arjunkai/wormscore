@@ -29,7 +29,7 @@ def post(route, body):
         return json.load(r)
 
 
-def until(driver, script, what, seconds=30):
+def until(driver, script, what, seconds=60):
     end = time.time() + seconds
     while time.time() < end:
         try:
@@ -39,7 +39,37 @@ def until(driver, script, what, seconds=30):
         if got:
             return got
         time.sleep(0.5)
+    explain(driver, what)
     sys.exit(f"Safari: {what}")
+
+
+# Said when a check fails, so a failure on GitHub's Mac can be understood without a Mac: the page's state,
+# whether Safari can parse each of its scripts, and a screenshot (uploaded with the mac-ui screenshots).
+STATE = """const c = document.querySelector('#cv');
+return {url: location.href, title: document.title, ready: document.readyState,
+        st: typeof st === 'undefined' ? 'no st' : {code: st.code, mip: !!st.mip, loading: st.loading},
+        canvas: c ? [c.width, c.height, c.clientWidth, c.clientHeight] : 'none',
+        text: (document.body ? document.body.innerText : '').slice(0, 400)};"""
+PARSE = """const done = arguments[arguments.length - 1];
+Promise.all([...document.scripts].filter(s => s.src).map(s => fetch(s.src).then(r => r.text()).then(t => {
+  try { new Function(t); return s.src + ': parses'; } catch (e) { return s.src + ': ' + e; }
+}))).then(done, e => done(String(e)));"""
+
+
+def explain(driver, what):
+    for name, run in (("state", lambda: driver.execute_script(STATE)),
+                      ("scripts", lambda: driver.execute_async_script(PARSE))):
+        try:
+            print(f"{name}: {json.dumps(run(), indent=1)}")
+        except Exception as exc:
+            print(f"{name}: could not be read ({str(exc).splitlines()[0]})")
+    try:
+        Path("screenshots").mkdir(exist_ok=True)
+        driver.save_screenshot("screenshots/safari-failed.png")
+        print("screenshot: screenshots/safari-failed.png")
+    except Exception as exc:
+        print(f"screenshot: none ({str(exc).splitlines()[0]})")
+    sys.stdout.flush()
 
 
 def main(project):
@@ -55,12 +85,16 @@ def main(project):
     if driver is None:
         sys.exit("Safari: no automation session could be started on this machine")
     try:
-        print("Safari", driver.capabilities.get("browserVersion"))
+        print("Safari", driver.capabilities.get("browserVersion"), flush=True)
+        driver.set_script_timeout(30)
         driver.get(HOME)
         # a script Safari cannot parse leaves the page on its loading screen, with no step cards
         until(driver, "return document.querySelectorAll('ol.steps > li').length >= 5", "the home page did not draw its steps")
         url = post("score", {})["url"]
         driver.get(url)
+        # as in mac_ui_check.py: wait for the image to be loaded, then for it to be drawn
+        until(driver, "return typeof st !== 'undefined' && st.code && st.mip && !st.loading",
+              "the scoring page did not load its image")
         lit = until(driver, LIT, "the scoring page drew no image")
         print("scoring page: lit pixels", lit)
         until(driver, "return document.querySelectorAll('#list button, nav button').length > 0",
