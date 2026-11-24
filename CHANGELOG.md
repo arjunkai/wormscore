@@ -17,8 +17,10 @@ room on the drive says so at once.**
   (not an image)".
 - Build says at once when the drive may not have room for the coded images it makes; a full drive used to show
   only when the build ran out, possibly after half an hour (the blind set, key and scores stay as they were).
-- The Mac check on GitHub now runs the home and scoring pages in real Safari as well as in WebKit: Safari was
-  left open before the test, so no automation session could start.
+- The Mac check on GitHub now opens the home and scoring pages in real Safari as well as in WebKit (Safari was
+  left open before the test, so no automation session could start). Safari there cannot draw on screen (the
+  hosted Macs have no graphics card for it), so it checks that the pages load and decode images exactly; the
+  image on screen stays checked in WebKit.
 - **Who is affected:** projects with Olympus line scans or LEXT files in their folders, after the next Scan
   data (images scanned before read as then). Nothing else changes.
 
