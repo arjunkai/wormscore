@@ -348,3 +348,43 @@ def test_scan_data_lists_oir_images_and_names_what_it_cannot_use(tmp_path):
     (img,) = images
     assert img["file"] == "worm_A01_G001_0001.oir" and img["channel_roles"] == ["MARKER", "OTHER", "OTHER", "BF"]
     assert img["flags"] == ["one tile of a tile scan (3 tiles, listed in matl.omp2info): the tiles are not joined"]
+
+
+def test_a_lext_file_and_a_poir_archive_say_what_they_are(tmp_path):
+    # 1.26.28: a LEXT OLS5500 (surface-measuring microscope) height map was told "the z-stack was set to 62
+    # planes, the file holds 1", its camera picture "holds no image (for example the overview map...)", and a
+    # .poir archive "reference (not an image)" (Zenodo 21792018)
+    image = xml("chloroplasts.image").replace("<base:systemName>FV3000<", "<base:systemName>OLS5500-SAF<")
+    path = write_oir(tmp_path / "height.oir", stack(), image=image)
+    with pytest.raises(ValueError, match="a LEXT surface-measuring microscope file"):
+        R.images_in(path, GFP)
+    with R.as_1_26_27():                                     # a project scanned before reads it as then
+        assert R.images_in(path, GFP)
+    assert R.images_in(write_oir(tmp_path / "worm.oir", stack()), GFP)       # a FluoView file as before
+    assert R.file_role(Path("a/001.poir")).startswith("Olympus .poir archive (not read")
+
+
+LINE_REGION = ('<commonimage:region xmlns:roi="http://www.olympus.co.jp/hpf/model/roi" '
+               'xmlns:marker="http://www.olympus.co.jp/hpf/model/marker" xsi:type="roi:LSMImagingROI" id="1" name="1L"><marker:regionInfo '
+               'xsi:type="marker:lineRegion"><marker:shape>Line</marker:shape></marker:regionInfo>'
+               '<roi:roiType>LineROI</roi:roiType><roi:transmissivity>{}</roi:transmissivity></commonimage:region>')
+
+
+def test_a_line_scan_is_not_read_as_a_tall_image(tmp_path):
+    # 1.26.28: an FVMPE-RS line scan (24 x 30000 pixels, lines as Y) was read as an image whose reporter was
+    # found, so it could be coded (oirfile's line-scan test files; image.sc thread 24957)
+    base = xml("chloroplasts.image")
+    assert "<commonimage:width>524<" in base
+    line = base.replace("<commonimage:width>524<", LINE_REGION.format(100) + "<commonimage:width>524<", 1)
+    path = write_oir(tmp_path / "line.oir", stack(), image=line)
+    with pytest.raises(ValueError, match="a line scan, not an image"):
+        R.images_in(path, GFP)
+    with R.as_1_26_27():                                     # a project scanned before reads it as then
+        assert R.images_in(path, GFP)
+    # an ROI scan with an area as well as a line is not a line scan (review)
+    area = LINE_REGION.format(100).replace("LineROI", "RectangleROI").replace('id="1" name="1L"', 'id="2" name="2R"')
+    both = base.replace("<commonimage:width>524<", LINE_REGION.format(100) + area + "<commonimage:width>524<", 1)
+    assert R.images_in(write_oir(tmp_path / "roi.oir", stack(), image=both), GFP)
+    # a line that lets no light through is not the scanned region
+    dark = base.replace("<commonimage:width>524<", LINE_REGION.format(0) + "<commonimage:width>524<", 1)
+    assert R.images_in(write_oir(tmp_path / "frame.oir", stack(), image=dark), GFP)

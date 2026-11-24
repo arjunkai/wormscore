@@ -59,7 +59,10 @@ def test_the_day_the_codes_were_assigned_survives_a_copy(fresh_project):
     import datetime as dt
     import os
     key = fresh_project / "key"
-    assert (key / "coded_on.txt").read_text().strip() == f"{dt.date.today():%Y-%m-%d}"
+    # the day the shared test project was built: a run that crosses midnight built it the day before
+    # (failed on CI that way, 24 November 2026)
+    built = dt.date.fromtimestamp((key / "key.csv").stat().st_mtime)
+    assert (key / "coded_on.txt").read_text().strip() in {f"{built:%Y-%m-%d}", f"{dt.date.today():%Y-%m-%d}"}
     (key / "coded_on.txt").write_text("2020-02-01\n")
     os.utime(key / "seed.txt")                                 # a copy: the seed's time is now
     assert methods.coded_date(fresh_project) == "2020-02-01"

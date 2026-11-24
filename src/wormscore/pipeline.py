@@ -618,6 +618,37 @@ def tidy_unfinished_build(project, log=lambda *a: None):
         log("An earlier build did not finish. Its unfinished images were removed.")
 
 
+def _check_space(project, n_images, log):
+    """1.26.28: a build makes its coded images next to the blind set before they take its place, so it needs
+    room for them. A full drive stopped it only when it ran out, possibly after half an hour (the blind set,
+    key and scores stay as they were). With a blind set already there, the size of up to 20 of its coded
+    images gives an estimate of the room the images to make need; with less free than that the build says
+    so at once and goes on (warn, don't block: the estimate can be off, e.g. when added images are smaller,
+    and a build that runs out leaves everything as it was). Found by review: it first stopped the build."""
+    import itertools
+    try:
+        blind = project / "blind"
+        if not blind.is_dir() or not n_images:
+            return
+        codes = list(itertools.islice((e for e in os.scandir(blind) if e.is_dir()), 20))
+        if not codes:
+            return
+
+        def size(path):
+            total = 0
+            for e in os.scandir(path):
+                total += size(e.path) if e.is_dir(follow_symlinks=False) else e.stat().st_size
+            return total
+        need = sum(size(e.path) for e in codes) / len(codes) * n_images
+        free = shutil.disk_usage(project).free
+    except OSError:
+        return                    # a drive that cannot say: the build goes on as before
+    if free < need:
+        gb = lambda n: f"{n / 2**30:.1f} GB" if n >= 2**30 else f"{n / 2**20:.0f} MB"
+        log(f"Warning: the coded images may need about {gb(need)} and the project's drive has {gb(free)} free. "
+            "If the build runs out of space, it stops and leaves the blind set, key and scores as they were.")
+
+
 def _rename(src, dst, tries=10):
     """One rename of a whole folder. On Windows a virus scanner can hold a file for a moment."""
     import time
@@ -731,6 +762,7 @@ def _build(project, reassign, add, log, run):
         raise SystemExit(f"{len(gone)} image file{'s' if len(gone) != 1 else ''} cannot be found, for example "
                          f"{gone[0]}. The blind set was not changed. Connect the drive, or correct the folder in Project "
                          "settings, then build again.")
+    _check_space(project, len(render), log)
     from . import flatfield as FF
     corr = FF.load(project, cfg)          # None unless the project turned the correction on (1.21.0)
     # A rebuild that keeps the codes once scoring has begun (or a second-scorer package exists) leaves

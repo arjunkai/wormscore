@@ -46,7 +46,10 @@ def test_the_reporters_mode_is_in_its_scan_settings_from_1_26_27(tmp_path):
     for gate in (R.as_1_26_26, R.as_1_26_24):
         with gate():
             assert "mode" not in R.leica_images(stellaris(tmp_path), K.default_settings())[0].get("scan_settings", "")
-    assert R.reading_as("1.26.26").__class__ is not type(R.reading_as("1.26.27"))
+    with R.reading_as("1.26.27"):                             # scanned by 1.26.27: the mode was read then
+        assert R.leica_images(stellaris(tmp_path), K.default_settings())[0]["scan_settings"].endswith("Counting mode")
+    with R.reading_as("1.26.26"):
+        assert "mode" not in R.leica_images(stellaris(tmp_path), K.default_settings())[0].get("scan_settings", "")
 
 
 def test_an_image_in_another_mode_is_flagged(tmp_path, monkeypatch):

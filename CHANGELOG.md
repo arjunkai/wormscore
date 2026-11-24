@@ -5,6 +5,23 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.28
+
+**An Olympus line scan is no longer read as an image; LEXT and .poir files say what they are; a rebuild without
+room on the drive says so at once.**
+- Olympus line scans (FVMPE-RS, lines stored one under the other) were read as tall images, 24 x 30000
+  pixels, and their reporter channel was found, so they could be coded and scored. Scan data now lists them
+  as "a line scan, not an image". Found in public line-scan files (oirfile's test files; image.sc).
+- Files from a LEXT surface-measuring microscope (Olympus OLS) are listed as such, not as a z-stack "set to
+  62 planes" or a file that "holds no image", and a .poir archive is named as one instead of "reference
+  (not an image)".
+- Build says at once when the drive may not have room for the coded images it makes; a full drive used to show
+  only when the build ran out, possibly after half an hour (the blind set, key and scores stay as they were).
+- The Mac check on GitHub now runs the home and scoring pages in real Safari as well as in WebKit: Safari was
+  left open before the test, so no automation session could start.
+- **Who is affected:** projects with Olympus line scans or LEXT files in their folders, after the next Scan
+  data (images scanned before read as then). Nothing else changes.
+
 ## 1.26.27
 
 **Outlines saved in another window are never replaced without asking; exclusion rules added after coding apply

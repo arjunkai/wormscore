@@ -69,6 +69,10 @@ def file_role(path):
         return NOT_USED
     if low.endswith((".lof", ".xlef", ".xlif", ".lock")):
         return "Leica LAS X project file (not read; export to .lif)"
+    # 1.26.28: a .poir is a zip of .oir files (the public ones come from a LEXT OLS5500, Zenodo 21792018); it was
+    # listed as "reference (not an image)"
+    if low.endswith(".poir"):
+        return "Olympus .poir archive (not read; save its images as .oir in the Olympus software)"
     # a large .oir acquisition continues in files named like it, without an extension: scan_00001, scan_00002
     if re.fullmatch(r".+_\d{5}", name) and path.with_name(name[:-6] + ".oir").is_file():
         return OIR_PART
@@ -214,11 +218,30 @@ def as_1_26_26():
         _BEFORE_1_26_27.reset(token)
 
 
+# 1.26.28 refuses an Olympus line scan and a LEXT surface-measuring file, which 1.26.27 read as images. A
+# project scanned by 1.26.27 reads its slide and control images as then until it scans again.
+_BEFORE_1_26_28 = ContextVar("read_as_1_26_27", default=False)
+
+
+def _before_1_26_28():
+    return _before_1_26_27() or _BEFORE_1_26_28.get()
+
+
+@contextmanager
+def as_1_26_27():
+    """Read files as 1.26.27 did: without the rules of 1.26.28."""
+    token = _BEFORE_1_26_28.set(True)
+    try:
+        yield
+    finally:
+        _BEFORE_1_26_28.reset(token)
+
+
 def reading_as(version):
     """The reading for images read again for a project whose inventory was written by that version (the
     scanned_with column): "" for an inventory from before 1.26.20 (as_before), a version before 1.26.21
     (as_1_26_20), before 1.26.23 (as_1_26_22), before 1.26.24 (as_1_26_23), before 1.26.25 (as_1_26_24),
-    before 1.26.27 (as_1_26_26), or the current reading."""
+    before 1.26.27 (as_1_26_26), 1.26.27 (as_1_26_27), or the current reading."""
     import contextlib
     if version is None:
         return contextlib.nullcontext()
@@ -233,7 +256,9 @@ def reading_as(version):
         return as_1_26_23()
     if parts < (1, 26, 25):
         return as_1_26_24()
-    return as_1_26_26() if parts < (1, 26, 27) else contextlib.nullcontext()
+    if parts < (1, 26, 27):
+        return as_1_26_26()
+    return as_1_26_27() if parts < (1, 26, 28) else contextlib.nullcontext()
 
 
 def _dyes(m):
@@ -1890,6 +1915,22 @@ def _oir_held(f):
     return n_z, f"{INCOMPLETE}: {len(short)} of {len(index)} are missing or cut short"
 
 
+def _oir_line_region(xml):
+    """Whether the image's scanned region is a line (a line scan): its imaging regions (commonimage:region of
+    type roi:LSMImagingROI, not self-closing) that let light through (transmissivity above 0) are all
+    LineROI. The background region (BackgroundROI, transmissivity 0) is in every file; an ROI scan that also
+    has an area is not a line scan (found by review: the first version took the first match anywhere)."""
+    shown = []
+    for block in re.findall(r"<commonimage:region\b(?![^>]*/>)[^>]*>.*?</commonimage:region>", xml, re.S):
+        if 'xsi:type="roi:LSMImagingROI"' not in block[:block.index(">")]:
+            continue
+        kind = re.search(r"<roi:roiType>\s*(\w+)\s*<", block)
+        let = re.search(r"<roi:transmissivity>\s*([\d.]+)\s*<", block)
+        if kind and let and float(let.group(1)) > 0:
+            shown.append(kind.group(1))
+    return bool(shown) and all(k == "LineROI" for k in shown)
+
+
 def oir_images(path, cfg):
     with _oir_open(path) as f:
         sizes, bits = dict(f.sizes), f.bitspersample
@@ -1897,9 +1938,20 @@ def oir_images(path, cfg):
         blocks = f.xml_metadata
         xml = (blocks.get(oirfile.METADATA.LSMIMAGE) or [""])[0]
         frames = list(blocks.get(oirfile.METADATA.FRAMEPROPERTIES) or [])
+    # 1.26.28: a LEXT (OLS) surface-measuring microscope writes .oir too: a height map or a colour camera
+    # picture. They were told as "the z-stack was set to 62 planes, the file holds 1" or "holds no image (for
+    # example the overview map...)"; the instrument's name says what they are (Zenodo 21792018)
+    if not _before_1_26_28() and any(isinstance(x, str) and re.search(r"<base:systemName>\s*OLS", x)
+                                     for v in blocks.values() for x in (v or ())):
+        raise ValueError("a LEXT surface-measuring microscope file (a height map or camera picture), not a fluorescence image")
     if not sizes or not xml:
         raise ValueError("the file holds no image (for example the overview map of a multi-area scan)")
     if "Y" not in sizes or "X" not in sizes:
+        raise ValueError("a line scan, not an image")
+    # 1.26.28: an FVMPE-RS line scan holds its lines as Y (24 x 30000 pixels) and was read as a tall image whose
+    # reporter was found, so it could be coded. Its scanned region is a line: an imaging region of type
+    # LineROI that lets the light through (oirfile's line-scan test files, image.sc thread 24957)
+    if not _before_1_26_28() and _oir_line_region(xml):
         raise ValueError("a line scan, not an image")
     if "S" in sizes:
         raise ValueError("a colour picture, not a fluorescence image")

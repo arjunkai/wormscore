@@ -145,12 +145,17 @@ jobs:
           defaults write com.apple.Safari IncludeDevelopMenu 1 || true
           sudo safaridriver --enable || true
           safaridriver --version || true
-          open -a Safari || true
-          sleep 10
-          defaults read com.apple.Safari AllowRemoteAutomation || true
+          # 1.26.28: the session timed out because Safari was left open here; safaridriver starts its own
+          # Safari. A probe on macos-15 and macos-latest (24 November 2026) started a session in 7-16 s in every
+          # setup once Safari was not running.
+          pkill -x Safari || true
+          sleep 2
           dist/wormscore.app/Contents/MacOS/wormscore > "$RUNNER_TEMP/app2.out" 2>&1 &
           PID=$!
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:47311/api/state > /dev/null && break; sleep 1; done
+          sleep 3
+          pkill -x Safari || true        # the app may have opened its page in Safari: the driver needs its own
+          sleep 2
           python packaging/mac_safari_check.py "$RUNNER_TEMP/demo" || FAILED=1
           kill $PID || true
           exit ${FAILED:-0}

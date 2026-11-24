@@ -76,14 +76,18 @@ def test_each_version_reads_at_its_own_level():
     assert R._BEFORE.get() is False
     for version, level in (("1.26.19", "as_1_26_20"), ("1.26.20", "as_1_26_20"), ("1.26.21", "as_1_26_22"),
                            ("1.26.22", "as_1_26_22"), ("1.26.23", "as_1_26_23"), ("1.26.24", "as_1_26_24"),
-                           ("1.26.25", "as_1_26_26"), ("1.26.26", "as_1_26_26"), ("1.26.27", "current"),
+                           ("1.26.25", "as_1_26_26"), ("1.26.26", "as_1_26_26"), ("1.26.27", "as_1_26_27"),
+                           ("1.26.28", "current"),
                            ("1.27.0", "current")):
         gate = R.reading_as(version)
         if level == "current":
             assert isinstance(gate, contextlib.nullcontext), version
             continue
         with gate:
-            assert R._before_1_26_27(), version
+            assert R._before_1_26_28(), version
+            assert R._before_1_26_27() == (level != "as_1_26_27"), version
+            if level == "as_1_26_27":
+                continue
             assert R._before_1_26_25() == (level != "as_1_26_26"), version
             if level == "as_1_26_26":
                 continue

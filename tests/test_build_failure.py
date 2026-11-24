@@ -147,3 +147,25 @@ def test_a_blind_folder_that_cannot_be_replaced_stays_whole(fresh_project, monke
     with pytest.raises(SystemExit, match="open in another program.*as they were"):
         prepare(fresh_project, log=quiet)
     assert snapshot(fresh_project) == before and not (fresh_project / pipeline.BUILDING).exists()
+
+
+def test_a_rebuild_without_room_for_its_images_says_so_at_once(fresh_project, monkeypatch):
+    # 1.26.28: a full drive stopped the build only when it ran out, possibly after half an hour. It now warns
+    # at once and goes on (an estimate can be off); a drive that cannot say how much is free changes nothing
+    import collections
+    Usage = collections.namedtuple("Usage", "total used free")
+    said = []
+    monkeypatch.setattr(pipeline.shutil, "disk_usage", lambda p: Usage(10**9, 10**9 - 1000, 1000))
+    prepare(fresh_project, log=said.append)
+    warned = [x for x in said if "may need about" in str(x)]
+    assert len(warned) == 1 and "the project's drive has 0 MB free" in warned[0]
+    assert "leaves the blind set, key and scores as they were" in warned[0]
+    said.clear()
+    monkeypatch.setattr(pipeline.shutil, "disk_usage", lambda p: Usage(10**12, 0, 10**12))
+    prepare(fresh_project, log=said.append)
+    assert not any("may need about" in str(x) for x in said)
+
+    def broken(p):
+        raise OSError("the share cannot say")
+    monkeypatch.setattr(pipeline.shutil, "disk_usage", broken)
+    prepare(fresh_project, log=said.append)                 # builds as before
