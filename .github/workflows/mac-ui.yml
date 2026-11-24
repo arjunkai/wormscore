@@ -133,8 +133,9 @@ jobs:
           if xattr -lr "$APP" | grep -q com.apple.quarantine; then echo "the download mark is still there"; exit 1; fi
           "$APP/Contents/MacOS/wormscore" --version
       - name: Home and scoring pages in real Safari
-        # Playwright's WebKit is Safari's engine, not Safari. Not required: safaridriver has not been able
-        # to start a session on GitHub's hosted Macs, so this step may fail without failing the run.
+        # Playwright's WebKit is Safari's engine, not Safari. Checks the pages load and decode images exactly;
+        # Safari here cannot draw canvases (no graphics card on the hosted Mac), so the image on screen is
+        # checked in WebKit above (see mac_safari_check.py). Not required until it has passed on several runs.
         continue-on-error: true
         run: |
           python -m pip install selenium

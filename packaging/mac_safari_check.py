@@ -1,6 +1,16 @@
 """Load the running wormscore app's home and scoring pages in real Safari (through safaridriver) and
-fail if either does not draw. The Mac app opens in the user's default browser, usually Safari, and
+fail if either does not work. The Mac app opens in the user's default browser, usually Safari, and
 Playwright's WebKit (mac_ui_check.py) is the same engine but not the same browser.
+
+What it checks: the home page draws its steps; the scoring page loads, Safari parses its scripts, the
+image is decoded with exact values (the page's own readback check, which also catches fingerprinting
+protection) and the codes are listed.
+
+What it cannot check here: the image drawn on screen. On GitHub's hosted Macs (virtual machines, no
+graphics card for Safari) every canvas Safari draws with the graphics card stays empty and cannot be read
+back, even a 4 x 4 one on a page without wormscore's code; canvases drawn in software work (probes of 24
+November 2026, Safari 27.2). The scoring page's image is a canvas of that kind, so mac_ui_check.py checks
+it in WebKit instead, which draws the same picture in software.
 
 Start the app first, with a demo project that has a blind set, then:
     python packaging/mac_safari_check.py PROJECT
@@ -16,11 +26,6 @@ from pathlib import Path
 from selenium import webdriver
 
 HOME = "http://127.0.0.1:47311"
-LIT = """const c = document.querySelector('#cv');
-const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-let n = 0;
-for (let i = 0; i < d.length; i += 4) if (d[i] + d[i + 1] + d[i + 2] > 60) n++;
-return n;"""
 
 
 def post(route, body):
@@ -39,16 +44,15 @@ def until(driver, script, what, seconds=60):
         if got:
             return got
         time.sleep(0.5)
-    explain(driver, what)
+    explain(driver)
     sys.exit(f"Safari: {what}")
 
 
 # Said when a check fails, so a failure on GitHub's Mac can be understood without a Mac: the page's state,
 # whether Safari can parse each of its scripts, and a screenshot (uploaded with the mac-ui screenshots).
-STATE = """const c = document.querySelector('#cv');
-return {url: location.href, title: document.title, ready: document.readyState,
-        st: typeof st === 'undefined' ? 'no st' : {code: st.code, mip: !!st.mip, loading: st.loading},
-        canvas: c ? [c.width, c.height, c.clientWidth, c.clientHeight] : 'none',
+STATE = """return {url: location.href, title: document.title, ready: document.readyState,
+        st: typeof st === 'undefined' ? 'no st' : {code: st.code, mip: !!st.mip, loading: st.loading,
+                                                   readbackAltered: st.readbackAltered},
         text: (document.body ? document.body.innerText : '').slice(0, 400)};"""
 PARSE = """const done = arguments[arguments.length - 1];
 Promise.all([...document.scripts].filter(s => s.src).map(s => fetch(s.src).then(r => r.text()).then(t => {
@@ -56,22 +60,9 @@ Promise.all([...document.scripts].filter(s => s.src).map(s => fetch(s.src).then(
 }))).then(done, e => done(String(e)));"""
 
 
-# Whether the window gets animation frames (a page draws on the next frame; a hidden window may get none),
-# and what the canvas holds when the page draws at once, without waiting for a frame.
-FRAMES = """const done = arguments[arguments.length - 1];
-const pending = typeof st !== 'undefined' ? !!st.drawFrame : 'no st';
-let got = false;
-requestAnimationFrame(() => { got = true; });
-setTimeout(() => done({drawPending: pending, frameWithin3s: got, hidden: document.hidden,
-                       visibility: document.visibilityState, focus: document.hasFocus()}), 3000);"""
-DRAWN_NOW = "if (typeof draw !== 'function') return 'no draw'; draw(); " + LIT
-
-
-def explain(driver, what):
+def explain(driver):
     for name, run in (("state", lambda: driver.execute_script(STATE)),
-                      ("scripts", lambda: driver.execute_async_script(PARSE)),
-                      ("frames", lambda: driver.execute_async_script(FRAMES)),
-                      ("lit after drawing at once", lambda: driver.execute_script(DRAWN_NOW))):
+                      ("scripts", lambda: driver.execute_async_script(PARSE))):
         try:
             print(f"{name}: {json.dumps(run(), indent=1)}")
         except Exception as exc:
@@ -105,16 +96,18 @@ def main(project):
         until(driver, "return document.querySelectorAll('ol.steps > li').length >= 5", "the home page did not draw its steps")
         url = post("score", {})["url"]
         driver.get(url)
-        # as in mac_ui_check.py: wait for the image to be loaded, then for it to be drawn
         until(driver, "return typeof st !== 'undefined' && st.code && st.mip && !st.loading",
               "the scoring page did not load its image")
-        lit = until(driver, LIT, "the scoring page drew no image")
-        print("scoring page: lit pixels", lit)
+        # the page decodes a small image with known values when it starts: false = every value came back exact
+        until(driver, "return typeof st.readbackAltered === 'boolean'", "the scoring page did not finish its image check")
+        if driver.execute_script("return st.readbackAltered"):
+            explain(driver)
+            sys.exit("Safari: the scoring page decodes images with changed values")
         until(driver, "return document.querySelectorAll('#list button, nav button').length > 0",
               "the scoring page listed no codes")
     finally:
         driver.quit()
-    print("Safari: home and scoring pages drew")
+    print("Safari: home and scoring pages work (the image on screen is checked in WebKit; see above)")
 
 
 if __name__ == "__main__":
