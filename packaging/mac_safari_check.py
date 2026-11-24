@@ -56,9 +56,22 @@ Promise.all([...document.scripts].filter(s => s.src).map(s => fetch(s.src).then(
 }))).then(done, e => done(String(e)));"""
 
 
+# Whether the window gets animation frames (a page draws on the next frame; a hidden window may get none),
+# and what the canvas holds when the page draws at once, without waiting for a frame.
+FRAMES = """const done = arguments[arguments.length - 1];
+const pending = typeof st !== 'undefined' ? !!st.drawFrame : 'no st';
+let got = false;
+requestAnimationFrame(() => { got = true; });
+setTimeout(() => done({drawPending: pending, frameWithin3s: got, hidden: document.hidden,
+                       visibility: document.visibilityState, focus: document.hasFocus()}), 3000);"""
+DRAWN_NOW = "if (typeof draw !== 'function') return 'no draw'; draw(); " + LIT
+
+
 def explain(driver, what):
     for name, run in (("state", lambda: driver.execute_script(STATE)),
-                      ("scripts", lambda: driver.execute_async_script(PARSE))):
+                      ("scripts", lambda: driver.execute_async_script(PARSE)),
+                      ("frames", lambda: driver.execute_async_script(FRAMES)),
+                      ("lit after drawing at once", lambda: driver.execute_script(DRAWN_NOW))):
         try:
             print(f"{name}: {json.dumps(run(), indent=1)}")
         except Exception as exc:
