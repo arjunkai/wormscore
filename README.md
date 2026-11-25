@@ -24,6 +24,11 @@ statistics. You score coded images without knowing the genotype; wormscore keeps
 the cells, and writes the tables, the tests and a draft Methods paragraph when you unblind.
 
 <p align="center">
+  <a href="https://wormscore.org/#how"><img src="docs/img/demo-video.jpg" width="720" alt="Watch a one-minute screen recording of a project from start to finish, on wormscore.org"></a><br>
+  <sub>One minute, no sound: a project from start to finish, on <a href="https://wormscore.org/#how">wormscore.org</a>.</sub>
+</p>
+
+<p align="center">
   <img src="https://raw.githubusercontent.com/arjunkai/wormscore/main/docs/img/scoring.png" alt="The scoring page: a coded image of a worm head with brightfield on, and the questions for each cell on the right" width="820">
 </p>
 <p align="center"><sub>The scoring page. The image is from the real-worm demo: an L2 head with the BAG neurons and their dendrites marked (flp-17::GFP), from Sun and Hobert 2021 (<a href="https://doi.org/10.5281/zenodo.5602160">Zenodo 5602160</a>, CC BY 4.0).</sub></p>
