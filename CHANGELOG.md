@@ -5,6 +5,11 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.29 (not released yet)
+
+- A second scorer's package says in its README.txt where to download wormscore, for a colleague who does not
+  have it yet.
+
 ## 1.26.28
 
 **An Olympus line scan is no longer read as an image; LEXT and .poir files say what they are; a rebuild without

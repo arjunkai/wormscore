@@ -215,6 +215,7 @@ def export_package(project, scorer, destination, fraction=0.3, log=print):
                     "Add the image again in Scoring criteria and make a new package if the second scorer needs it.")
     (destination / "README.txt").write_text(
         f"wormscore second-scorer package for {scorer}.\n\n"
+        "If you do not have wormscore yet, download it free from https://wormscore.org\n\n"
         "Open this folder in wormscore (Open project) and score every image in the scoring window.\n"
         "Score on your own: do not ask how anyone else scored these images.\n"
         "When you have finished, send the whole folder back (zip it). Do not rename it or change its files.\n",
