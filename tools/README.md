@@ -57,3 +57,18 @@ Pixels are not compared by this script. For `.oir` they were compared once with 
 channel and plane of 11 files; the reading is the same), with a script kept outside the repository.
 
 Real images are never committed to this repository; keep sample files and the cache outside it.
+
+## demo_video.py
+
+Records the one-minute screen recording on wormscore.org: the real-worm demo project taken from Scan data
+to Unblind, with a drawn cursor and a caption for each step. Re-run it when the screens change.
+
+```
+python tools/demo_video.py OUT_DIR
+```
+
+`OUT_DIR` must not hold a project yet. It writes `demo.mp4` (1920x1080, no sound) and `demo-poster.webp`;
+copy both into the site's `img/` folder. It runs the app's home server inside the script with its own settings
+file, so your projects list is not touched. Needs `pip install playwright pillow`,
+`python -m playwright install chromium` and ffmpeg on `PATH`. The first run downloads the demo images
+(about 230 MB, cached).
