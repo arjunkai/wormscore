@@ -23,6 +23,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from playwright.sync_api import sync_playwright
 
 W, H, DSF = 1280, 720, 1.5               # browser window; frames are 1920x1080
+THEME = "dark"                           # the scoring page is dark too, so the video never flips
 FAST = 3.0                               # speed-up while the app works and for images 2-4
 ANSWERS = [("usable", "yes"), ("cells_seen", "2"), ("n1_call", "normal"), ("n1_process", "yes"),
            ("n2_call", "normal"), ("n2_process", "yes"), ("confidence", "sure")]
@@ -79,7 +80,7 @@ def record(out, project):
             return json.load(r)
 
     post("select", {"path": str(project)})
-    post("theme", {"theme": "light"})
+    post("theme", {"theme": THEME})
     frames_dir = out / "frames"
     frames_dir.mkdir(exist_ok=True)
     frames, caps, speed = [], [], [1.0]
@@ -277,8 +278,8 @@ def make_video(out, frames, caps, fps=30, end_hold=3.0):
         cap = (0, OUTRO) if ot > out_t[-1] + 0.3 else caption_at(frames[k][1])
         if (frames[k][0], cap) != last_key:
             last_key, last = (frames[k][0], cap), compose(frames[k][0], cap)
-            if i == int(0.5 * fps):
-                last.resize((1280, 720), Image.LANCZOS).save(out / "demo-poster.webp", quality=82)
+        if i == int(0.5 * fps):
+            last.resize((1280, 720), Image.LANCZOS).save(out / "demo-poster.webp", quality=82)
         ff.stdin.write(last.tobytes())
     ff.stdin.close()
     if ff.wait():
