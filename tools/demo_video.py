@@ -164,7 +164,9 @@ def record(out, project):
         page.goto(post("score", {})["url"])     # the app opens it in its own window; here the same tab
         page.wait_for_function(READY, timeout=60000)
         move((W * 0.4, H * 0.55))
-        wait(900)
+        wait(700)
+        click("button:text-is('GFP')", pause=600)    # calls are made on the reporter; NeuroPAL only helps find cells
+        click("#bfToggle", pause=900)                 # brightfield shows the animal around the reporter
         click("button:text-is('Planes')", pause=500)
         bb = page.locator("#zSlider").bounding_box()
         y = bb["y"] + bb["height"] / 2
