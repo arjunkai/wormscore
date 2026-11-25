@@ -5,10 +5,21 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
-## 1.26.29 (not released yet)
+## 1.26.29
 
+**The Methods draft's first sentence is a sentence again.**
+- Since 1.26.24 the draft Methods text began "Blinded scoring." with a Python list (the imaging-parameters
+  table, or `[]` in projects scanned before 1.26.24) where the sentence on whether the person imaging knew
+  the genotype belongs, and the ARRIVE table's Imaging row showed the same. The new imaging-parameters
+  table had taken that sentence's name in the code. Both read as before 1.26.24 now; the imaging-parameters
+  table itself was right and is unchanged.
+- The Build blind set message lists images per microscope as "Zeiss LSM 880: 4" instead of a Python
+  dictionary (log.md records them as before). summary.txt lists the neuron calls ("normal 4, dim 1") and
+  the stack shapes of a mixed settings group the same way.
 - A second scorer's package says in its README.txt where to download wormscore, for a colleague who does not
   have it yet.
+- **Who is affected:** projects unblinded with 1.26.24 to 1.26.28. Run Unblind again to rewrite
+  methods_text.md; no score, table or test changes.
 
 ## 1.26.28
 

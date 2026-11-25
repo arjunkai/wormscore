@@ -72,3 +72,13 @@ def test_the_day_the_codes_were_assigned_survives_a_copy(fresh_project):
     assert methods.coded_date(fresh_project) == "2020-03-04"
     (key / "coded_on.txt").write_text("not a date\n")
     assert methods.coded_date(fresh_project) == "2020-03-04"
+
+
+def test_blinded_scoring_starts_with_the_imaging_sentence_not_the_parameters_table(fresh_project):
+    """1.26.29: from 1.26.24 the imaging-parameters table reused the name of the sentence on who imaged the
+    animals, so the Blinded scoring paragraph and the ARRIVE table's Imaging row printed a Python list."""
+    text = draft(fresh_project)
+    para = next(line for line in text.splitlines() if line.startswith("**Blinded scoring.**"))
+    assert para.startswith("**Blinded scoring.** [State whether the person who imaged the animals knew their genotype.] ")
+    assert "['" not in text and "| Imaging | [] |" not in text and "| Imaging | ['" not in text
+    assert "| Imaging | [State whether the person who imaged the animals knew their genotype.] |" in text

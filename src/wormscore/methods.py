@@ -509,7 +509,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
     ref = cfg["unblinding"]["reference_genotype"]
     rel_blind, rel_stat = reliability_sentences(cfg, n_repeats, reliability)
     looked = browsed_sentence(project)
-    imaging = imaging_table(project, key_rows)
+    params = imaging_table(project, key_rows)       # not `imaging`: that is the sentence above
     lines = [
         "# Methods text (draft; check every statement before use)",
         "",
@@ -574,7 +574,7 @@ def statement(project, cfg, n_included, n_excluded, history, n_scored, tests, ou
         *images_table(key_rows, excluded_rows, {s.get("name"): s["note"] for s in cfg["sources"] if s.get("note")},
                       microscope_models(project)),
         "",
-        *([*imaging, ""] if imaging else []),
+        *([*params, ""] if params else []),
         "## Who knew the genotype at each stage (ARRIVE 2.0 item 5)",
         "",
         "| Stage | Blinded? |",

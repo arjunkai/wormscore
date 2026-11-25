@@ -208,7 +208,7 @@ def unblind(project, finished=False, anyway=False, log=print):
         calls = [r.get(f"score_n{i}_call", "") for r in rs for i in range(1, len(sc["neurons"]) + 1)]
         defect = sum(1 for r in rs if any(r.get(f"score_n{i}_call") in sc["defect_calls"]
                                           for i in range(1, len(sc["neurons"]) + 1)))
-        lines.append(f"  {system} | {geno}: {len(rs)} animals, {defect} with a defect; neuron calls {dict(Counter(calls))}")
+        lines.append(f"  {system} | {geno}: {len(rs)} animals, {defect} with a defect; neuron calls: {', '.join(f'{k} {v}' for k, v in Counter(calls).items())}")
         summary.append({"system": system, "genotype": geno, "animals": len(rs), "animals_with_defect": defect,
                         **{f"neuron_calls_{c}": n for c, n in Counter(calls).items()}})
 
@@ -224,7 +224,7 @@ def unblind(project, finished=False, anyway=False, log=print):
         lines.append(f"  group {grp} {call:10s} {median(vals):10.1f} [{min(vals):.1f}-{max(vals):.1f}] (n={len(vals)})")
     for grp, shapes in sorted(stack_shapes(counted).items()):
         if len(shapes) > 1:
-            lines.append(f"  WARNING: group {grp} mixes stack shapes {dict(shapes)} (planes x z-step um); "
+            lines.append(f"  WARNING: group {grp} mixes stack shapes ({', '.join(f'{k}: {v}' for k, v in dict(shapes).items())}; planes x z-step um); "
                          "stack_sum_minus_bg is comparable only between stacks of the same shape.")
 
     un = cfg["unblinding"]

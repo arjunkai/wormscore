@@ -23,6 +23,14 @@ project scores, measures and reports exactly as before. Screens and buttons may 
   scored blind, so it cannot get around the Browse lock. Fiji already covers quick looks, so it will
   be built if users ask for it.
 
+### Beyond the app
+
+- **Signed Windows app.** So Windows no longer warns the first time it opens (SignPath's free signing
+  for open-source projects, or Azure Trusted Signing).
+- **A software paper in the Journal of Open Source Software.** A draft is in [paper/](paper/). JOSS
+  asks for six months of public development, so it can be submitted from late April 2027, with the
+  research use it describes cited.
+
 ## Version 1.0.0
 
 1.0.0 is the version used from start to finish on a real blind-scoring project (0.14.0, then

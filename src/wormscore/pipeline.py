@@ -686,6 +686,11 @@ def _stopped(exc, run, add):
             "file, then build again.")
 
 
+
+def by_system(counts):
+    """Images per microscope for the step's message: "Zeiss LSM 880: 4, Leica SP8: 2" (log.md keeps the dict)."""
+    return ", ".join(f"{k or 'unknown microscope'}: {v}" for k, v in counts.items())
+
 def prepare(project, reassign=False, add=False, log=print):
     """Build the blind set. add=True codes and renders only images not yet in the key, keeping
     every existing code, image, settings-group letter and display range.
@@ -1118,7 +1123,7 @@ def _build(project, reassign, add, log, run):
             f"Display ranges: {json.dumps(ranges)}",
         ] + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + scan_lines + plan_lines + interaction_log_lines(cfg)
           + form_log_lines(cfg, project), cfg)
-        log(f"Added {len(todo)} images {added}; {len(images)} images in blind/ in total.")
+        log(f"Added {len(todo)} images ({by_system(added)}); {len(images)} images in blind/ in total.")
         return ranges
     n_counted = sum(s["counted_by_default"] for s in images)
     per_system = dict(Counter(s["system"] for s in images))
@@ -1148,6 +1153,6 @@ def _build(project, reassign, add, log, run):
         f"Display ranges: {json.dumps(ranges)}",
     ] + browse_log_line(project) + identity_log_lines(cfg) + FF.log_lines(project, cfg) + ff_lines + scan_lines + plan_lines
       + interaction_log_lines(cfg) + form_log_lines(cfg, project), cfg)
-    log(f"{len(images)} images in blind/ {per_system}" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
+    log(f"{len(images)} images in blind/ ({by_system(per_system)})" + (f" plus {len(repeats)} hidden repeats" if repeats else "")
         + f"; {len(excluded)} excluded.")
     return ranges
