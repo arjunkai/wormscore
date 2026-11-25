@@ -5,6 +5,11 @@ project shows after its next Scan data, build or unblinding, the entry has a **W
 Updating alone never changes a project's results. What is planned is in [ROADMAP.md](ROADMAP.md); every
 version can be downloaded from the [Releases page](https://github.com/arjunkai/wormscore/releases).
 
+## 1.26.30 (not released yet)
+
+- Dark or light is chosen in **Settings > Appearance** instead of by a button in the top bar, which now holds
+  only Guide and Settings. The choice applies at once. The scoring window stays dark either way.
+
 ## 1.26.29
 
 **The Methods draft's first sentence is a sentence again.**

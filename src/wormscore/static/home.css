@@ -161,6 +161,7 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 .s-title { display: block; color: var(--text); font-size: var(--text-md); font-weight: 600; }
 .s-desc { margin-top: 2px; color: var(--muted); font-size: var(--text-sm); }
 .s-row > .btn { flex: none; color: var(--text); }
+.s-row > .s-select { flex: none; width: auto; min-width: 120px; }
 /* off: an outlined track with a grey thumb, so its edge stands out (3:1 for controls); on: filled */
 .switch {
   appearance: none; flex: none; position: relative; width: 36px; height: 20px; margin: 0; border-radius: 999px;

@@ -2014,7 +2014,15 @@ async function openSettings() {
   const verBtn = u.newer
     ? h("button", { class: "primary", onclick: choose("see") }, "See update")
     : h("button", { class: "btn", disabled: u.checking, onclick: checkNow }, "Check now");
+  // 1.26.30: the theme is set here, not by a button in the header; it applies at once
+  const theme = h("select", { class: "f-input s-select", id: "themeSel",
+    onchange: e => act("/api/theme", { theme: e.target.value }) },
+    ...[["dark", "Dark"], ["light", "Light"]].map(([value, label]) =>
+      h("option", { value, selected: st.data.theme === value }, label)));
   const box = h("div", { class: "settings" },
+    h("h4", {}, "Appearance"),
+    h("div", { class: "s-card" },
+      sRow("Theme", "The scoring window is always dark, so dim cells are easier to judge.", theme, "themeSel")),
     h("h4", {}, "Updates"),
     h("div", { class: "s-card" },
       sRow("Check for updates at start", "Asks GitHub for the latest version. Nothing about you or your projects is sent.",
@@ -2051,9 +2059,6 @@ function render() {
   if (!d) return;
   renderUpdate(d);
   document.documentElement.dataset.theme = d.theme;
-  $("#themeBtn").replaceChildren(icon(d.theme === "dark" ? "sun" : "moon", 18));
-  $("#themeBtn").title = d.theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
-  $("#themeBtn").setAttribute("aria-label", $("#themeBtn").title);   // screen readers hear the same as the tooltip
   $("#ver").textContent = d.version;
   // "I have finished scoring" is about one project: switching projects clears it.
   const path = d.project?.path ?? null;
@@ -2312,7 +2317,4 @@ $("#guideBtn").onclick = () => act("/api/guide", {});
 $("#updPill").onclick = () => { st.updOpen = true; st.updKey = ""; render(); };
 $("#settingsBtn").replaceChildren(icon("gear", 18));
 $("#settingsBtn").onclick = () => st.data && openSettings();
-// drawn now, from the theme the page was served with, so the button is never empty while loading
-$("#themeBtn").replaceChildren(icon(document.documentElement.dataset.theme === "dark" ? "sun" : "moon", 18));
-$("#themeBtn").onclick = () => act("/api/theme", { theme: st.data?.theme === "dark" ? "light" : "dark" });
 refresh();

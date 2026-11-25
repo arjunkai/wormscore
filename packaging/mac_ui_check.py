@@ -95,13 +95,17 @@ def main(project, out, engine="webkit"):
         home.click("#settingsBtn")
         home.wait_for_selector("#modal:not([hidden])")
         shot(home, "home-settings")
+        home.select_option("#themeSel", "light")       # the theme is chosen in Settings and applies at once
+        home.wait_for_selector("html[data-theme=light]", state="attached")
         home.keyboard.press("Escape")
         home.wait_for_selector("#modal[hidden]", state="attached")
-        home.click("#themeBtn")
-        home.wait_for_selector("html[data-theme=light]", state="attached")
         shot(home, "home-light-1440")
-        home.click("#themeBtn")
+        home.click("#settingsBtn")
+        home.wait_for_selector("#modal:not([hidden])")
+        home.select_option("#themeSel", "dark")
         home.wait_for_selector("html[data-theme=dark]", state="attached")
+        home.keyboard.press("Escape")
+        home.wait_for_selector("#modal[hidden]", state="attached")
 
         url = post("score", {}, timeout=180)["url"]    # a first start on a fresh Mac runner can be slow
         score = ctx.new_page()
