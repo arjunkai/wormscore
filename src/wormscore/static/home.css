@@ -285,6 +285,11 @@ code { font-family: "Cascadia Mono", Consolas, ui-monospace, Menlo, monospace; f
 /* the tick box's text sits nearer its box (8px) than the button beside it, so it reads as one control */
 .step.compact .s-act .check { margin-right: var(--space-sm); }
 .step.wait .s-title { color: var(--muted); }
+/* 1.26.30, light mode only: on the grey page, grey buttons and see-through steps blurred together. White
+   buttons, and a faint white wash on done and waiting steps; the Next step stays solid white. */
+[data-theme="light"] .btn:not(.subtle) { background: var(--panel); }
+[data-theme="light"] .btn:not(.subtle):hover:not(:disabled) { background: var(--hover); }
+[data-theme="light"] .step.compact { background: rgba(255, 255, 255, .5); }
 .s-act { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .mini { width: 220px; max-width: 100%; height: 6px; background: var(--line-strong); border-radius: 3px; overflow: hidden; margin-top: 8px; }
 .mini > div { height: 100%; background: var(--accent); }

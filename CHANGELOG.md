@@ -9,6 +9,8 @@ version can be downloaded from the [Releases page](https://github.com/arjunkai/w
 
 - Dark or light is chosen in **Settings > Appearance** instead of by a button in the top bar, which now holds
   only Guide and Settings. The choice applies at once. The scoring window stays dark either way.
+- Light mode: buttons are white and finished or waiting steps are lightly filled, so they stand out from
+  the grey page instead of blending into it.
 
 ## 1.26.29
 
