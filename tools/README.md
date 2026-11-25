@@ -68,7 +68,8 @@ python tools/demo_video.py OUT_DIR
 ```
 
 `OUT_DIR` must not hold a project yet. It writes `demo.mp4` (1920x1080, no sound) and `demo-poster.webp`;
-copy both into the site's `img/` folder. It runs the app's home server inside the script with its own settings
+copy both into the site's `img/` folder and change the `?v=` after both names in its `index.html` to the
+version shown, so browsers fetch the new recording instead of a cached one. It runs the app's home server inside the script with its own settings
 file, so your projects list is not touched. Needs `pip install playwright pillow`,
 `python -m playwright install chromium` and ffmpeg on `PATH`. The first run downloads the demo images
 (about 230 MB, cached).
