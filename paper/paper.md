@@ -151,7 +151,10 @@ wormscore was developed alongside, and used from start to finish on, the author'
 study in *C. elegans*: 210 scored images from a Leica SP8, a Zeiss LSM 800 and a widefield
 microscope, scored and then unblinded. That project's results were later recomputed with version
 1.26.21, including a new scan of the files and a new build, and every count, penetrance and p-value
-was unchanged. TODO(author): name the study and its publication status, and cite it.
+was unchanged. The study, carried out in Dr. Martin Hudson's lab at Kennesaw State University, asked
+whether *ngn-1* and *hlh-16* act redundantly to specify the BAG sensory neuron and used wormscore 0.14.0
+to code, score and analyse the images (A. Bansal, unpublished research paper, December 2026).
+TODO(author): update the study's publication status if it is posted or published, and cite it.
 
 Each release is archived on Zenodo with its own DOI under a concept DOI that lists all versions
 (10.5281/zenodo.23520610), and `log.md` records which version ran each step of a project, so a study
@@ -172,9 +175,9 @@ above. Every reference in this paper was checked against its DOI record.
 
 # Acknowledgements
 
-<!-- TODO(author): thank people who contributed data, testing or advice, and state funding, or write
-that there was no specific funding. -->
+<!-- TODO(author): state funding, or write that there was no specific funding. -->
 
-TODO.
+I thank Dr. Martin Hudson (Kennesaw State University), who proposed the BAG project that wormscore was
+built for and provided the strains and the lab's 2022 images.
 
 # References

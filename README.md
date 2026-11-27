@@ -154,6 +154,14 @@ update check (one request to GitHub's releases API for the latest version, sendi
 app's version in the User-Agent; off switch in Settings), an update you choose to install, and the real-image demo
 download.
 
+## Acknowledgements
+
+wormscore was built for a research project in Dr. Martin Hudson's lab in the Department of Molecular
+and Cellular Biology at Kennesaw State University. The project asked whether *ngn-1* and *hlh-16* work
+redundantly to specify the BAG sensory neuron in *C. elegans*. Scoring it blind, with images from three
+microscopes, is what shaped the app. Thank you to Dr. Hudson, who proposed the project and provided the
+strains and the lab's 2022 images.
+
 ## License and citation
 
 MIT License (see [LICENSE](https://github.com/arjunkai/wormscore/blob/main/LICENSE)). If you use wormscore in research, please cite the version you used.
